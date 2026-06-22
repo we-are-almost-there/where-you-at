@@ -96,11 +96,12 @@ create table course (
 create table course_waypoint (
   id               bigint generated always as identity primary key,
   course_id        bigint not null references course(id) on delete cascade,
+  route_type       varchar(10) not null default 'trail',
   lat              double precision not null check (lat between -90 and 90),
   lng              double precision not null check (lng between -180 and 180),
   sequence_order   int not null,
   created_at       timestamptz not null default now(), 
-  unique (course_id, sequence_order)
+  unique (course_id, route_type, sequence_order)
 );
 
 
