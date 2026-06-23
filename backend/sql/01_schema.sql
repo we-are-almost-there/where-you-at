@@ -73,20 +73,10 @@ create table course (
   source_id        text not null unique,
   course_title     varchar(255) not null,
   description      text,
-  type             varchar(20) not null,
-  distance         numeric not null,
-  difficulty       varchar(20),
   start_address    text,
-  estimated_time   int,
   region_code      varchar(10),
   image_url        varchar(500),
   original_gpx_url varchar(500),
-  start_lat        double precision,
-  start_lng        double precision,
-  min_lat          double precision,
-  max_lat          double precision,
-  min_lng          double precision,
-  max_lng          double precision,
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );
@@ -104,6 +94,25 @@ create table course_waypoint (
   unique (course_id, route_type, sequence_order)
 );
 
+
+-- 3. course_route (경로별 거리·난이도·시작점·bounds)
+create table course_route (
+  id               bigint generated always as identity primary key,
+  course_id        bigint not null references course(id) on delete cascade,
+  route_type       varchar(10) not null,
+  distance         numeric not null,
+  estimated_time   int,
+  difficulty       varchar(20),
+  start_lat        double precision,
+  start_lng        double precision,
+  min_lat          double precision,
+  max_lat          double precision,
+  min_lng          double precision,
+  max_lng          double precision,
+  created_at       timestamptz not null default now(),
+  unique (course_id, route_type),
+  check (route_type in ('trail', 'bicycle'))
+);
 
 
 -- ============================================
@@ -129,8 +138,8 @@ create table tour_spot (
   content_id      varchar(20) primary key,
   content_type_id varchar(5) not null,
   tour_spot_title varchar(200) not null,
-  addr1           varchar(255),
-  addr2           varchar(255),
+  addr1           text,
+  addr2           text,
   map_x           double precision not null,
   map_y           double precision not null,
   geom            geometry(Point, 4326),
@@ -157,10 +166,10 @@ create index idx_tour_spot_region on tour_spot (region_code);
 -- 2. attraction (관광지 상세) — tour_spot 자식
 create table attraction (
   content_id  varchar(20) primary key references tour_spot(content_id) on delete cascade,
-  info_center varchar(100),
-  rest_date   varchar(200),
-  use_time    varchar(500),
-  parking     varchar(200),
+  info_center text,
+  rest_date   text,
+  use_time    text,
+  parking     text,
   use_fee     text,
   sale_item   text
 );
@@ -169,20 +178,20 @@ create table attraction (
 -- 3. accommodation (숙박 상세) — tour_spot 자식
 create table accommodation (
   content_id      varchar(20) primary key references tour_spot(content_id) on delete cascade,
-  checkin_time    varchar(10),
-  checkout_time   varchar(10),
-  parking         varchar(100),
+  checkin_time    text,
+  checkout_time   text,
+  parking         text,
   reservation_url text
 );
 
 
 -- 4. restaurant (음식점 상세) — tour_spot 자식
 create table restaurant (
-  content_id varchar(20) primary key references tour_spot(content_id) on delete cascade,
-  first_menu varchar(200),
-  treat_menu varchar(200),
-  open_time  varchar(100),
-  rest_date  varchar(100)
+  content_id     varchar(20) primary key references tour_spot(content_id) on delete cascade,
+  first_menu     text,
+  treat_menu     text,
+  open_time      text,
+  rest_date      text
 );
 
 
