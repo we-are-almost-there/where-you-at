@@ -3,6 +3,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     durunubi_api_key: str = ""
+    kakao_rest_api_key: str = ""
+    tour_api_key: str = ""
     supabase_url: str = ""
     supabase_key: str = ""
 

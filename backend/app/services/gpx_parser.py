@@ -13,7 +13,7 @@ def parse(gpx_xml: str) -> list[dict]:
     """
     root = ET.fromstring(gpx_xml)
     waypoints = []
-    for seq, trkpt in enumerate(root.iter(f"{{{_NS}}}trkpt")):
+    for seq, trkpt in enumerate(root.iter(f"{{{_NS}}}trkpt"), 1):
         waypoints.append({
             "lat": float(trkpt.attrib["lat"]),
             "lng": float(trkpt.attrib["lon"]),
@@ -39,8 +39,8 @@ if __name__ == "__main__":
 
     result = parse(SAMPLE_GPX)
     assert len(result) == 5, f"waypoint 수 불일치: {len(result)}"
-    assert result[0] == {"lat": 35.09, "lng": 129.02, "sequence_order": 0}
-    assert result[-1]["sequence_order"] == 4
+    assert result[0] == {"lat": 35.09, "lng": 129.02, "sequence_order": 1}
+    assert result[-1]["sequence_order"] == 5
     print(f"[gpx_parser] 파싱 성공: {len(result)}개 waypoint")
     for wp in result:
         print(f"  {wp}")
