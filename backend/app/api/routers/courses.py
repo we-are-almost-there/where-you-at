@@ -1,0 +1,83 @@
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from ...deps import get_db
+from ...crud import course as crud
+from ...schemas.course import (
+    CourseListResponse,
+    CourseDetail,
+    RouteDetail,
+    Bounds,
+    GpxResponse,
+)
+
+router = APIRouter(prefix="/api/courses", tags=["courses"])
+
+
+@router.get("", response_model=CourseListResponse)
+def get_courses(
+    region: str | None = None,
+    type: str | None = None,
+    distance: str | None = None,
+    difficulty: str | None = None,
+    keyword: str | None = None,
+    sort: str | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    conn=Depends(get_db),
+):
+    total, rows = crud.list_courses(
+        conn,
+        region=region,
+        type=type,
+        difficulty=difficulty,
+        keyword=keyword,
+        distance=distance,
+        sort=sort,
+        page=page,
+        size=size,
+    )
+    return {"total_count": total, "page": page, "size": size, "courses": rows}
+
+
+@router.get("/{id}", response_model=CourseDetail)
+def get_course(id: int, conn=Depends(get_db)):
+    row = crud.get_course_detail(conn, id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    routes = [
+        RouteDetail(
+            route_type=rt["route_type"],
+            distance=rt["distance"],
+            estimated_time=rt["estimated_time"],
+            difficulty=rt["difficulty"],
+            start_lat=rt["start_lat"],
+            start_lng=rt["start_lng"],
+            bounds=Bounds(
+                min_lat=rt["min_lat"],
+                max_lat=rt["max_lat"],
+                min_lng=rt["min_lng"],
+                max_lng=rt["max_lng"],
+            ),
+        )
+        for rt in row["routes"]
+    ]
+
+    return CourseDetail(
+        id=row["id"],
+        title=row["title"],
+        description=row["description"],
+        start_address=row["start_address"],
+        region_code=row["region_code"],
+        image_url=row["image_url"],
+        original_gpx_url=row["original_gpx_url"],
+        is_population_drop_zone=row["is_population_drop_zone"],
+        routes=routes,
+    )
+
+
+@router.get("/{id}/gpx", response_model=GpxResponse)
+def get_course_gpx(id: int, route_type: str = "trail", conn=Depends(get_db)):
+    """코스 전체 경로 좌표 (상세 지도용). route_type으로 도보/자전거 구분."""
+    waypoints = crud.get_waypoints(conn, id, route_type)
+    return {"course_id": id, "route_type": route_type, "waypoints": waypoints}
