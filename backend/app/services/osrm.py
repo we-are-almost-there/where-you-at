@@ -39,5 +39,5 @@ def fetch_bicycle_route(waypoints: list[dict]) -> tuple[list[dict], float]:
 def _sample(waypoints: list[dict], n: int) -> list[dict]:
     if len(waypoints) <= n:
         return waypoints
-    step = len(waypoints) / n
-    return [waypoints[int(i * step)] for i in range(n)]
+    step = (len(waypoints) - 1) / (n - 1)
+    return [waypoints[round(i * step)] for i in range(n)]

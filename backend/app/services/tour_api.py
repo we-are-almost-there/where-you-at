@@ -86,8 +86,8 @@ def _nearby_tour_spots(lat: float, lng: float, radius: int, content_type: int | 
 def _sample(waypoints: list[dict], n: int) -> list[dict]:
     if len(waypoints) <= n:
         return waypoints
-    step = len(waypoints) / n
-    return [waypoints[int(i * step)] for i in range(n)]
+    step = (len(waypoints) - 1) / (n - 1)
+    return [waypoints[round(i * step)] for i in range(n)]
 
 
 def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> int:
