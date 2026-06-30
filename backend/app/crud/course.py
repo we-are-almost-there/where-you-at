@@ -170,7 +170,7 @@ FROM (
     FROM course_waypoint
     WHERE course_id = ANY(%s)
 ) t
-WHERE (rn - 1) %% GREATEST(cnt / %s, 1) = 0
+WHERE (rn - 1) %% GREATEST(cnt / %s, 1) = 0 OR rn = cnt  -- 균등 추출 + 종점(rn=cnt) 항상 보존
 ORDER BY course_id, route_type, sequence_order
 """
 
