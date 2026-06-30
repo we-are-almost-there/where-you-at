@@ -46,9 +46,13 @@ create table refund_rule (
   support_id   bigint not null references support(id) on delete cascade,
   category     varchar(50) not null,
   min_spend    integer,
+  min_nights   integer,
+  max_nights   integer,
+  cap_at_spend boolean not null default true,
   refund_value integer not null,
   is_rate      boolean not null default false,
-  description  text
+  description  text,
+  constraint chk_nights check (min_nights is null or max_nights is null or min_nights <= max_nights)
 );
 
 

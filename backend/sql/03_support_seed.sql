@@ -57,26 +57,29 @@ values
 --   디지털 관광주민증: 현장 할인형
 --   숙박세일 페스타: 1박/연박 + 금액 구간 별 할인
 --    - min_spend = 할인 적용 최소 결제액(구간 하한)
+--    - min/max_nights = 숙박 일수 조건 (1박: 1~1, 연박: 2~제한없음)
+--    - cap_at_spend = true면 환급액이 실제 지출액을 넘지 못함.
+
 insert into refund_rule
-    (support_id, category, min_spend, refund_value, is_rate, description)
-select s.id, v.category, v.min_spend, v.refund_value, v.is_rate, v.description
+    (support_id, category, min_spend, min_nights, max_nights, cap_at_spend, refund_value, is_rate, description)
+select s.id, v.category, v.min_spend, v.min_nights, v.max_nights, v.cap_at_spend, v.refund_value, v.is_rate, v.description
 from (values
-    -- 반값여행 (정률)
-    ('대한민국 반값여행', '전체', 100000, 50, true,
+    -- 반값여행 (정률, 숙박 일수 무관)
+    ('대한민국 반값여행', '전체', 100000, null, null, true, 50, true,
     '지정 관광지 방문·소비 인증 시 사용 금액의 50%를 지역화폐로 환급 (개인 최대 10만 원)'),
 
     -- 숙박세일 페스타(정액)
-    -- (1박)
-    ('2026 여름맞이 숙박세일 페스타', '숙박-1박', 20000, 20000, false,
+    -- (1박: min_nights=1, max_nights=1)
+    ('2026 여름맞이 숙박세일 페스타', '숙박', 20000, 1, 1, true, 20000, false,
     '1박 결제 7만 원 미만 시 2만 원 할인 (부가세 포함 2만 원 이상 결제)'),
-    ('2026 여름맞이 숙박세일 페스타', '숙박-1박', 70000, 30000, false,
+    ('2026 여름맞이 숙박세일 페스타', '숙박', 70000, 1, 1, true, 30000, false,
     '1박 결제 7만 원 이상 시 3만 원 할인'),
-    -- (연박)
-    ('2026 여름맞이 숙박세일 페스타', '숙박-연박', 50000, 50000, false,
+    -- (연박: min_nights=2, max_nights=null)
+    ('2026 여름맞이 숙박세일 페스타', '숙박', 50000, 2, null, true, 50000, false,
     '연박(2박 이상) 결제 14만 원 미만 시 5만 원 할인 (부가세 포함 5만 원 이상 결제)'),
-    ('2026 여름맞이 숙박세일 페스타', '숙박-연박', 140000, 70000, false,
+    ('2026 여름맞이 숙박세일 페스타', '숙박', 140000, 2, null, true, 70000, false,
     '연박(2박 이상) 결제 14만 원 이상 시 7만 원 할인')
-) as v(title, category, min_spend, refund_value, is_rate, description)
+) as v(title, category, min_spend, min_nights, max_nights, cap_at_spend, refund_value, is_rate, description)
 join support s on s.support_title = v.title;
 
 
