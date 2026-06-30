@@ -3,10 +3,12 @@ from psycopg2.extras import execute_values, RealDictCursor
 _WAYPOINT_BATCH = 500
 _THUMBNAIL_POINTS = 40  # 썸네일 1개당 추출할 대략적인 좌표 수
 
-# sort 파라미터 → ORDER BY 컬럼 화이트리스트 (SQL injection 방지)
+# sort 파라미터 → ORDER BY 절 화이트리스트 (상수만 들어가므로 SQL injection 안전)
 _SORT_COLUMNS = {
-    "distance": "cr.distance",
-    "estimated_time": "cr.estimated_time",
+    "distance_asc": "cr.distance ASC",
+    "distance_desc": "cr.distance DESC",
+    "time_asc": "cr.estimated_time ASC",
+    "time_desc": "cr.estimated_time DESC",
 }
 
 
