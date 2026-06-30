@@ -187,13 +187,21 @@ def _fetch_simplified_paths(conn, course_ids: list[int]) -> dict[tuple[int, str]
 
 
 def _parse_distance_range(distance: str) -> tuple[float | None, float | None]:
-    """'10-30' → (10, 30), '30-' → (30, None), '-10' → (None, 10)."""
+    """'10-30' → (10, 30), '30-' → (30, None), '-10' → (None, 10). 잘못된 토큰은 무시(None)."""
     if "-" not in distance:
         return None, None
     lo, _, hi = distance.partition("-")
-    min_d = float(lo) if lo.strip() else None
-    max_d = float(hi) if hi.strip() else None
-    return min_d, max_d
+
+    def _to_float(s: str) -> float | None:
+        s = s.strip()
+        if not s:
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            return None  # 비숫자 입력은 500 대신 필터 미적용
+
+    return _to_float(lo), _to_float(hi)
 
 
 # 적재 (수집 스크립트)
