@@ -1,0 +1,243 @@
+import os
+import sys
+import time
+
+# 프로젝트 루트를 path에 추가 (backend/ 에서 실행 기준)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from psycopg2.extras import execute_values
+from app.db.supabase import get_db_connection
+from app.services.tour_api import (
+    CONTENT_TYPES,
+    DETAIL_TABLE_MAP,
+    fetch_area_based_list,
+    fetch_detail_intro,
+)
+
+
+# ── UPSERT ───────────────────────────────────────────────────────────────────
+
+def upsert_tour_spots(conn, rows: list[dict]):
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        execute_values(
+            cur,
+            """
+            INSERT INTO tour_spot (
+                content_id, content_type_id, tour_spot_title,
+                addr1, addr2, map_x, map_y,
+                first_image, region_code, created_at, synced_at
+            ) VALUES %s
+            ON CONFLICT (content_id) DO UPDATE SET
+                content_type_id = EXCLUDED.content_type_id,
+                tour_spot_title = EXCLUDED.tour_spot_title,
+                addr1           = EXCLUDED.addr1,
+                addr2           = EXCLUDED.addr2,
+                map_x           = EXCLUDED.map_x,
+                map_y           = EXCLUDED.map_y,
+                first_image     = EXCLUDED.first_image,
+                region_code     = EXCLUDED.region_code,
+                synced_at       = EXCLUDED.synced_at
+            """,
+            [
+                (
+                    r["content_id"], r["content_type_id"], r["tour_spot_title"],
+                    r.get("addr1"), r.get("addr2"), r["map_x"], r["map_y"],
+                    r.get("first_image"), r.get("region_code"),
+                )
+                for r in rows
+            ],
+            template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())",
+        )
+    conn.commit()
+
+
+def upsert_attraction(conn, rows: list[dict]):
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        execute_values(
+            cur,
+            """
+            INSERT INTO attraction (content_id, info_center, rest_date, use_time, parking, use_fee, sale_item)
+            VALUES %s
+            ON CONFLICT (content_id) DO UPDATE SET
+                info_center = EXCLUDED.info_center,
+                rest_date   = EXCLUDED.rest_date,
+                use_time    = EXCLUDED.use_time,
+                parking     = EXCLUDED.parking,
+                use_fee     = EXCLUDED.use_fee,
+                sale_item   = EXCLUDED.sale_item
+            """,
+            [
+                (
+                    r["content_id"],
+                    # info_center: 12, 14, 38 각각 다른 필드명
+                    r.get("infocenter") or r.get("infocenterculture") or r.get("infocentershopping"),
+                    # rest_date
+                    r.get("restdate") or r.get("restdateculture") or r.get("restdateshopping"),
+                    # use_time
+                    r.get("usetime") or r.get("usetimeculture") or r.get("opentime"),
+                    # parking
+                    r.get("parking") or r.get("parkingculture") or r.get("parkingshopping"),
+                    # use_fee: 14만 있음
+                    r.get("usefee"),
+                    # sale_item: 38만 있음
+                    r.get("saleitem"),
+                )
+                for r in rows
+            ],
+        )
+    conn.commit()
+
+
+def upsert_accommodation(conn, rows: list[dict]):
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        execute_values(
+            cur,
+            """
+            INSERT INTO accommodation (content_id, checkin_time, checkout_time, parking, reservation_url)
+            VALUES %s
+            ON CONFLICT (content_id) DO UPDATE SET
+                checkin_time    = EXCLUDED.checkin_time,
+                checkout_time   = EXCLUDED.checkout_time,
+                parking         = EXCLUDED.parking,
+                reservation_url = EXCLUDED.reservation_url
+            """,
+            [
+                (
+                    r["content_id"],
+                    r.get("checkintime"),
+                    r.get("checkouttime"),
+                    r.get("parkinglodging"),
+                    r.get("reservationlodging"),
+                )
+                for r in rows
+            ],
+        )
+    conn.commit()
+
+
+def upsert_restaurant(conn, rows: list[dict]):
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        execute_values(
+            cur,
+            """
+            INSERT INTO restaurant (content_id, first_menu, treat_menu, open_time, rest_date)
+            VALUES %s
+            ON CONFLICT (content_id) DO UPDATE SET
+                first_menu = EXCLUDED.first_menu,
+                treat_menu = EXCLUDED.treat_menu,
+                open_time  = EXCLUDED.open_time,
+                rest_date  = EXCLUDED.rest_date
+            """,
+            [
+                (
+                    r["content_id"],
+                    r.get("firstmenu"),
+                    r.get("treatmenu"),
+                    r.get("opentimefood"),
+                    r.get("restdatefood"),
+                )
+                for r in rows
+            ],
+        )
+    conn.commit()
+
+
+UPSERT_DETAIL_FN = {
+    "attraction": upsert_attraction,
+    "accommodation": upsert_accommodation,
+    "restaurant": upsert_restaurant,
+}
+
+
+# ── 수집 ─────────────────────────────────────────────────────────────────────
+
+def collect_by_content_type(conn, content_type_id: int):
+    ctype_str = str(content_type_id)
+    detail_table = DETAIL_TABLE_MAP[ctype_str]
+    print(f"\n[INFO] 콘텐츠타입 {content_type_id} 수집 시작 → {detail_table}")
+
+    page_no = 1
+    num_of_rows = 100
+    total_collected = 0
+
+    while True:
+        try:
+            items, total_count = fetch_area_based_list(content_type_id, page_no, num_of_rows)
+        except Exception as e:
+            print(f"[ERROR] areaBasedList 실패 (page {page_no}): {e}")
+            break
+
+        if not items:
+            break
+
+        spot_rows = []
+        detail_rows = []
+
+        for item in items:
+            content_id = item.get("contentid")
+            try:
+                map_x = float(item.get("mapx") or 0)
+                map_y = float(item.get("mapy") or 0)
+            except ValueError:
+                continue
+            if not map_x or not map_y:
+                continue
+
+            spot_rows.append({
+                "content_id": content_id,
+                "content_type_id": ctype_str,
+                "tour_spot_title": item.get("title", ""),
+                "addr1": item.get("addr1"),
+                "addr2": item.get("addr2"),
+                "map_x": map_x,
+                "map_y": map_y,
+                "first_image": item.get("firstimage"),
+                "region_code" : (item.get("lDongRegnCd", "") + item.get("lDongSignguCd", "")) or None
+            })
+
+            try:
+                intro = fetch_detail_intro(content_id, ctype_str)
+                if intro:
+                    intro["content_id"] = content_id
+                    detail_rows.append(intro)
+                time.sleep(0.5)
+            except Exception as e:
+                print(f"[WARN] detailIntro 실패 content_id={content_id}: {e}")
+
+        upsert_tour_spots(conn, spot_rows)
+        UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
+
+        total_collected += len(spot_rows)
+        print(f"[INFO] page {page_no} 완료 | 누적 {total_collected} / {total_count}")
+
+        if total_collected >= total_count:
+            break
+
+        page_no += 1
+        time.sleep(0.1)
+
+    print(f"[INFO] 콘텐츠타입 {content_type_id} 완료 — {total_collected}건")
+
+
+def main():
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        for ct in CONTENT_TYPES:
+            collect_by_content_type(conn, ct)
+    finally:
+        conn.close()
+    print("\n[INFO] 전체 수집 완료 ✅")
+
+
+if __name__ == "__main__":
+    main()
