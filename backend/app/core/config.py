@@ -7,7 +7,6 @@ class Settings(BaseSettings):
     tour_api_key: str = ""
     supabase_url: str = ""
     supabase_key: str = ""
-    tour_api_key: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
