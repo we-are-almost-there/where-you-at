@@ -3,10 +3,12 @@ from psycopg2.extras import execute_values, RealDictCursor
 _WAYPOINT_BATCH = 500
 _THUMBNAIL_POINTS = 40  # 썸네일 1개당 추출할 대략적인 좌표 수
 
-# sort 파라미터 → ORDER BY 컬럼 화이트리스트 (SQL injection 방지)
+# sort 파라미터 → ORDER BY 절 화이트리스트 (상수만 들어가므로 SQL injection 안전)
 _SORT_COLUMNS = {
-    "distance": "cr.distance",
-    "estimated_time": "cr.estimated_time",
+    "distance_asc": "cr.distance ASC",
+    "distance_desc": "cr.distance DESC",
+    "time_asc": "cr.estimated_time ASC",
+    "time_desc": "cr.estimated_time DESC",
 }
 
 
@@ -170,7 +172,7 @@ FROM (
     FROM course_waypoint
     WHERE course_id = ANY(%s)
 ) t
-WHERE (rn - 1) %% GREATEST(cnt / %s, 1) = 0
+WHERE (rn - 1) %% GREATEST(cnt / %s, 1) = 0 OR rn = cnt  -- 균등 추출 + 종점(rn=cnt) 항상 보존
 ORDER BY course_id, route_type, sequence_order
 """
 
@@ -187,13 +189,21 @@ def _fetch_simplified_paths(conn, course_ids: list[int]) -> dict[tuple[int, str]
 
 
 def _parse_distance_range(distance: str) -> tuple[float | None, float | None]:
-    """'10-30' → (10, 30), '30-' → (30, None), '-10' → (None, 10)."""
+    """'10-30' → (10, 30), '30-' → (30, None), '-10' → (None, 10). 잘못된 토큰은 무시(None)."""
     if "-" not in distance:
         return None, None
     lo, _, hi = distance.partition("-")
-    min_d = float(lo) if lo.strip() else None
-    max_d = float(hi) if hi.strip() else None
-    return min_d, max_d
+
+    def _to_float(s: str) -> float | None:
+        s = s.strip()
+        if not s:
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            return None  # 비숫자 입력은 500 대신 필터 미적용
+
+    return _to_float(lo), _to_float(hi)
 
 
 # 적재 (수집 스크립트)

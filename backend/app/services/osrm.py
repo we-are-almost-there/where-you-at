@@ -16,18 +16,23 @@ def fetch_bicycle_route(waypoints: list[dict]) -> tuple[list[dict], float]:
     sampled = _sample(waypoints, _SAMPLE_COUNT)
     coords = ";".join(f"{wp['lng']},{wp['lat']}" for wp in sampled)
 
-    resp = httpx.get(
-        f"{_BASE_URL}/{coords}",
-        params={"overview": "full", "geometries": "geojson"},
-        timeout=15,
-    )
-    resp.raise_for_status()
-
-    data = resp.json()
-    if data.get("code") != "Ok":
+    # OSRM 장애(timeout/HTTP에러/JSON파싱 실패) 시 자전거 경로만 건너뛰고 graceful degrade
+    try:
+        resp = httpx.get(
+            f"{_BASE_URL}/{coords}",
+            params={"overview": "full", "geometries": "geojson"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError):
         return [], 0.0
 
-    route = data["routes"][0]
+    routes = data.get("routes") or []
+    if data.get("code") != "Ok" or not routes:  # 빈 응답 방어
+        return [], 0.0
+
+    route = routes[0]
     coordinates = route["geometry"]["coordinates"]
     wps = [
         {"lat": lat, "lng": lng, "sequence_order": i + 1}
