@@ -129,10 +129,12 @@ def list_courses(
         ids = [r["id"] for r in rows]
         routes = _fetch_routes(conn, ids)
         paths = _fetch_simplified_paths(conn, ids)
+        landmarks = _fetch_landmarks(conn, ids)
         for r in rows:
             r["routes"] = routes.get(r["id"], [])
             r["path_trail"] = paths.get((r["id"], "trail"), [])
             r["path_bicycle"] = paths.get((r["id"], "bicycle"), [])
+            r["landmarks"] = landmarks.get(r["id"], [])
 
     return total, rows
 
@@ -159,6 +161,42 @@ def _fetch_routes(conn, course_ids: list[int]) -> dict[int, list[dict]]:
                     "difficulty": row["difficulty"],
                 }
             )
+    return result
+
+
+_LANDMARKS_SQL = """
+SELECT base_id::int AS course_id, tour_spot_title
+FROM (
+    SELECT
+        base_id, tour_spot_title,
+        row_number() OVER (PARTITION BY base_id ORDER BY min_dist, tour_spot_title) AS rn
+    FROM (
+        -- 이름 기준 중복 제거(같은 이름이 여러 content_id로 존재 가능) + 최단거리 채택
+        SELECT ns.base_id, ts.tour_spot_title, MIN(ns.distance_km) AS min_dist
+        FROM nearby_spot ns
+        JOIN tour_spot ts ON ts.content_id = ns.nearby_content_id
+        WHERE ns.base_type = 'course'
+            AND ns.nearby_type = 'attraction'
+            AND ns.base_id = ANY(%s)   -- base_id는 text 컬럼 → 문자열 리스트로 전달
+        GROUP BY ns.base_id, ts.tour_spot_title
+    ) d
+) t
+WHERE t.rn <= 5                  -- 코스별 가까운 관광지 최대 5개(이름 중복 제거 후)
+ORDER BY base_id, rn
+"""
+
+
+def _fetch_landmarks(conn, course_ids: list[int]) -> dict[int, list[str]]:
+    """여러 코스의 가장 가까운 대표 관광지 이름(최대 5개)을 course_id별로 묶어 반환한다.
+
+    nearby_spot(주변 관광지/숙소 팀 소유)에 코스 attraction이 적재돼 있어야 값이 나온다.
+    적재 전이면 빈 리스트로 폴백한다.
+    """
+    result: dict[int, list[str]] = {}
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(_LANDMARKS_SQL, ([str(i) for i in course_ids],))
+        for row in cur.fetchall():
+            result.setdefault(row["course_id"], []).append(row["tour_spot_title"])
     return result
 
 
