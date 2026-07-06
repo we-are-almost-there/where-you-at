@@ -52,6 +52,7 @@ create table refund_rule (
   refund_value integer not null,
   is_rate      boolean not null default false,
   description  text,
+  override_region_id bigint references region(id),    -- 이 지역에 해당되는 경우에만 기본 규칙을 덮어씀
   constraint chk_nights check (min_nights is null or max_nights is null or min_nights <= max_nights)
 );
 
@@ -65,6 +66,30 @@ create table checklist_item (
   sort_order   integer not null default 0
 );
 
+
+-- 6. support_schedule (지역·차수별 신청 일정)
+create table support_schedule (
+  id           bigint generated always as identity primary key,
+  support_id   bigint not null,
+  region_id    bigint not null,
+  apply_round  integer,
+  apply_start  timestamptz,
+  apply_end    timestamptz,
+  travel_start date,
+  travel_end   date,
+  status       varchar(10) not null,
+  created_at   timestamptz not null default now(),
+  apply_url    text,
+  foreign key (support_id, region_id)
+    references support_region (support_id, region_id)
+    on delete cascade,
+  unique nulls not distinct (support_id, region_id, apply_round),
+  check (apply_round is null or apply_round >= 1),
+  check (status in ('준비중', '접수중', '마감'))
+);
+
+-- 인덱스 생성
+create index idx_support_schedule_region on support_schedule (region_id);
 
 
 -- ============================================
