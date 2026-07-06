@@ -200,7 +200,7 @@ def collect_by_content_type(conn, content_type_id: int):
                 "map_x": map_x,
                 "map_y": map_y,
                 "first_image": item.get("firstimage"),
-                "region_code" : (item.get("lDongRegnCd", "") + item.get("lDongSignguCd", "")) or None
+                "region_code": (item.get("lDongRegnCd") or "") + (item.get("lDongSignguCd") or "") or None
             })
 
             try:
