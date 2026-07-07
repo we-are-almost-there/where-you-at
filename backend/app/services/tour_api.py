@@ -97,3 +97,116 @@ def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> int:
     dl = math.radians(lng2 - lng1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return int(R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
+
+# ─────────────────────────────────────────────
+# 관광지 배치 수집용 TourAPI
+# ─────────────────────────────────────────────
+
+TOUR_API_BASE_URL = "https://apis.data.go.kr/B551011/KorService2"
+
+CONTENT_TYPES = [12, 14, 32, 38, 39]
+
+DETAIL_TABLE_MAP = {
+    "12": "attraction",
+    "14": "attraction",
+    "32": "accommodation",
+    "38": "attraction",
+    "39": "restaurant",
+}
+
+
+def fetch_area_based_list(
+    content_type_id: int,
+    page_no: int = 1,
+    num_of_rows: int = 100,
+) -> tuple[list[dict], int]:
+    """유형별 전국 관광정보 목록을 페이지 단위로 조회한다."""
+
+    params = {
+        "serviceKey": settings.tour_api_key,
+        "MobileOS": "ETC",
+        "MobileApp": "where-you-at",
+        "_type": "json",
+        "arrange": "A",
+        "contentTypeId": content_type_id,
+        "pageNo": page_no,
+        "numOfRows": num_of_rows,
+    }
+
+    try:
+        response = httpx.get(
+            f"{TOUR_API_BASE_URL}/areaBasedList2",
+            params=params,
+            timeout=15,
+        )
+        response.raise_for_status()
+
+        body = response.json().get("response", {}).get("body", {})
+        items = _extract_batch_items(body.get("items"))
+        total_count = int(body.get("totalCount", 0))
+
+        return items, total_count
+
+    except (httpx.HTTPError, ValueError, TypeError):
+        return [], 0
+
+
+def fetch_detail_intro(
+    content_id: str,
+    content_type_id: str,
+) -> dict | None:
+    """타입별 부가 정보를 조회한다.
+
+    관광지·숙박·음식점 유형에 따라 주차, 영업시간,
+    체크인·체크아웃 등의 상세정보가 반환된다.
+    """
+
+    params = {
+        "serviceKey": settings.tour_api_key,
+        "MobileOS": "ETC",
+        "MobileApp": "where-you-at",
+        "_type": "json",
+        "contentId": content_id,
+        "contentTypeId": content_type_id,
+    }
+
+    try:
+        response = httpx.get(
+            f"{TOUR_API_BASE_URL}/detailIntro2",
+            params=params,
+            timeout=15,
+        )
+        response.raise_for_status()
+
+        items = (
+            response.json()
+            .get("response", {})
+            .get("body", {})
+            .get("items")
+        )
+
+        results = _extract_batch_items(items)
+        return results[0] if results else None
+
+    except (httpx.HTTPError, ValueError, TypeError):
+        return None
+
+
+def _extract_batch_items(items: object) -> list[dict]:
+    """TourAPI의 빈 문자열, 단일 객체, 배열 응답을 리스트로 통일한다."""
+
+    if not items or isinstance(items, str):
+        return []
+
+    if not isinstance(items, dict):
+        return []
+
+    item = items.get("item", [])
+
+    if isinstance(item, list):
+        return item
+
+    if isinstance(item, dict):
+        return [item]
+
+    return []
