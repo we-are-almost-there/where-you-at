@@ -14,6 +14,9 @@ export function KakaoMap() {
   const [map, setMap] = useState<kakao.maps.Map | null>(null);
 
   useEffect(() => {
+    // SDK 스크립트가 로드되지 않은 환경(키 누락·허용 도메인 불일치·네트워크 차단)에서도
+    // 앱 전체가 흰 화면이 되지 않도록 가드. 이때 sdkReady가 false로 남아 지도 영역만 비운다.
+    if (typeof kakao === "undefined") return;
     kakao.maps.load(() => setSdkReady(true));
   }, []);
 
@@ -36,7 +39,7 @@ export function KakaoMap() {
   return (
     <Map
       center={{ lat: 35.1, lng: 129.0 }}
-      style={{ width: "100%", height: "100vh" }}
+      style={{ width: "100%", height: "100%" }}
       level={9}
       onCreate={setMap}
     >
