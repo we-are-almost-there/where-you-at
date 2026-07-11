@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(_BACKEND, "mock"))
 from data.courses import COURSES  # noqa: E402  대상 crs_idx 목록 소스
 from app.db.supabase import get_db_connection
 from app.crud.course import upsert_course, upsert_route, upsert_waypoints
-from app.crud.region import get_region_code
+from app.crud.region import get_region_code, region_code_from_address
 from app.services.durunubi import fetch_all_courses, fetch_gpx
 from app.services.gpx_parser import parse
 from app.services.osrm import fetch_bicycle_route
@@ -91,13 +91,17 @@ def collect(limit: int) -> None:
 
         # 2) course 공통
         row = _course_row(api)
-        row["region_code"] = get_region_code(conn, api.get("sigun"))
         if trail_wps:
             try:
                 row["start_address"] = coord2address(trail_wps[0]["lat"], trail_wps[0]["lng"])
             except Exception as e:
                 print(f"  주소 변환 실패: {e}")
             row["image_url"] = find_course_image(trail_wps)
+        # region_code: 실제 출발지 주소 기반이 정확(두루누비 sigun은 긴 코스에서 관할 시군을
+        # 대표로 달아 출발지와 어긋난다). 주소 역산 실패 시에만 sigun으로 폴백.
+        row["region_code"] = region_code_from_address(conn, row["start_address"]) or get_region_code(
+            conn, api.get("sigun")
+        )
         course_id = upsert_course(conn, row)
         print(f"  course (id={course_id}, region={row['region_code']}, img={'O' if row['image_url'] else 'X'})")
 

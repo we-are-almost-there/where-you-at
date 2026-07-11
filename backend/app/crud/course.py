@@ -1,9 +1,11 @@
 from psycopg2.extras import execute_values, RealDictCursor
 
+from .region import normalize_address
+
 _WAYPOINT_BATCH = 500
 _THUMBNAIL_POINTS = 40  # 썸네일 1개당 추출할 대략적인 좌표 수
 
-# sort 파라미터 → ORDER BY 절 화이트리스트 (상수만 들어가므로 SQL injection 안전)
+# sort 파라미터: ORDER BY 절 화이트리스트 (상수만 들어가므로 SQL injection 안전)
 _SORT_COLUMNS = {
     "distance_asc": "cr.distance ASC",
     "distance_desc": "cr.distance DESC",
@@ -47,6 +49,7 @@ def get_course_detail(conn, course_id: int) -> dict | None:
             return None
         cur.execute(_DETAIL_ROUTES_SQL, (course_id,))
         course["routes"] = cur.fetchall()
+    course["start_address"] = normalize_address(course["start_address"], course["region_code"])
     return course
 
 
@@ -74,7 +77,6 @@ def list_courses(
     size: int = 20,
 ) -> tuple[int, list[dict]]:
     """필터, 정렬, 페이지네이션을 적용해 (total_count, 목록)을 반환한다.
-
     type(기본 trail)이 필터, 정렬의 '기준 주행방식',
     (예: type=bicycle → 자전거 경로가 있는 코스만, 자전거 거리/시간 기준 정렬)
     응답의 각 코스에는 보유한 모든 경로(routes)가 함께 담긴다.
@@ -84,8 +86,9 @@ def list_courses(
     params: list = [base_type]
 
     if region:
-        where.append("c.region_code = %s")
-        params.append(region)
+        # 접두 매칭: "26"=부산 전체(광역시), "48220"=통영시 정확히. region 앞 N자리로 시도/시군 모두 커버.
+        where.append("c.region_code LIKE %s")
+        params.append(region + "%")
     if difficulty:
         where.append("cr.difficulty = %s")
         params.append(difficulty)
@@ -135,6 +138,7 @@ def list_courses(
             r["path_trail"] = paths.get((r["id"], "trail"), [])
             r["path_bicycle"] = paths.get((r["id"], "bicycle"), [])
             r["landmarks"] = landmarks.get(r["id"], [])
+            r["start_address"] = normalize_address(r["start_address"], r["region_code"])
 
     return total, rows
 
@@ -181,13 +185,13 @@ FROM (
         GROUP BY ns.base_id, ts.tour_spot_title
     ) d
 ) t
-WHERE t.rn <= 5                  -- 코스별 가까운 관광지 최대 5개(이름 중복 제거 후)
+WHERE t.rn <= 3                  -- 코스별 가까운 관광지 최대 3개(이름 중복 제거 후)
 ORDER BY base_id, rn
 """
 
 
 def _fetch_landmarks(conn, course_ids: list[int]) -> dict[int, list[str]]:
-    """여러 코스의 가장 가까운 대표 관광지 이름(최대 5개)을 course_id별로 묶어 반환한다.
+    """여러 코스의 가장 가까운 대표 관광지 이름(최대 3개)을 course_id별로 묶어 반환한다.
 
     nearby_spot(주변 관광지/숙소 팀 소유)에 코스 attraction이 적재돼 있어야 값이 나온다.
     적재 전이면 빈 리스트로 폴백한다.
