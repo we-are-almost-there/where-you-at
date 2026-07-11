@@ -46,8 +46,11 @@ export function CourseExplore() {
     const load = () => {
       getRegions()
         .then((rs) => !cancelled && setRegionOptions(buildRegionOptions(rs)))
-        .catch(() => {
-          if (!cancelled && attempts++ < 5) timer = setTimeout(load, 1500);
+        .catch((err) => {
+          if (cancelled) return;
+          // 재시도가 남았으면 조용히 다시 시도하고, 다 소진되면 원인 추적용으로 한 줄 남긴다.
+          if (attempts++ < 5) timer = setTimeout(load, 1500);
+          else console.error("[CourseExplore] regions fetch failed:", err);
         });
     };
     load();
