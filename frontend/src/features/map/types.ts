@@ -37,6 +37,42 @@ export interface CourseListResponse {
   courses: Course[];
 }
 
+// 코스 경계 좌표 (지도 fit 용)
+export interface Bounds {
+  min_lat: number;
+  max_lat: number;
+  min_lng: number;
+  max_lng: number;
+}
+
+// 상세(GET /api/courses/{id})의 주행방식별 경로 — 목록보다 필드가 많다
+export interface RouteDetail extends CourseRoute {
+  start_lat: number | null;
+  start_lng: number | null;
+  bounds: Bounds;
+}
+
+// GET /api/courses/{id} 응답 본문
+export interface CourseDetail {
+  id: number;
+  title: string;
+  description: string;
+  start_address: string;
+  region_code: string;
+  image_url: string;
+  original_gpx_url: string;
+  is_population_drop_zone: boolean;
+  routes: RouteDetail[];
+}
+
+// GET /api/regions 응답 항목 (코스 보유 지역만)
+export interface Region {
+  region_code: string; // 5자리 시군구 코드
+  name: string; // 시군구명 (예: 통영시)
+  sido: string; // 시도명 (예: 경상남도)
+  is_population_drop: boolean;
+}
+
 // 필터 UI 상태 (입력 위젯 값)
 export interface CourseFilterState {
   keyword: string;
