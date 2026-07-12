@@ -30,6 +30,7 @@ class CourseSummary(BaseModel):
     routes: list[RouteSummary]          # 도보/자전거 메트릭 (자전거 없으면 trail만)
     path_trail: list[LatLng]            # 도보 썸네일 좌표
     path_bicycle: list[LatLng]          # 자전거 썸네일 좌표 (없으면 빈 배열)
+    landmarks: list[str] = []           # 코스와 가까운 대표 관광지 이름 (최대 3개)
 
 
 class CourseListResponse(BaseModel):
