@@ -1,6 +1,5 @@
 import { Routes, Route } from "react-router";
 import { CourseExplore, CourseDetail } from "./features/map";
-import { Nearby } from "./features/nearby";
 import { Support } from "./features/support";
 
 function App() {
@@ -8,7 +7,6 @@ function App() {
     <Routes>
       <Route path="/" element={<CourseExplore />} />
       <Route path="/courses/:id" element={<CourseDetail />} />
-      <Route path="/nearby" element={<Nearby />} />
       <Route path="/support" element={<Support />} />
     </Routes>
   );

@@ -52,7 +52,7 @@ create table refund_rule (
   refund_value integer not null,
   is_rate      boolean not null default false,
   description  text,
-  override_region_id bigint references region(id),    -- 이 지역에 해당되는 경우에만 기본 규칙을 덮어씀
+  override_region_id bigint references region(id) on delete cascade,    -- 이 지역에 해당되는 경우에만 기본 규칙을 덮어씀
   constraint chk_nights check (min_nights is null or max_nights is null or min_nights <= max_nights)
 );
 
