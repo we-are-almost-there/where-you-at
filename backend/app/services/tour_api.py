@@ -53,6 +53,41 @@ def _best_image(waypoints: list[dict], radius: int, content_type: int | None) ->
     return best[2]
 
 
+# 대표 관광지 선정용 샘플 지점 수 (이미지 선정용 _SAMPLE_COUNT와 별개, 긴 노선 커버리지↑)
+_ATTRACTION_SAMPLES = 15
+
+
+def top_attractions(waypoints: list[dict], n: int = 4) -> list[str]:
+    """경로 근접순 대표 관광지 이름을 최대 n개 반환한다.
+
+    관광지(12)만 대상으로 1차 700m, 없으면 3km로 넓혀 재시도한다
+    (식당·숙박·홍보문구 등 타 유형 혼입 방지). 경로에 가까운 순으로 정렬.
+    """
+    if not settings.tour_api_key or len(waypoints) < 2:
+        return []
+    names = _nearby_titles(waypoints, radius=_RADIUS, content_type=_CONTENT_TYPE_TOUR)
+    if not names:
+        names = _nearby_titles(waypoints, radius=3000, content_type=_CONTENT_TYPE_TOUR)
+    return names[:n]
+
+
+def _nearby_titles(waypoints: list[dict], radius: int, content_type: int | None) -> list[str]:
+    # title → (lat, lng) 후보 수집(중복 제거) 후 경로 최단거리순 정렬
+    candidates: dict[str, tuple[float, float]] = {}
+    for wp in _sample(waypoints, _ATTRACTION_SAMPLES):
+        for item in _nearby_tour_spots(wp["lat"], wp["lng"], radius, content_type):
+            title = item.get("title")
+            if title and item.get("mapx") and item.get("mapy") and title not in candidates:
+                candidates[title] = (float(item["mapy"]), float(item["mapx"]))
+    return [
+        title
+        for title, _ in sorted(
+            candidates.items(),
+            key=lambda kv: min(_haversine(kv[1][0], kv[1][1], w["lat"], w["lng"]) for w in waypoints),
+        )
+    ]
+
+
 def _nearby_tour_spots(lat: float, lng: float, radius: int, content_type: int | None) -> list[dict]:
     """한 좌표 주변 관광지 목록(거리순)을 조회한다. 실패 시 빈 리스트."""
     params = {
