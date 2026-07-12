@@ -4,7 +4,7 @@ import { KakaoMap } from "./KakaoMap";
 import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "./components/ErrorNotice";
 import { getCourseDetail } from "./coursesApi";
 import type { CourseDetail as CourseDetailData, RouteDetail, RouteType } from "./types";
-
+import { Nearby } from "../nearby";
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
@@ -129,9 +129,12 @@ export function CourseDetail() {
         />
       </div>
 
-      {/* 패널 (모바일=바텀시트, md+=좌측 컬럼) */}
+      {/* 패널 (모바일=바텀시트, md+=좌측 컬럼)
+         md:relative 유지 필요: 주변 정보 탭 안의 SpotDetailSheet(상세 시트)가 absolute로 위치를 잡는데,
+        이 section이 relative여야 시트가 이 패널 안에서만 뜸.
+        static으로 바꾸면 시트가 기준을 잃고 지도까지 덮는 전체화면으로 퍼져버림. */}
       <section
-        className={`absolute inset-x-0 bottom-0 z-10 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] transition-[max-height] duration-300 md:static md:order-1 md:h-full md:max-h-none md:basis-[46%] md:rounded-none md:shadow-none lg:basis-[44%] ${
+        className={`absolute inset-x-0 bottom-0 z-10 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] transition-[max-height] duration-300 md:relative md:order-1 md:h-full md:max-h-none md:basis-[46%] md:rounded-none md:shadow-none lg:basis-[44%] ${
           sheetExpanded ? "max-h-[72%]" : "max-h-[38%]"
         }`}
       >
@@ -256,18 +259,14 @@ export function CourseDetail() {
                   </div>
                 </div>
               ) : (
-                // 주변 정보: 담당자(B) 작업 영역 — 슬롯만 제공
-                <div className="mt-4 flex flex-col items-center gap-2 rounded-[14px] border border-dashed border-divider py-16 text-center">
-                  <span className="text-[24px]" aria-hidden="true">
-                    📍
-                  </span>
-                  <p className="text-[14px] font-bold text-ink">주변 정보</p>
-                  <p className="text-[13px] text-caption">담당자 작업 예정 영역이에요</p>
+                <div className="mt-4">
+                  <Nearby courseId={courseId} />
                 </div>
               )}
             </div>
 
             {/* 따라가기 (하단 고정) */}
+            {infoTab === "course" && (
             <div
               className="shrink-0 px-5 pt-3"
               style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
@@ -279,6 +278,7 @@ export function CourseDetail() {
                 {activeRoute ? MODE_ICON[activeRoute.route_type] : "🚶"} 따라가기
               </button>
             </div>
+           )}
           </>
         )}
       </section>
