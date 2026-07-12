@@ -73,13 +73,7 @@ export const MOCK_COURSES: Course[] = RAW.map((c) => {
 });
 
 // 필터 옵션 (Mock 데이터셋에 맞춘 셀렉트 값)
-export const REGION_OPTIONS = [
-  { value: "", label: "전체 지역" },
-  { value: "26", label: "부산" },
-  { value: "48", label: "경남" },
-  { value: "46", label: "전남" },
-];
-
+// 지역 옵션은 /api/regions에서 동적 로드(regionOptions.ts) → 여기서 하드코딩 제거.
 export const DISTANCE_OPTIONS = [
   { value: "", label: "전체 거리" },
   { value: "short", label: "10km 이하" },
@@ -96,8 +90,8 @@ export const DIFFICULTY_OPTIONS = [
 
 export const SORT_OPTIONS = [
   { value: "nearest", label: "가까운 순" },
-  { value: "distance_asc", label: "코스 길이 짧은 순" },
-  { value: "distance_desc", label: "코스 길이 긴 순" },
+  { value: "distance_asc", label: "km 짧은 순" },
+  { value: "distance_desc", label: "km 긴 순" },
   { value: "time_asc", label: "소요 시간 짧은 순" },
   { value: "time_desc", label: "소요 시간 긴 순" },
 ];

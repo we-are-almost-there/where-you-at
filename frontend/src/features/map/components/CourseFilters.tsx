@@ -1,14 +1,15 @@
 import type { ReactNode } from "react";
 import type { CourseFilterState } from "../types";
-import { DISTANCE_OPTIONS, REGION_OPTIONS, SORT_OPTIONS } from "../coursesMock";
+import { isGroup, type RegionSelectItem } from "../regionOptions";
+import { DISTANCE_OPTIONS, SORT_OPTIONS } from "../coursesMock";
 
 interface Props {
   value: CourseFilterState;
   onChange: (next: CourseFilterState) => void;
+  regionOptions: RegionSelectItem[]; // /api/regions → 시도 흡수/도 optgroup 구조
 }
 
-// 네이티브 화살표 대신 커스텀 셰브론을 써서 화살표 오른쪽 여백(right-3)을
-// 텍스트 왼쪽 여백(pl-3)과 동일하게 맞춘다.
+// 네이티브 화살표 대신 커스텀 셰브론
 function FilterSelect({
   value,
   onChange,
@@ -44,7 +45,7 @@ function FilterSelect({
   );
 }
 
-export function CourseFilters({ value, onChange }: Props) {
+export function CourseFilters({ value, onChange, regionOptions }: Props) {
   const set = <K extends keyof CourseFilterState>(key: K, v: CourseFilterState[K]) =>
     onChange({ ...value, [key]: v });
 
@@ -60,9 +61,18 @@ export function CourseFilters({ value, onChange }: Props) {
       {/* 지역 · 거리 · 정렬: 한 줄 3열 고정 */}
       <div className="grid grid-cols-3 gap-2">
         <FilterSelect value={value.region} onChange={(v) => set("region", v)}>
-          {REGION_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
+          <option value="">전체 지역</option>
+          {regionOptions.map((item) =>
+            isGroup(item) ? (
+              <optgroup key={item.label} label={item.label}>
+                {item.options.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </optgroup>
+            ) : (
+              <option key={item.value} value={item.value}>{item.label}</option>
+            ),
+          )}
         </FilterSelect>
         <FilterSelect value={value.distance} onChange={(v) => set("distance", v)}>
           {DISTANCE_OPTIONS.map((o) => (

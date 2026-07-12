@@ -15,7 +15,8 @@ router = APIRouter(prefix="/api/courses", tags=["courses"])
 
 @router.get("", response_model=CourseListResponse)
 def get_courses(
-    region: str | None = None,
+    # 2자리(시도) 또는 5자리(시군구) 법정동 코드만 허용. 그 외 값은 422로 걸러 조용한 오필터를 막는다.
+    region: str | None = Query(None, pattern=r"^\d{2}(\d{3})?$"),
     type: str | None = None,
     distance: str | None = None,
     difficulty: str | None = None,
