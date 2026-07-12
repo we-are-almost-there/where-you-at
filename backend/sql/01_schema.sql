@@ -67,6 +67,30 @@ create table checklist_item (
 );
 
 
+-- 6. support_schedule (지역·차수별 신청 일정)
+create table support_schedule (
+  id           bigint generated always as identity primary key,
+  support_id   bigint not null,
+  region_id    bigint not null,
+  apply_round  integer,
+  apply_start  timestamptz,
+  apply_end    timestamptz,
+  travel_start date,
+  travel_end   date,
+  status       varchar(10) not null,
+  created_at   timestamptz not null default now(),
+  apply_url    text,
+  foreign key (support_id, region_id)
+    references support_region (support_id, region_id)
+    on delete cascade,
+  unique nulls not distinct (support_id, region_id, apply_round),
+  check (apply_round is null or apply_round >= 1),
+  check (status in ('준비중', '접수중', '마감'))
+);
+
+-- 인덱스 생성
+create index idx_support_schedule_region on support_schedule (region_id);
+
 
 -- ============================================
 -- 어디까지왔니 — 지도/코스 테이블 (지도/코스)
