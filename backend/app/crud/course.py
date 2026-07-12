@@ -325,3 +325,19 @@ def upsert_waypoints(conn, course_id: int, waypoints: list[dict], route_type: st
                 rows[i : i + _WAYPOINT_BATCH],
             )
     conn.commit()
+
+
+def delete_route(conn, course_id: int, route_type: str) -> None:
+    """한 주행방식의 course_route + course_waypoint를 삭제한다.
+    재적재 시 조건에서 탈락한 경로(예: 자전거)를 지워 고아 데이터를 막는 용도.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM course_waypoint WHERE course_id = %s AND route_type = %s",
+            (course_id, route_type),
+        )
+        cur.execute(
+            "DELETE FROM course_route WHERE course_id = %s AND route_type = %s",
+            (course_id, route_type),
+        )
+    conn.commit()
