@@ -4,6 +4,9 @@ from __future__ import annotations
 
 ALL = "전체"
 LODGING = "숙박"
+RULE_FIELDS = ("category", "min_spend", "min_nights", "max_nights",
+               "cap_at_spend", "refund_value", "is_rate",
+               "override_region_id", "description")
 
 
 def calculate_refund(
@@ -28,7 +31,7 @@ def calculate_refund(
                 "is_pre_approval": row["is_pre_approval"],
                 "rules": [],
             }
-        by_support[sid]["rules"].append(row)
+        by_support[sid]["rules"].append({k: row[k] for k in RULE_FIELDS})
 
     all_basis: list[dict] = []
     tips: list[str] = []

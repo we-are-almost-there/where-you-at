@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # 목록 (GET /api/support) ─────────────────────────────
@@ -9,7 +9,6 @@ class SupportSummary(BaseModel):
     summary: str | None
     max_amount: int | None
     end_date: str | None
-
 
 
 # 상세 (GET /api/support/{id}) ────────────────────────
@@ -31,24 +30,13 @@ class SupportDetail(BaseModel):
 class CalculateRequest(BaseModel):
     region_code: str
     spent_by_category: dict[str, int]
-    stay_duration: int
+    stay_duration: int = Field(ge=0)
 
 
 class CalculationBasis(BaseModel):
     item: str
     amount: int
     description: str
-
-
-class SupportRefund(BaseModel):
-    """제도 하나의 환급 계산 결과."""
-    support_id: int
-    support_title: str
-    refund_amount: int
-    calculation_basis: list[CalculationBasis]
-    is_pre_approval: bool
-    apply_url: str | None
-
 
 
 class CalculateResponse(BaseModel):
