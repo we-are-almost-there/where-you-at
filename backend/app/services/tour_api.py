@@ -12,42 +12,61 @@ _LIST_URL = "http://apis.data.go.kr/B551011/KorService2/locationBasedList2"
 _SAMPLE_COUNT = 8       # 경로에서 뽑을 지점 수
 _RADIUS = 700           # 각 지점 주변 검색 반경(m)
 _CONTENT_TYPE_TOUR = 12  # 관광지
+# 2차 폴백에서 허용할 관광 계열 콘텐츠 타입(음식점 39·숙박 32·쇼핑 38 제외).
+# 12 관광지 / 14 문화시설 / 28 레포츠
+_SIGHT_TYPES = {"12", "14", "28"}
 
 
-def find_course_image(waypoints: list[dict]) -> str | None:
+def find_course_image(waypoints: list[dict], used: set[str] | None = None) -> str | None:
     """경로 좌표 주변 관광지 중 경로에 가장 가까운 곳의 대표 이미지 URL.
 
     waypoints: [{"lat": float, "lng": float}, ...]
-    1차로 좁은 반경의 관광지만 찾고, 없으면 넓은 반경·전체 타입으로 재시도한다.
+    used: 다른 코스가 이미 쓴 이미지 URL 집합. 중복을 피해 차순위 명소를 고른다.
+    1차로 좁은 반경의 관광지만 찾고, 없으면 넓은 반경·관광 계열 타입으로 재시도한다.
     이미지 후보가 없으면 None.
     """
     if not settings.tour_api_key or len(waypoints) < 2:
         return None
 
     # 1차: 좁은 반경, 관광지(12)만 → 코스에 밀착한 명소
-    img = _best_image(waypoints, radius=_RADIUS, content_type=_CONTENT_TYPE_TOUR)
+    img = _best_image(waypoints, radius=_RADIUS, content_type=_CONTENT_TYPE_TOUR, used=used)
     if img:
         return img
-    # 2차(시골 등): 넓은 반경, 전체 타입
-    return _best_image(waypoints, radius=3000, content_type=None)
+    # 2차(시골 등): 넓은 반경 + 관광 계열 타입만(음식점/숙박/쇼핑 제외)
+    return _best_image(waypoints, radius=3000, content_type=None, allowed_types=_SIGHT_TYPES, used=used)
 
 
-def _best_image(waypoints: list[dict], radius: int, content_type: int | None) -> str | None:
+def _best_image(
+    waypoints: list[dict],
+    radius: int,
+    content_type: int | None,
+    allowed_types: set[str] | None = None,
+    used: set[str] | None = None,
+) -> str | None:
     # title → (lat, lng, image_url) 후보 수집 (중복 제거)
     candidates: dict[str, tuple[float, float, str]] = {}
     for wp in _sample(waypoints, _SAMPLE_COUNT):
         for item in _nearby_tour_spots(wp["lat"], wp["lng"], radius, content_type):
             img = item.get("firstimage")
             title = item.get("title")
-            if img and title and title not in candidates:
-                candidates[title] = (float(item["mapy"]), float(item["mapx"]), img)
+            if not (img and title) or title in candidates:
+                continue
+            # 타입 제한(폴백)에서 음식점/숙박 등 관광 외 콘텐츠는 제외
+            if allowed_types is not None and str(item.get("contenttypeid")) not in allowed_types:
+                continue
+            candidates[title] = (float(item["mapy"]), float(item["mapx"]), img)
 
     if not candidates:
         return None
 
+    # 다른 코스가 이미 쓴 이미지는 피한다(중복 방지). 남는 후보가 없으면 그대로 최근접 사용.
+    pool = {t: c for t, c in candidates.items() if used is None or c[2] not in used}
+    if not pool:
+        pool = candidates
+
     # 경로(전체 waypoint)와의 최단거리가 가장 작은 후보 선택
     best = min(
-        candidates.values(),
+        pool.values(),
         key=lambda c: min(_haversine(c[0], c[1], w["lat"], w["lng"]) for w in waypoints),
     )
     return best[2]
