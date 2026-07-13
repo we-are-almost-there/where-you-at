@@ -21,11 +21,11 @@ export function CourseCard({ course, routeType, onSelect }: Props) {
   const points = routeType === "자전거" ? course.path_bicycle : course.path_trail;
 
   return (
-    <article className="@container">
+    <article className="@container h-full">
       <button
         type="button"
         onClick={() => onSelect?.(course)}
-        className="flex w-full cursor-pointer flex-col overflow-hidden rounded-[14px] bg-white text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)]"
+        className="flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[14px] bg-white text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)]"
       >
         {/* 미리보기: 좌(경로) + 우(썸네일) */}
         <div className="flex h-[120px] shrink-0">
@@ -47,8 +47,8 @@ export function CourseCard({ course, routeType, onSelect }: Props) {
           </div>
         </div>
 
-        {/* 본문 */}
-        <div className="flex flex-col p-4">
+        {/* 본문 (flex-1로 카드 높이를 채워, 아래 구분선+footer를 mt-auto로 바닥 정렬) */}
+        <div className="flex flex-1 flex-col p-4">
           <div className="flex items-start justify-between gap-2">
             <h3 className="font-bold text-ink text-[17px] @[280px]:text-[19px]">
               {course.title}
@@ -74,14 +74,16 @@ export function CourseCard({ course, routeType, onSelect }: Props) {
             </ul>
           )}
 
-          <hr className="my-3 border-t border-divider" />
-
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-bold text-accent text-[14px]">{routeType}</span>
-            <span className="truncate text-[14px] text-caption">
-              {formatDuration(route.estimated_time)}
-              {routeType === "도보" && ` · ${route.difficulty}`}
-            </span>
+          {/* 구분선 + footer: 남는 공간을 위로 밀어 카드 바닥에 정렬 */}
+          <div className="mt-auto">
+            <hr className="my-3 border-t border-divider" />
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-bold text-accent text-[14px]">{routeType}</span>
+              <span className="truncate text-[14px] text-caption">
+                {formatDuration(route.estimated_time)}
+                {routeType === "도보" && ` · ${route.difficulty}`}
+              </span>
+            </div>
           </div>
         </div>
       </button>

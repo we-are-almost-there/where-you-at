@@ -43,3 +43,26 @@ describe("buildRegionOptions", () => {
     expect(buildRegionOptions([])).toEqual([]);
   });
 });
+
+describe("buildRegionOptions - 전남광주통합특별시", () => {
+  // 이름은 '시'로 끝나지만 옛 도 전체를 아우르는 초광역 → 흡수하지 않고 시군 그룹으로 전개
+  const merged: Region[] = [
+    { region_code: "12110", name: "목포시", sido: "전남광주통합특별시", is_population_drop: false },
+    { region_code: "12130", name: "여수시", sido: "전남광주통합특별시", is_population_drop: false },
+    { region_code: "12210", name: "동구", sido: "전남광주통합특별시", is_population_drop: false },
+  ];
+
+  it("광역시처럼 흡수하지 않고 시군 그룹으로 전개", () => {
+    const opts = buildRegionOptions(merged);
+    expect(opts).toHaveLength(1);
+    const group = opts[0];
+    if (!isGroup(group)) throw new Error("전남광주통합특별시는 그룹이어야 함");
+    expect(group.label).toBe("전남광주통합");
+    expect(group.options[0]).toEqual({ value: "12", label: "전남광주통합 전체" });
+    expect(group.options.slice(1)).toEqual([
+      { value: "12110", label: "목포" },
+      { value: "12130", label: "여수" },
+      { value: "12210", label: "동" },
+    ]);
+  });
+});

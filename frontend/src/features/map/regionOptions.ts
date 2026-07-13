@@ -16,6 +16,10 @@ export const isGroup = (item: RegionSelectItem): item is RegionGroup => "options
 // 시군구 5자리 코드의 앞 2자리 = 시도 코드 (행정표준코드). 접두 매칭으로 시도 전체를 커버.
 const sidoCode = (regionCode: string) => regionCode.slice(0, 2);
 
+// 이름은 '시'로 끝나지만 옛 도(道) 전체를 아우르는 초광역이라, 광역시처럼 흡수하지 않고
+// 시군 optgroup으로 전개한다(목포·여수·순천 등 개별 필터 유지).
+const EXPAND_AS_PROVINCE = new Set(["전남광주통합특별시"]);
+
 // 필터 드롭다운은 좁으므로 정식 시도명을 축약해서 표시한다 (경상남도→경남, 부산광역시→부산).
 const SIDO_ABBR: Record<string, string> = {
   서울특별시: "서울",
@@ -32,7 +36,7 @@ const SIDO_ABBR: Record<string, string> = {
   충청남도: "충남",
   전북특별자치도: "전북",
   전라남도: "전남",
-  전남광주통합특별시: "전남·광주", // 행정구역 개편: 광주·전남 통합
+  전남광주통합특별시: "전남광주통합", // 행정구역 개편: 광주, 전남 통합
   경상북도: "경북",
   경상남도: "경남",
   제주특별자치도: "제주",
@@ -62,7 +66,7 @@ export function buildRegionOptions(regions: Region[]): RegionSelectItem[] {
   return order.map((sido): RegionSelectItem => {
     const rows = bySido.get(sido)!;
     const code2 = sidoCode(rows[0].region_code);
-    if (!sido.endsWith("도")) {
+    if (!sido.endsWith("도") && !EXPAND_AS_PROVINCE.has(sido)) {
       return { value: code2, label: abbrevSido(sido) }; // 광역시/특별시/세종 → 흡수
     }
     return {
