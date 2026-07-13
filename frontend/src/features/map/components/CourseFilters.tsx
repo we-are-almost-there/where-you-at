@@ -58,8 +58,8 @@ export function CourseFilters({ value, onChange, regionOptions }: Props) {
         placeholder="코스 이름 검색"
         className="w-full rounded-lg border border-divider bg-white px-3.5 py-2.5 text-[14px] text-ink placeholder:text-caption focus:border-accent focus:outline-none"
       />
-      {/* 지역 · 거리 · 정렬: 한 줄 3열 고정 */}
-      <div className="grid grid-cols-3 gap-2">
+      {/* 지역, 거리, 정렬: 한 줄 3열. 지역명이 가장 길어(전남광주통합 등) 지역 칸을 넓게 준다. */}
+      <div className="grid grid-cols-[1.5fr_1fr_1fr] gap-2">
         <FilterSelect value={value.region} onChange={(v) => set("region", v)}>
           <option value="">전체 지역</option>
           {regionOptions.map((item) =>

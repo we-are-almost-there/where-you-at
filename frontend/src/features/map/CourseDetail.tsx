@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { KakaoMap } from "./KakaoMap";
 import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "./components/ErrorNotice";
@@ -43,7 +43,7 @@ function ModeCard({
       type="button"
       onClick={onSelect}
       aria-pressed={active}
-      className={`flex flex-1 cursor-pointer flex-col gap-1.5 rounded-[14px] p-3.5 text-left transition-colors ${
+      className={`@container flex flex-1 cursor-pointer flex-col gap-1.5 rounded-[14px] p-3.5 text-left transition-colors ${
         active
           ? "border-2 border-accent bg-lavender text-accent shadow-[0px_4px_14px_0px_rgba(0,0,0,0.12)]"
           : "border-[1.5px] border-divider bg-white text-caption"
@@ -52,7 +52,8 @@ function ModeCard({
       <span className="text-[14px] font-bold">
         {MODE_ICON[route.route_type]} {route.route_type}
       </span>
-      <span className="text-[22px] font-bold leading-none">
+      {/* fold처럼 좁은 폭에서 '분'이 줄바꿈되지 않도록 nowrap + 카드 폭에 반응하는 유체 크기 */}
+      <span className="whitespace-nowrap text-[clamp(14px,14cqi,22px)] font-bold leading-none">
         {formatDuration(route.estimated_time)}
       </span>
       <span className={`text-[14px] ${active ? "text-ink" : ""}`}>
@@ -74,6 +75,8 @@ export function CourseDetail() {
   const [routeType, setRouteType] = useState<RouteType>("도보");
   const [infoTab, setInfoTab] = useState<InfoTab>("course");
   const [descExpanded, setDescExpanded] = useState(false);
+  const descRef = useRef<HTMLParagraphElement>(null);
+  const [descOverflow, setDescOverflow] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(true); // 모바일 바텀시트 펼침/접힘
   const [retryTick, setRetryTick] = useState(0); // '다시 시도' 트리거
   const validId = Number.isFinite(courseId);
@@ -104,6 +107,18 @@ export function CourseDetail() {
     setRetryTick((t) => t + 1);
   };
 
+  // 설명이 3줄(line-clamp-3)을 실제로 넘칠 때만 '더보기'를 노출한다.
+  // 글자 수 추정은 폭, 줄바꿈을 반영 못 해 3줄에 다 들어가도 버튼이 뜨는 문제가 있었다.
+  // 접힘 상태에서만 측정 가능(펼치면 clamp가 풀림)하므로 접힘일 때 갱신하고, 폭 변화 시 재측정한다.
+  useEffect(() => {
+    const el = descRef.current;
+    if (!el || descExpanded) return;
+    const measure = () => setDescOverflow(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [detail?.description, infoTab, descExpanded]);
+
   // 디자인 순서: 도보 먼저, 자전거 다음 (API는 알파벳순 bicycle→trail로 내려줌)
   const orderedRoutes = detail
     ? [...detail.routes].sort((a, b) => (a.route_type === "도보" ? -1 : 1) - (b.route_type === "도보" ? -1 : 1))
@@ -130,7 +145,7 @@ export function CourseDetail() {
       </div>
 
       {/* 패널 (모바일=바텀시트, md+=좌측 컬럼)
-         md:relative 유지 필요: 주변 정보 탭 안의 SpotDetailSheet(상세 시트)가 absolute로 위치를 잡는데,
+        md:relative 유지 필요: 주변 정보 탭 안의 SpotDetailSheet(상세 시트)가 absolute로 위치를 잡는데,
         이 section이 relative여야 시트가 이 패널 안에서만 뜸.
         static으로 바꾸면 시트가 기준을 잃고 지도까지 덮는 전체화면으로 퍼져버림. */}
       <section
@@ -212,13 +227,14 @@ export function CourseDetail() {
                     <div>
                       {/* 모바일: 3줄로 접고 더보기 / 데스크톱(md+): 공간이 넉넉해 전체 표시 */}
                       <p
+                        ref={descRef}
                         className={`text-[14px] leading-relaxed text-ink md:line-clamp-none ${
                           descExpanded ? "" : "line-clamp-3"
                         }`}
                       >
                         {withLineBreaks(detail.description)}
                       </p>
-                      {detail.description.length > 80 && (
+                      {(descOverflow || descExpanded) && (
                         <button
                           type="button"
                           onClick={() => setDescExpanded((v) => !v)}
