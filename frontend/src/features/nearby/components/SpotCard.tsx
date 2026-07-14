@@ -2,11 +2,13 @@ import type { NearbySpot } from "../types";
 
 interface Props {
   spot: NearbySpot;
+  routeType: "trail" | "bicycle";
   onSelect: (spot: NearbySpot) => void;
 }
 
-export function SpotCard({ spot, onSelect }: Props) {
+export function SpotCard({ spot, routeType, onSelect }: Props) {
   const distanceLabel = spot.distance_m >= 1000 ? `${(spot.distance_m / 1000).toFixed(1)}km` : `${spot.distance_m}m`;
+  const modeLabel = routeType === "bicycle" ? "자전거" : "도보";
 
   return (
     <button
@@ -23,7 +25,7 @@ export function SpotCard({ spot, onSelect }: Props) {
         <p className="truncate text-[14px] font-bold text-ink">{spot.name}</p>
         <p className="line-clamp-1 text-[12px] text-caption">📍 {spot.address}</p>
         <p className="text-[12px] text-caption">
-          {distanceLabel} · 도보 {spot.walk_minutes}분
+          {distanceLabel} · {modeLabel} {spot.duration_minutes}분
         </p>
       </div>
     </button>

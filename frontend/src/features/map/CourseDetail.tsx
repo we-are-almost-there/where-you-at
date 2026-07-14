@@ -276,7 +276,7 @@ export function CourseDetail() {
                 </div>
               ) : (
                 <div className="mt-4">
-                  <Nearby courseId={courseId} />
+                  <Nearby courseId={courseId} routeType={routeType === "자전거" ? "bicycle" : "trail"} />
                 </div>
               )}
             </div>
