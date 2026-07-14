@@ -252,7 +252,7 @@ def fill_missing_details(conn):
  
         print(f"\n[INFO] 콘텐츠타입 {ctype_str} 누락 {len(missing)}건 재수집 시작")
         detail_rows = []
- 
+
         for i, content_id in enumerate(missing, 1):
             for retry in range(5):
                 try:
@@ -262,15 +262,26 @@ def fill_missing_details(conn):
                         detail_rows.append(intro)
                     time.sleep(1.0)
                     break
+                except RuntimeError as e:
+                    if "API_QUOTA_EXCEEDED" in str(e):
+                        print("[ERROR] 하루 API 할당량 초과 — 종료합니다.")
+                        if detail_rows:
+                            UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
+                        return False
                 except Exception as e:
                     if "429" in str(e):
+                        if retry == 4:
+                            print("[ERROR] 429 재시도 5회 실패 — 종료합니다.")
+                            if detail_rows:
+                                UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
+                            return False
                         wait = 10.0 * (retry + 1)
                         print(f"[WARN] 429 — {wait:.0f}초 대기 후 재시도 ({retry+1}/5)")
                         time.sleep(wait)
                     else:
                         print(f"[WARN] content_id={content_id}: {e}")
                         break
- 
+                    
             # 100건마다 중간 적재
             if len(detail_rows) >= 100:
                 UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
@@ -282,6 +293,8 @@ def fill_missing_details(conn):
  
         print(f"[INFO] 콘텐츠타입 {ctype_str} 재수집 완료")
 
+    return True
+
 
 def main():
     conn = get_db_connection()
@@ -292,7 +305,7 @@ def main():
             collect_by_content_type(conn, ct)
     finally:
         conn.close()
-    print("\n[INFO] 전체 수집 완료 ✅")
+    print("\n[INFO] 전체 수집 완료")
 
 
 def main_fill():
@@ -301,11 +314,14 @@ def main_fill():
     if not conn:
         return
     try:
-        fill_missing_details(conn)
+        completed = fill_missing_details(conn)
     finally:
         conn.close()
-    print("\n[INFO] 누락 상세 재수집 완료 ✅")
- 
+    
+    if completed:
+        print("\n[INFO] 누락 상세 재수집 완료")
+    else:
+        print("\n[INFO] 오늘 재수집 세션 종료 (내일 다시 실행하세요)")
  
 if __name__ == "__main__":
     args = sys.argv[1:]
