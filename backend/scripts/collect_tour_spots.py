@@ -113,7 +113,7 @@ def upsert_accommodation(conn, rows: list[dict]):
                     r.get("checkintime"),
                     r.get("checkouttime"),
                     r.get("parkinglodging"),
-                    r.get("reservationlodging"),
+                    r.get("reservationurl"),
                 )
                 for r in rows
             ],
@@ -154,6 +154,14 @@ UPSERT_DETAIL_FN = {
     "attraction": upsert_attraction,
     "accommodation": upsert_accommodation,
     "restaurant": upsert_restaurant,
+}
+
+DETAIL_TABLE_QUERY = {
+    "12": "attraction",
+    "14": "attraction",
+    "32": "accommodation",
+    "38": "attraction",
+    "39": "restaurant",
 }
 
 
@@ -227,6 +235,54 @@ def collect_by_content_type(conn, content_type_id: int):
     print(f"[INFO] 콘텐츠타입 {content_type_id} 완료 — {total_collected}건")
 
 
+def fill_missing_details(conn):
+    """tour_spot에는 있는데 상세 테이블에 없는 것들만 detailIntro 재수집"""
+    for ctype_str, detail_table in DETAIL_TABLE_QUERY.items():
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT content_id FROM tour_spot
+                WHERE content_type_id = %s
+                AND content_id NOT IN (SELECT content_id FROM {detail_table})
+            """, (ctype_str,))
+            missing = [row[0] for row in cur.fetchall()]
+ 
+        if not missing:
+            print(f"[INFO] 콘텐츠타입 {ctype_str} 누락 없음")
+            continue
+ 
+        print(f"\n[INFO] 콘텐츠타입 {ctype_str} 누락 {len(missing)}건 재수집 시작")
+        detail_rows = []
+ 
+        for i, content_id in enumerate(missing, 1):
+            for retry in range(5):
+                try:
+                    intro = fetch_detail_intro(content_id, ctype_str)
+                    if intro:
+                        intro["content_id"] = content_id
+                        detail_rows.append(intro)
+                    time.sleep(1.0)
+                    break
+                except Exception as e:
+                    if "429" in str(e):
+                        wait = 10.0 * (retry + 1)
+                        print(f"[WARN] 429 — {wait:.0f}초 대기 후 재시도 ({retry+1}/5)")
+                        time.sleep(wait)
+                    else:
+                        print(f"[WARN] content_id={content_id}: {e}")
+                        break
+ 
+            # 100건마다 중간 적재
+            if len(detail_rows) >= 100:
+                UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
+                print(f"[INFO] {i}/{len(missing)} 중간 적재 완료")
+                detail_rows = []
+ 
+        if detail_rows:
+            UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
+ 
+        print(f"[INFO] 콘텐츠타입 {ctype_str} 재수집 완료")
+
+
 def main():
     conn = get_db_connection()
     if not conn:
@@ -239,5 +295,21 @@ def main():
     print("\n[INFO] 전체 수집 완료 ✅")
 
 
+def main_fill():
+    """누락된 상세 정보만 재수집"""
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        fill_missing_details(conn)
+    finally:
+        conn.close()
+    print("\n[INFO] 누락 상세 재수집 완료 ✅")
+ 
+ 
 if __name__ == "__main__":
-    main()
+    args = sys.argv[1:]
+    if "--fill-details" in args:
+        main_fill()
+    else:
+        main()
