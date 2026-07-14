@@ -229,21 +229,30 @@ def _existing_images(conn, exclude_ids: set[int]) -> set[str]:
     return {img for cid, img in rows if cid not in exclude_ids}
 
 
-def _trail_waypoints(conn, course_id: int) -> list[dict]:
-    """DB에 적재된 도보 경로 좌표(이미지 선정용). 두루누비 GPX 재다운로드가 불필요."""
+def _course_waypoints(conn, course_id: int) -> list[dict]:
+    """이미지 선정용 경로 좌표(DB). 도보 우선, 없으면(자전거 전용 코스) 다른 주행방식으로 폴백.
+    DB 좌표를 쓰므로 두루누비 GPX 재다운로드가 불필요하다."""
     with conn.cursor() as cur:
         cur.execute(
             "SELECT lat, lng FROM course_waypoint "
             "WHERE course_id = %s AND route_type = 'trail' ORDER BY sequence_order",
             (course_id,),
         )
-        return [{"lat": float(la), "lng": float(ln)} for la, ln in cur.fetchall()]
+        rows = cur.fetchall()
+        if not rows:  # 자전거 전용 코스 등 도보 경로가 없는 경우
+            cur.execute(
+                "SELECT lat, lng FROM course_waypoint "
+                "WHERE course_id = %s ORDER BY route_type, sequence_order",
+                (course_id,),
+            )
+            rows = cur.fetchall()
+    return [{"lat": float(la), "lng": float(ln)} for la, ln in rows]
 
 
 def fill_images(start: int, count: int) -> None:
     """GPX·경로는 건드리지 않고 course.image_url만 다시 채운다.
 
-    수집 대상 목록(COURSES 30개)이 아니라 **DB에 적재된 코스 전체**를 id 순으로 처리한다.
+    수집 대상 목록(COURSES 30개)이 아니라 DB에 적재된 코스 전체를 id 순으로 처리한다.
     [start:start+count] 슬라이스로 배치 실행할 수 있고(count<0이면 start부터 끝까지),
     중복 방지(dedup)는 DB 기준이라 배치를 나눠 돌려도 누적된다.
     경로 좌표는 DB에서 읽으므로 두루누비 재요청이 없어 빠르다.
@@ -261,7 +270,7 @@ def fill_images(start: int, count: int) -> None:
     print(f"대상 {total}개 (DB {len(all_rows)}개 중 index {start}~{start + total})\n")
 
     for i, (course_id, title) in enumerate(batch, 1):
-        wps = _trail_waypoints(conn, course_id)
+        wps = _course_waypoints(conn, course_id)
         image_url = find_course_image(wps, used=used) if len(wps) >= 2 else None
         if image_url:
             with conn.cursor() as cur:
@@ -290,24 +299,21 @@ def backfill_images() -> None:
     with conn.cursor() as cur:
         cur.execute("SELECT id, course_title FROM course WHERE image_url IS NULL ORDER BY id")
         targets = cur.fetchall()
+    used = _existing_images(conn, set())  # 이미 배정된 이미지와 중복 방지
     print(f"이미지 없는 코스 {len(targets)}개")
 
     filled = 0
     for i, (cid, title) in enumerate(targets, 1):
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT lat, lng FROM course_waypoint WHERE course_id = %s ORDER BY route_type, sequence_order",
-                (cid,),
-            )
-            wps = [{"lat": r[0], "lng": r[1]} for r in cur.fetchall()]
+        wps = _course_waypoints(conn, cid)
         if not wps:
             print(f"[{i}/{len(targets)}] {title} - 좌표 없음, 건너뜀")
             continue
-        img = find_course_image(wps)
+        img = find_course_image(wps, used=used) if len(wps) >= 2 else None
         if img:
             with conn.cursor() as cur:
                 cur.execute("UPDATE course SET image_url = %s WHERE id = %s", (img, cid))
             conn.commit()
+            used.add(img)  # 이번 실행 내 중복도 방지
             filled += 1
         print(f"[{i}/{len(targets)}] {title} → {'O' if img else 'X'}")
         time.sleep(0.3)
