@@ -1,18 +1,9 @@
+import { pageBlock } from "../pagination";
+
 interface Props {
   page: number;
   totalPages: number;
   onChange: (page: number) => void;
-}
-
-const BLOCK_SIZE = 5; // 한 번에 노출할 페이지 번호 개수
-
-// 현재 페이지가 속한 블록의 시작·끝·번호 목록을 계산한다 (단위테스트 대상).
-// 화살표는 이 블록 단위로 이동한다: 1페이지(1–5)에서 › → 6페이지로 가 6–10 창이 열린다.
-export function pageBlock(page: number, totalPages: number, blockSize = BLOCK_SIZE) {
-  const blockStart = Math.floor((page - 1) / blockSize) * blockSize + 1;
-  const blockEnd = Math.min(blockStart + blockSize - 1, totalPages);
-  const pages = Array.from({ length: blockEnd - blockStart + 1 }, (_, i) => blockStart + i);
-  return { blockStart, blockEnd, pages };
 }
 
 export function Pagination({ page, totalPages, onChange }: Props) {

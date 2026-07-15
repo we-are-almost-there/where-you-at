@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pageBlock } from "./Pagination";
+import { pageBlock } from "../pagination";
 
 // 화살표는 블록 단위로 이동한다. 이동 목적지는 UI가 blockStart-1 / blockEnd+1 로 계산하므로
 // 여기서는 블록 경계(blockStart/blockEnd)와 노출 번호(pages)가 정확한지 검증한다.
