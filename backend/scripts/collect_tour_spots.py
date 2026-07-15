@@ -175,6 +175,7 @@ def collect_by_content_type(conn, content_type_id: int):
     page_no = 1
     num_of_rows = 100
     total_collected = 0
+    max_pages = None  # 첫 페이지 응답 후 설정
 
     while True:
         try:
@@ -185,6 +186,9 @@ def collect_by_content_type(conn, content_type_id: int):
 
         if not items:
             break
+
+        if max_pages is None:
+            max_pages = -(-total_count // num_of_rows) + 1
 
         spot_rows = []
         detail_rows = []
@@ -226,9 +230,9 @@ def collect_by_content_type(conn, content_type_id: int):
         total_collected += len(spot_rows)
         print(f"[INFO] page {page_no} 완료 | 누적 {total_collected} / {total_count}")
 
-        if total_collected >= total_count:
+        if total_collected >= total_count or page_no > max_pages:
             break
-
+        
         page_no += 1
         time.sleep(0.1)
 
@@ -261,27 +265,17 @@ def fill_missing_details(conn):
                         intro["content_id"] = content_id
                         detail_rows.append(intro)
                     time.sleep(1.0)
-                    break
                 except RuntimeError as e:
                     if "API_QUOTA_EXCEEDED" in str(e):
-                        print("[ERROR] 하루 API 할당량 초과 — 종료합니다.")
-                        if detail_rows:
-                            UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
-                        return False
+                        print("[ERROR] API 할당량 초과 — 수집 중단. 누락된 상세 데이터는 --fill-details로 재수집하세요.")
+                        upsert_tour_spots(conn, spot_rows)
+                        UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
+                        return
                 except Exception as e:
-                    if "429" in str(e):
-                        if retry == 4:
-                            print("[ERROR] 429 재시도 5회 실패 — 종료합니다.")
-                            if detail_rows:
-                                UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
-                            return False
-                        wait = 10.0 * (retry + 1)
-                        print(f"[WARN] 429 — {wait:.0f}초 대기 후 재시도 ({retry+1}/5)")
-                        time.sleep(wait)
-                    else:
-                        print(f"[WARN] content_id={content_id}: {e}")
-                        break
-                    
+                    # 429·기타 에러는 스킵하고 계속 진행
+                    # 상세 테이블 누락분은 --fill-details로 재수집
+                    print(f"[WARN] detailIntro 실패 content_id={content_id}: {e}")
+                        
             # 100건마다 중간 적재
             if len(detail_rows) >= 100:
                 UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
@@ -309,7 +303,12 @@ def main():
 
 
 def main_fill():
-    """누락된 상세 정보만 재수집"""
+    """누락된 상세 정보만 재수집.
+    
+    기존 스크립트 실행 시 detailIntro 호출 시간 텀이 짧아
+    상세 테이블(attraction/accommodation/restaurant)에 누락이 발생할 수 있다.
+    이 옵션은 tour_spot에는 있으나 상세 테이블에 없는 데이터만 선별해 재수집한다.
+    """
     conn = get_db_connection()
     if not conn:
         return
