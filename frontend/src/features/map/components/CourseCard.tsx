@@ -19,6 +19,8 @@ export function CourseCard({ course, routeType, onSelect }: Props) {
   const route =
     course.routes.find((r) => r.route_type === routeType) ?? course.routes[0];
   const points = routeType === "자전거" ? course.path_bicycle : course.path_trail;
+  // RoutePreview가 그릴 수 있는 최소 좌표 수(<2면 null). 이미지·경로 둘 다 없을 때 fallback 판단에 씀.
+  const hasRoute = points.length >= 2;
 
   return (
     <article className="@container h-full">
@@ -27,24 +29,37 @@ export function CourseCard({ course, routeType, onSelect }: Props) {
         onClick={() => onSelect?.(course)}
         className="flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[14px] bg-white text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)]"
       >
-        {/* 미리보기: 좌(경로) + 우(썸네일) */}
+        {/* 미리보기: 경로와 대표 사진이 모두 있으면 반씩 표시하고, 하나만 있으면 전체 폭.
+            둘 다 없으면 🏞️ fallback을 유지한다. */}
         <div className="flex h-[120px] shrink-0">
-          <div className="relative w-1/2 overflow-hidden bg-mapbg">
-            <RoutePreview points={points} />
-          </div>
-          <div className="flex w-1/2 items-center justify-center bg-lavender">
-            {course.image_url ? (
+          {(hasRoute || !course.image_url) && (
+            <div
+              className={`relative flex items-center justify-center overflow-hidden bg-mapbg ${
+                course.image_url ? "w-1/2" : "w-full"
+              }`}
+            >
+              {hasRoute ? (
+                <RoutePreview points={points} />
+              ) : (
+                <span className="text-[26px]" aria-hidden="true">
+                  🏞️
+                </span>
+              )}
+            </div>
+          )}
+          {course.image_url && (
+            <div
+              className={`flex items-center justify-center bg-lavender ${
+                hasRoute ? "w-1/2" : "w-full"
+              }`}
+            >
               <img
                 src={course.image_url}
                 alt={course.title}
                 className="h-full w-full object-cover"
               />
-            ) : (
-              <span className="text-[26px]" aria-hidden="true">
-                🏞️
-              </span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* 본문 (flex-1로 카드 높이를 채워, 아래 구분선+footer를 mt-auto로 바닥 정렬) */}
