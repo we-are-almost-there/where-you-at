@@ -209,12 +209,13 @@ def fetch_detail_intro(
     content_id: str,
     content_type_id: str,
 ) -> dict | None:
+    
     """타입별 부가 정보를 조회한다.
 
     관광지·숙박·음식점 유형에 따라 주차, 영업시간,
     체크인·체크아웃 등의 상세정보가 반환된다.
     """
-
+        
     params = {
         "serviceKey": settings.tour_api_key,
         "MobileOS": "ETC",
@@ -230,6 +231,19 @@ def fetch_detail_intro(
             params=params,
             timeout=15,
         )
+
+        # 할당량 초과 체크 (200 응답이지만 에러 메시지)
+        if "quota exceeded" in response.text.lower():
+            raise RuntimeError("API_QUOTA_EXCEEDED")
+
+        # 429 체크
+        if response.status_code == 429:
+            raise httpx.HTTPStatusError(
+                "429 Too Many Requests",
+                request=response.request,
+                response=response,
+            )
+
         response.raise_for_status()
 
         items = (
@@ -242,6 +256,12 @@ def fetch_detail_intro(
         results = _extract_batch_items(items)
         return results[0] if results else None
 
+    except RuntimeError:
+        raise  # API_QUOTA_EXCEEDED는 그대로 올려보냄
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429:
+            raise RuntimeError("RATE_LIMITED") # collect_tour_spots.py에서 재시도 처리
+        return None
     except (httpx.HTTPError, ValueError, TypeError):
         return None
 
