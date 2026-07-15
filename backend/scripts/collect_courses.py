@@ -13,8 +13,8 @@ course_waypoint ← 주행방식별 좌표 (도보=GPX, 자전거=OSRM)
   python scripts/collect_courses.py --reset           # ⚠️ course 전체 삭제 + id 1부터 초기화(파괴적)
   python scripts/collect_courses.py --all [--resume]  # API 전체 코스 적재(--resume: 이미 적재된 건 건너뜀)
   python scripts/collect_courses.py --clean           # 시범 코스 삭제
-  python scripts/collect_courses.py --images          # 시범 코스 이미지만 채움
-  python scripts/collect_courses.py --backfill-images # image_url NULL인 전체 코스 이미지 백필(쿼터 리셋 후 재실행 가능)
+  python scripts/collect_courses.py --images [--start N --count M]  # DB 적재분 이미지 재적재(중복 회피+관광 타입 필터, 배치 가능)
+  python scripts/collect_courses.py --backfill-images # image_url NULL인 코스만 백필(쿼터 리셋 후 재실행 가능)
 """
 import sys
 import os
@@ -220,42 +220,73 @@ def collect(targets: list[str] | None = None, resume: bool = False) -> None:
     print(f"[NULL 리포트] {_NULL_REPORT_PATH}")
 
 
-def fill_images(limit: int) -> None:
-    """기존 GPX, 경로 데이터는 건드리지 않고 이미지만 채운다."""
+def _existing_images(conn, exclude_ids: set[int]) -> set[str]:
+    """이미 DB에 저장된 image_url 집합(중복 방지 기준). 이번 배치 대상은 제외해
+    자기 자신의 기존 이미지 때문에 재선정이 막히지 않게 한다."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, image_url FROM course WHERE image_url IS NOT NULL")
+        rows = cur.fetchall()
+    return {img for cid, img in rows if cid not in exclude_ids}
+
+
+def _course_waypoints(conn, course_id: int) -> list[dict]:
+    """이미지 선정용 경로 좌표(DB). 도보 우선, 없으면(자전거 전용 코스) 다른 주행방식으로 폴백.
+    DB 좌표를 쓰므로 두루누비 GPX 재다운로드가 불필요하다."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT lat, lng FROM course_waypoint "
+            "WHERE course_id = %s AND route_type = 'trail' ORDER BY sequence_order",
+            (course_id,),
+        )
+        rows = cur.fetchall()
+        if not rows:  # 자전거 전용 코스 등 도보 경로가 없는 경우
+            cur.execute(
+                "SELECT lat, lng FROM course_waypoint "
+                "WHERE course_id = %s ORDER BY route_type, sequence_order",
+                (course_id,),
+            )
+            rows = cur.fetchall()
+    return [{"lat": float(la), "lng": float(ln)} for la, ln in rows]
+
+
+def fill_images(start: int, count: int) -> None:
+    """GPX·경로는 건드리지 않고 course.image_url만 다시 채운다.
+
+    수집 대상 목록(COURSES 30개)이 아니라 DB에 적재된 코스 전체를 id 순으로 처리한다.
+    [start:start+count] 슬라이스로 배치 실행할 수 있고(count<0이면 start부터 끝까지),
+    중복 방지(dedup)는 DB 기준이라 배치를 나눠 돌려도 누적된다.
+    경로 좌표는 DB에서 읽으므로 두루누비 재요청이 없어 빠르다.
+    """
     conn = get_db_connection()
 
-    print("두루누비 전체 코스 조회 중")
-    all_courses = fetch_all_courses()
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, course_title FROM course ORDER BY id")
+        all_rows = cur.fetchall()
 
-    targets = [c["crs_idx"] for c in COURSES[:limit]]
+    batch = all_rows[start:] if count < 0 else all_rows[start:start + count]
+    batch_ids = {cid for cid, _ in batch}
+    used = _existing_images(conn, batch_ids)  # 다른 코스가 이미 쓰는 이미지
+    total = len(batch)
+    print(f"대상 {total}개 (DB {len(all_rows)}개 중 index {start}~{start + total})\n")
 
-    for i, crs_idx in enumerate(targets, 1):
-        api = all_courses.get(crs_idx)
-        if not api:
-            continue
-
-        trail_wps = []
-        if api.get("gpxpath"):
-            try:
-                trail_wps = parse(fetch_gpx(api["gpxpath"]))
-            except Exception:
-                pass
-
-        image_url = find_course_image(trail_wps) if trail_wps else None
+    for i, (course_id, title) in enumerate(batch, 1):
+        wps = _course_waypoints(conn, course_id)
+        image_url = find_course_image(wps, used=used) if len(wps) >= 2 else None
         if image_url:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE course SET image_url = %s WHERE source_id = %s",
-                    (image_url, crs_idx),
+                    "UPDATE course SET image_url = %s WHERE id = %s",
+                    (image_url, course_id),
                 )
             conn.commit()
-        print(f"[{i}/{limit}] {api['crsKorNm']} → {'O' if image_url else 'X'}")
+            used.add(image_url)  # 다음 코스가 같은 사진을 피하도록
+        print(f"[{start + i}/{start + total}] {title} → {'O' if image_url else 'X'}")
 
-        if i < limit:
+        if i < total:
             time.sleep(0.5)
 
     conn.close()
-    print(f"\n[완료] {limit}개 이미지 업데이트")
+    print(f"\n[완료] index {start}~{start + total} 이미지 업데이트")
 
 
 def backfill_images() -> None:
@@ -268,24 +299,21 @@ def backfill_images() -> None:
     with conn.cursor() as cur:
         cur.execute("SELECT id, course_title FROM course WHERE image_url IS NULL ORDER BY id")
         targets = cur.fetchall()
+    used = _existing_images(conn, set())  # 이미 배정된 이미지와 중복 방지
     print(f"이미지 없는 코스 {len(targets)}개")
 
     filled = 0
     for i, (cid, title) in enumerate(targets, 1):
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT lat, lng FROM course_waypoint WHERE course_id = %s ORDER BY route_type, sequence_order",
-                (cid,),
-            )
-            wps = [{"lat": r[0], "lng": r[1]} for r in cur.fetchall()]
+        wps = _course_waypoints(conn, cid)
         if not wps:
             print(f"[{i}/{len(targets)}] {title} - 좌표 없음, 건너뜀")
             continue
-        img = find_course_image(wps)
+        img = find_course_image(wps, used=used) if len(wps) >= 2 else None
         if img:
             with conn.cursor() as cur:
                 cur.execute("UPDATE course SET image_url = %s WHERE id = %s", (img, cid))
             conn.commit()
+            used.add(img)  # 이번 실행 내 중복도 방지
             filled += 1
         print(f"[{i}/{len(targets)}] {title} → {'O' if img else 'X'}")
         time.sleep(0.3)
@@ -307,6 +335,15 @@ def clean(limit: int) -> None:
     print(f"[삭제 완료] source_id {source_ids}")
 
 
+def _arg_int(args: list[str], flag: str, default: int) -> int:
+    """`--flag N` 형태에서 정수 값을 읽는다. 없으면 default."""
+    if flag in args:
+        idx = args.index(flag)
+        if idx + 1 < len(args):
+            return int(args[idx + 1])
+    return default
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
 
@@ -315,8 +352,12 @@ if __name__ == "__main__":
     elif "--clean" in args:
         clean(TRIAL_LIMIT)
     elif "--images" in args:
-        fill_images(len(COURSES))
+        # DB 적재분 전체 이미지 재적재(중복 회피 + 관광 타입 필터). 배치: --start N --count M
+        start = _arg_int(args, "--start", 0)
+        count = _arg_int(args, "--count", -1)  # -1 = start부터 끝까지
+        fill_images(start, count)
     elif "--backfill-images" in args:
+        # image_url이 NULL인 코스만 채움(재적재 아님)
         backfill_images()
     elif "--all" in args:
         collect(resume="--resume" in args)
