@@ -222,6 +222,9 @@ def collect_by_content_type(conn, content_type_id: int):
                     detail_rows.append(intro)
                 time.sleep(0.5)
             except Exception as e:
+                # 429(레이트 리밋)·기타 에러는 스킵하고 계속 진행
+                # collect_by_content_type은 tour_spot 공통 데이터 수집이 주목적이므로
+                # 상세 테이블 누락분은 --fill-details(fill_missing_details)로 재수집
                 print(f"[WARN] detailIntro 실패 content_id={content_id}: {e}")
 
         upsert_tour_spots(conn, spot_rows)
@@ -240,7 +243,9 @@ def collect_by_content_type(conn, content_type_id: int):
 
 
 def fill_missing_details(conn):
-    """tour_spot에는 있는데 상세 테이블에 없는 것들만 detailIntro 재수집"""
+    """tour_spot에는 있는데 상세 테이블에 없는 것들만 detailIntro 재수집.
+    429 레이트 리밋 발생 시 최대 5회 재시도 (10초~50초 간격) 포함.
+    """
     for ctype_str, detail_table in DETAIL_TABLE_QUERY.items():
         with conn.cursor() as cur:
             cur.execute(f"""
@@ -265,16 +270,19 @@ def fill_missing_details(conn):
                         intro["content_id"] = content_id
                         detail_rows.append(intro)
                     time.sleep(1.0)
+                    break  # 성공 시 재시도 루프 탈출
                 except RuntimeError as e:
                     if "API_QUOTA_EXCEEDED" in str(e):
-                        print("[ERROR] API 할당량 초과 — 수집 중단. 누락된 상세 데이터는 --fill-details로 재수집하세요.")
-                        upsert_tour_spots(conn, spot_rows)
-                        UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
-                        return
-                except Exception as e:
-                    # 429·기타 에러는 스킵하고 계속 진행
-                    # 상세 테이블 누락분은 --fill-details로 재수집
-                    print(f"[WARN] detailIntro 실패 content_id={content_id}: {e}")
+                        print("[ERROR] API 할당량 초과 — 종료합니다.")
+                        if detail_rows:
+                            UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
+                        return False
+                    elif "RATE_LIMITED" in str(e):
+                        wait = 10.0 * (retry + 1)
+                        print(f"[WARN] 429 — {wait:.0f}초 대기 후 재시도 ({retry+1}/5)")
+                        time.sleep(wait)
+                    else:
+                        break
                         
             # 100건마다 중간 적재
             if len(detail_rows) >= 100:

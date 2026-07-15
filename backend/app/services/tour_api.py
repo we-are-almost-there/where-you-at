@@ -206,7 +206,7 @@ def fetch_detail_intro(
         raise  # API_QUOTA_EXCEEDED는 그대로 올려보냄
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429:
-            raise  # 429는 collect_tour_spots.py에서 처리
+            raise RuntimeError("RATE_LIMITED") # collect_tour_spots.py에서 재시도 처리
         return None
     except (httpx.HTTPError, ValueError, TypeError):
         return None
