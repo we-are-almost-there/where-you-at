@@ -246,20 +246,13 @@ export function CourseDetail() {
                     </div>
                   )}
 
-                  {/* 코스 대표 사진 — 원본 비율 그대로(세로 전부 노출, 잘림/회색 박스 없음) */}
-                  {detail.image_url ? (
+                  {/* 코스 대표 사진 — 원본 비율 그대로. 없으면 표시 안 함 */}
+                  {detail.image_url && (
                     <img
                       src={detail.image_url}
                       alt={detail.title}
                       className="mt-3 w-full rounded-[14px]"
                     />
-                  ) : (
-                    <div className="mt-3 flex aspect-[16/9] flex-col items-center justify-center gap-1 rounded-[14px] bg-mapbg text-caption">
-                      <span className="text-[24px]" aria-hidden="true">
-                        🏞️
-                      </span>
-                      <span className="text-[13px]">코스 대표 사진</span>
-                    </div>
                   )}
 
                   {/* 도보 / 자전거 선택 */}
