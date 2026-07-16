@@ -3,8 +3,6 @@ import { CustomOverlayMap, Map, Polyline } from "react-kakao-maps-sdk";
 import { getCourseGpx } from "./coursesApi";
 import type { LatLng, RouteType } from "./types";
 
-declare const kakao: any;
-
 interface Props {
   /** 지정 시 해당 코스의 GPX 폴리라인을 렌더. 없으면 개요 지도만 표시(목록 뷰). */
   courseId?: number;

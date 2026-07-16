@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { KakaoMap } from "./KakaoMap";
 import { CourseFilters } from "./components/CourseFilters";
 import { DifficultyFilter } from "./components/DifficultyFilter";
@@ -11,6 +11,7 @@ import { buildCourseQuery, DEFAULT_PAGE_SIZE } from "./coursesMock";
 import { getCourses, getRegions } from "./coursesApi";
 import { buildRegionOptions, type RegionSelectItem } from "./regionOptions";
 import type { CourseFilterState, CourseListResponse, LatLng, RouteType } from "./types";
+import { buildCourseSearchParams, parseCourseUrlState, type CourseUrlState } from "./courseUrlState";
 
 const EMPTY_RES: CourseListResponse = {
   total_count: 0,
@@ -19,19 +20,10 @@ const EMPTY_RES: CourseListResponse = {
   courses: [],
 };
 
-const INITIAL_FILTERS: CourseFilterState = {
-  keyword: "",
-  region: "",
-  distance: "",
-  difficulty: "",
-  sort: "nearest",
-};
-
 export function CourseExplore() {
   const navigate = useNavigate();
-  const [routeType, setRouteType] = useState<RouteType>("도보");
-  const [filters, setFilters] = useState<CourseFilterState>(INITIAL_FILTERS);
-  const [page, setPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { routeType, filters, page } = useMemo(() => parseCourseUrlState(searchParams), [searchParams]);
   const [userLoc, setUserLoc] = useState<LatLng | null>(null);
   const [geoDenied, setGeoDenied] = useState(false);
   const [regionOptions, setRegionOptions] = useState<RegionSelectItem[]>([]);
@@ -110,14 +102,28 @@ export function CourseExplore() {
 
   const totalPages = Math.max(1, Math.ceil(res.total_count / DEFAULT_PAGE_SIZE));
 
+  const updateUrlState = (next: CourseUrlState, replace = false) => {
+    setSearchParams(buildCourseSearchParams(next), { replace });
+  };
+
+  // 공유 URL의 page가 현재 필터 결과 범위를 벗어나면 마지막 유효 페이지로 교정한다.
+  useEffect(() => {
+    if (loading || error || res.total_count === 0 || page <= totalPages) return;
+    setSearchParams(buildCourseSearchParams({ routeType, filters, page: totalPages }), { replace: true });
+  }, [loading, error, res.total_count, page, totalPages, routeType, filters, setSearchParams]);
+
   // 필터·탭 변경 시 1페이지로 리셋
   const changeFilters = (next: CourseFilterState) => {
-    setFilters(next);
-    setPage(1);
+    const keywordOnly =
+      next.keyword !== filters.keyword &&
+      next.region === filters.region &&
+      next.distance === filters.distance &&
+      next.difficulty === filters.difficulty &&
+      next.sort === filters.sort;
+    updateUrlState({ routeType, filters: next, page: 1 }, keywordOnly);
   };
   const changeType = (next: RouteType) => {
-    setRouteType(next);
-    setPage(1);
+    updateUrlState({ routeType: next, filters, page: 1 });
   };
 
   return (
@@ -167,9 +173,15 @@ export function CourseExplore() {
               <CourseList
                 courses={res.courses}
                 routeType={routeType}
-                onSelect={(course) => navigate(`/courses/${course.id}`)}
+                onSelect={(course) =>
+                  navigate(`/courses/${course.id}${routeType === "자전거" ? "?type=bicycle" : ""}`)
+                }
               />
-              <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                onChange={(nextPage) => updateUrlState({ routeType, filters, page: nextPage })}
+              />
             </>
           )}
         </div>

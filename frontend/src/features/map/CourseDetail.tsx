@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { KakaoMap } from "./KakaoMap";
 import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "./components/ErrorNotice";
 import { getCourseDetail } from "./coursesApi";
 import type { CourseDetail as CourseDetailData, RouteDetail, RouteType } from "./types";
 import { Nearby } from "../nearby";
+import { parseRouteTypeParam, setRouteTypeParam } from "./courseUrlState";
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
@@ -67,12 +68,13 @@ function ModeCard({
 export function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const courseId = Number(id);
 
   const [detail, setDetail] = useState<CourseDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [routeType, setRouteType] = useState<RouteType>("도보");
+  const routeType = parseRouteTypeParam(searchParams);
   const [infoTab, setInfoTab] = useState<InfoTab>("course");
   const [descExpanded, setDescExpanded] = useState(false);
   const descRef = useRef<HTMLParagraphElement>(null);
@@ -89,10 +91,6 @@ export function CourseDetail() {
         if (cancelled) return;
         setDetail(d);
         setError(null);
-        // 도보 경로가 없으면 보유한 첫 주행방식으로 초기 선택
-        if (!d.routes.some((r) => r.route_type === "도보") && d.routes[0]) {
-          setRouteType(d.routes[0].route_type);
-        }
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "코스를 불러오지 못했어요"))
       .finally(() => !cancelled && setLoading(false));
@@ -100,6 +98,20 @@ export function CourseDetail() {
       cancelled = true;
     };
   }, [courseId, validId, retryTick]);
+
+  // URL로 요청한 주행 방식이 없는 코스라면 보유한 첫 경로로 URL을 교정한다.
+  useEffect(() => {
+    if (!detail || detail.routes.some((route) => route.route_type === routeType) || !detail.routes[0]) return;
+    const nextParams = new URLSearchParams(searchParams);
+    setRouteTypeParam(nextParams, detail.routes[0].route_type);
+    setSearchParams(nextParams, { replace: true });
+  }, [detail, routeType, searchParams, setSearchParams]);
+
+  const changeRouteType = (next: RouteType) => {
+    const nextParams = new URLSearchParams(searchParams);
+    setRouteTypeParam(nextParams, next);
+    setSearchParams(nextParams);
+  };
 
   const retry = () => {
     setLoading(true);
@@ -262,7 +274,7 @@ export function CourseDetail() {
                         key={r.route_type}
                         route={r}
                         active={r.route_type === routeType}
-                        onSelect={() => setRouteType(r.route_type)}
+                        onSelect={() => changeRouteType(r.route_type)}
                       />
                     ))}
                   </div>

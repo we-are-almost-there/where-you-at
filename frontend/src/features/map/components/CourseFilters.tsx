@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { CourseFilterState } from "../types";
 import { isGroup, type RegionSelectItem } from "../regionOptions";
 import { DISTANCE_OPTIONS, SORT_OPTIONS } from "../coursesMock";
@@ -46,15 +46,59 @@ function FilterSelect({
 }
 
 export function CourseFilters({ value, onChange, regionOptions }: Props) {
+  const composingRef = useRef(false);
+  const keywordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestValueRef = useRef(value);
+  const latestOnChangeRef = useRef(onChange);
+  const [keywordDraft, setKeywordDraft] = useState({
+    urlValue: value.keyword,
+    inputValue: value.keyword,
+  });
+  const keyword = keywordDraft.urlValue === value.keyword ? keywordDraft.inputValue : value.keyword;
+
   const set = <K extends keyof CourseFilterState>(key: K, v: CourseFilterState[K]) =>
     onChange({ ...value, [key]: v });
+
+  const scheduleKeywordChange = (next: string, delay = 250) => {
+    if (keywordTimerRef.current) clearTimeout(keywordTimerRef.current);
+    keywordTimerRef.current = setTimeout(() => {
+      latestOnChangeRef.current({ ...latestValueRef.current, keyword: next });
+      keywordTimerRef.current = null;
+    }, delay);
+  };
+
+  const changeKeyword = (next: string) => {
+    setKeywordDraft({ urlValue: value.keyword, inputValue: next });
+    if (!composingRef.current) scheduleKeywordChange(next);
+  };
+
+  useEffect(() => {
+    latestValueRef.current = value;
+    latestOnChangeRef.current = onChange;
+  }, [value, onChange]);
+
+  useEffect(
+    () => () => {
+      if (keywordTimerRef.current) clearTimeout(keywordTimerRef.current);
+    },
+    [],
+  );
 
   return (
     <div className="flex flex-col gap-2.5">
       <input
         type="search"
-        value={value.keyword}
-        onChange={(e) => set("keyword", e.target.value)}
+        value={keyword}
+        onChange={(e) => changeKeyword(e.target.value)}
+        onCompositionStart={() => {
+          composingRef.current = true;
+          if (keywordTimerRef.current) clearTimeout(keywordTimerRef.current);
+        }}
+        onCompositionEnd={(e) => {
+          composingRef.current = false;
+          changeKeyword(e.currentTarget.value);
+        }}
+        onBlur={(e) => scheduleKeywordChange(e.currentTarget.value, 0)}
         placeholder="코스 이름 검색"
         className="w-full rounded-lg border border-divider bg-white px-3.5 py-2.5 text-[14px] text-ink placeholder:text-caption focus:border-accent focus:outline-none"
       />
