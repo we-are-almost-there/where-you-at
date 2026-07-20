@@ -6,6 +6,7 @@ import { getCourseDetail } from "./coursesApi";
 import type { CourseDetail as CourseDetailData, RouteDetail, RouteType } from "./types";
 import { Nearby } from "../nearby";
 import { parseRouteTypeParam, setRouteTypeParam } from "./courseUrlState";
+import { useCourseTracking } from "./useCourseTracking";
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
@@ -82,6 +83,7 @@ export function CourseDetail() {
   const [sheetExpanded, setSheetExpanded] = useState(true); // 모바일 바텀시트 펼침/접힘
   const [retryTick, setRetryTick] = useState(0); // '다시 시도' 트리거
   const validId = Number.isFinite(courseId);
+  const { currentLocation, isTracking, error: trackingError, startTracking, stopTracking } = useCourseTracking();
 
   useEffect(() => {
     if (!validId) return; // 잘못된 id는 아래 렌더에서 파생 처리
@@ -153,6 +155,8 @@ export function CourseDetail() {
           courseId={Number.isFinite(courseId) ? courseId : undefined}
           routeType={routeType}
           bottomInset={mapBottomInset}
+          currentLocation={currentLocation}
+          followCurrentLocation={isTracking}
         />
       </div>
 
@@ -222,7 +226,10 @@ export function CourseDetail() {
                       type="button"
                       role="tab"
                       aria-selected={active}
-                      onClick={() => setInfoTab(key)}
+                      onClick={() => {
+                        if (key === "nearby") stopTracking();
+                        setInfoTab(key);
+                      }}
                       className={`flex-1 cursor-pointer rounded-[14px] py-2 text-[16px] font-bold transition-colors ${
                         active ? "bg-white text-ink shadow-[0px_2px_4px_0px_rgba(0,0,0,0.12)]" : "text-caption"
                       }`}
@@ -292,11 +299,27 @@ export function CourseDetail() {
               className="shrink-0 px-5 pt-3"
               style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
             >
+              {trackingError && (
+                <p role="alert" className="mb-2 text-center text-[13px] leading-relaxed text-caption">
+                  {trackingError}
+                </p>
+              )}
               <button
                 type="button"
-                className="flex h-14 w-full cursor-pointer items-center justify-center gap-2 rounded-[14px] bg-accent text-[15px] font-bold text-lavender"
+                onClick={isTracking ? stopTracking : startTracking}
+                disabled={!activeRoute}
+                aria-pressed={isTracking}
+                className={`flex h-14 w-full items-center justify-center gap-2 rounded-[14px] text-[15px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
+                  isTracking
+                    ? "cursor-pointer border border-accent bg-white text-accent"
+                    : "cursor-pointer bg-accent text-lavender"
+                }`}
               >
-                {activeRoute ? MODE_ICON[activeRoute.route_type] : "🚶"} 따라가기
+                {isTracking
+                  ? currentLocation
+                    ? "■ 따라가기 종료"
+                    : "⌖ 현재 위치 확인 중…"
+                  : `${activeRoute ? MODE_ICON[activeRoute.route_type] : "🚶"} 따라가기`}
               </button>
             </div>
            )}

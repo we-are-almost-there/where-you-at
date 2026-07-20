@@ -11,6 +11,10 @@ interface Props {
   endLabel?: string;
   /** 하단이 바텀시트에 가릴 때, 그 높이(px)만큼 코스를 위로 올려 fit (모바일). */
   bottomInset?: number;
+  /** 코스 따라가기 중 표시할 사용자의 현재 위치. */
+  currentLocation?: LatLng | null;
+  /** 현재 위치가 갱신될 때 지도 중심도 함께 이동할지 여부. */
+  followCurrentLocation?: boolean;
 }
 
 // 출발/도착 지점 라벨 + 색상 점 (디자인: 초록 출발 / 빨강 도착)
@@ -32,12 +36,26 @@ function EndpointMarker({ point, color, label }: { point: LatLng; color: string;
   );
 }
 
+function CurrentLocationMarker({ point }: { point: LatLng }) {
+  return (
+    <CustomOverlayMap position={point} xAnchor={0.5} yAnchor={0.5}>
+      <div
+        role="img"
+        aria-label="현재 위치"
+        className="size-5 rounded-full border-[3px] border-white bg-accent shadow-[0_1px_5px_rgba(0,0,0,0.4)]"
+      />
+    </CustomOverlayMap>
+  );
+}
+
 export function KakaoMap({
   courseId,
   routeType = "도보",
   startLabel = "출발",
   endLabel = "도착",
   bottomInset = 0,
+  currentLocation = null,
+  followCurrentLocation = false,
 }: Props) {
   const [sdkReady, setSdkReady] = useState(false);
   const [waypoints, setWaypoints] = useState<LatLng[]>([]);
@@ -74,6 +92,11 @@ export function KakaoMap({
     map.setBounds(bounds, pad, pad, pad + bottomInset, pad);
   }, [map, waypoints, bottomInset]);
 
+  useEffect(() => {
+    if (!map || !followCurrentLocation || !currentLocation) return;
+    map.panTo(new kakao.maps.LatLng(currentLocation.lat, currentLocation.lng));
+  }, [map, currentLocation, followCurrentLocation, waypoints]);
+
   if (!sdkReady) return null;
 
   return (
@@ -90,6 +113,7 @@ export function KakaoMap({
           <EndpointMarker point={waypoints[waypoints.length - 1]} color="#FF4D4F" label={endLabel} />
         </>
       )}
+      {currentLocation && <CurrentLocationMarker point={currentLocation} />}
     </Map>
   );
 }
