@@ -271,7 +271,7 @@ create table nearby_spot (
 );
 
 -- 인덱스 생성
-create index idx_nearby_base on nearby_spot (base_type, base_id);
+create index idx_nearby_base on nearby_spot (base_type, base_id, route_type);
 create index idx_nearby_type on nearby_spot (nearby_type);
 
 
