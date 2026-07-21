@@ -261,16 +261,17 @@ create table nearby_spot (
   id                bigint generated always as identity primary key,
   base_type         varchar(20) not null,   -- course / race
   base_id           varchar(50) not null,
+  route_type        varchar(20) not null default 'trail',  -- trail / bicycle
   nearby_type       varchar(20) not null,   -- attraction/accommodation/restaurant/bicycle/race
   nearby_content_id varchar(50) not null,
   distance_km       double precision not null,
   cached_at         timestamptz not null default now(),
   expires_at        timestamptz not null,
-  unique (base_type, base_id, nearby_type, nearby_content_id)
+  unique (base_type, base_id, nearby_type, nearby_content_id, route_type)
 );
 
 -- 인덱스 생성
-create index idx_nearby_base on nearby_spot (base_type, base_id);
+create index idx_nearby_base on nearby_spot (base_type, base_id, route_type);
 create index idx_nearby_type on nearby_spot (nearby_type);
 
 
