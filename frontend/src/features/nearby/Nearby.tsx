@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CategoryFilter } from "./components/CategoryFilter";
 import { SpotCard } from "./components/SpotCard";
 import { SpotDetailSheet } from "./components/SpotDetailSheet";
@@ -13,62 +13,107 @@ interface NearbyProps {
 export function Nearby({ courseId, routeType = "trail" }: NearbyProps) {
   const [category, setCategory] = useState<SpotCategory>("attraction");
   const [selected, setSelected] = useState<NearbySpot | null>(null);
-  const [spots, setSpots] = useState<NearbySpot[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const cacheRef = useRef<Map<string, NearbySpot[]>>(new Map());
-
-  useEffect(() => {
-    const key = `${courseId}:${category}:${routeType}`;
-    const cached = cacheRef.current.get(key);
-    if (cached) {
-      setSpots(cached);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    getNearbySpots(courseId, category, routeType)
-      .then((result) => {
-        if (cancelled) return;
-        cacheRef.current.set(key, result);
-        setSpots(result);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "주변 정보를 불러오지 못했어요");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [courseId, category, routeType]);
 
   return (
     <>
       <CategoryFilter value={category} onChange={setCategory} />
 
-      <div className="mt-3">
-        {loading ? (
-          <p className="pt-10 text-center text-[13px] text-caption">불러오는 중…</p>
-        ) : error ? (
-          <p className="pt-10 text-center text-[13px] text-caption">{error}</p>
-        ) : spots.length === 0 ? (
-          <p className="pt-10 text-center text-[13px] text-caption">주변 정보가 없어요</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {spots.map((spot) => (
-              <SpotCard key={spot.id} spot={spot} routeType={routeType} onSelect={setSelected} />
-            ))}
-          </div>
-        )}
-      </div>
+      <SpotList
+        key={`${courseId}:${category}:${routeType}`}
+        courseId={courseId}
+        category={category}
+        routeType={routeType}
+        onSelect={setSelected}
+      />
 
-      {selected && <SpotDetailSheet spot={selected} onClose={() => setSelected(null)} />}
+      {selected && <SpotDetailSheet key={selected.id} spot={selected} onClose={() => setSelected(null)} />}
     </>
+  );
+}
+
+interface SpotListProps {
+  courseId: number;
+  category: SpotCategory;
+  routeType: "trail" | "bicycle";
+  onSelect: (spot: NearbySpot) => void;
+}
+
+function SpotList({ courseId, category, routeType, onSelect }: SpotListProps) {
+  const [spots, setSpots] = useState<NearbySpot[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // key로 courseId/category/routeType이 바뀌면 이 컴포넌트가 리마운트되므로,
+  // 여기 있는 useState 초기값(spots: [], loading: true 등)이 이미 "초기화된 상태"다.
+  useEffect(() => {
+    let cancelled = false;
+    getNearbySpots(courseId, category, routeType, 1)
+      .then((result) => {
+        if (cancelled) return;
+        setSpots(result.spots);
+        setTotalCount(result.totalCount);
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : "주변 정보를 불러오지 못했어요");
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const loadMore = () => {
+    if (loadingMore || spots.length >= totalCount) return;
+    const nextPage = page + 1;
+    setLoadingMore(true);
+    getNearbySpots(courseId, category, routeType, nextPage)
+      .then((result) => {
+        setSpots((prev) => [...prev, ...result.spots]);
+        setPage(nextPage);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingMore(false));
+  };
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) loadMore();
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spots, totalCount, page, loadingMore]);
+
+  const hasMore = spots.length < totalCount;
+
+  if (loading) return <p className="pt-10 text-center text-[13px] text-caption">불러오는 중…</p>;
+  if (error) return <p className="pt-10 text-center text-[13px] text-caption">{error}</p>;
+  if (spots.length === 0) return <p className="pt-10 text-center text-[13px] text-caption">주변 정보가 없어요</p>;
+
+  return (
+    <div className="mt-3">
+      <div className="grid grid-cols-2 gap-3">
+        {spots.map((spot) => (
+          <SpotCard key={spot.id} spot={spot} routeType={routeType} onSelect={onSelect} />
+        ))}
+      </div>
+      {hasMore && (
+        <div ref={sentinelRef} className="py-4 text-center text-[12px] text-caption">
+          {loadingMore ? "더 불러오는 중…" : ""}
+        </div>
+      )}
+    </div>
   );
 }

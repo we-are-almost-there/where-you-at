@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/courses", tags=["nearby"])
 @router.get("/{id}/nearby", response_model=NearbyListResponse)
 def get_course_nearby(
     id: int,
-    category: str = Query(..., pattern="^(attraction|restaurant|accommodation)$"),
+    category: str = Query(..., pattern="^(attraction|restaurant|accommodation|bicycle)$"),
     route_type: str = Query("trail", pattern="^(trail|bicycle)$"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=50),

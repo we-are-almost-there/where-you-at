@@ -17,7 +17,14 @@ interface ApiNearbyResponse {
   spots: ApiNearbySpot[];
 }
 
-async function apiGet<T>(path: string): Promise<T> {
+export interface NearbySpotsPage {
+  totalCount: number;
+  spots: NearbySpot[];
+}
+
+export const PAGE_SIZE = 20;
+
+export async function apiGet<T>(path: string): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`);
@@ -46,16 +53,42 @@ function fromApiSpot(s: ApiNearbySpot): NearbySpot {
 export async function getNearbySpots(
   courseId: number,
   category: SpotCategory,
-  routeType: "trail" | "bicycle" = "trail"
-): Promise<NearbySpot[]> {
-  if (category === "bicycle") return []; // 자전거 카테고리는 백엔드 미지원(공공자전거 API 별도 연동 필요)
-
+  routeType: "trail" | "bicycle" = "trail",
+  page: number = 1
+): Promise<NearbySpotsPage> {
   const params = new URLSearchParams({
     category,
     route_type: routeType,
-    page: "1",
-    size: "20",
+    page: String(page),
+    size: String(PAGE_SIZE),
   });
   const data = await apiGet<ApiNearbyResponse>(`/api/courses/${courseId}/nearby?${params}`);
-  return data.spots.map(fromApiSpot);
+  return { totalCount: data.total_count, spots: data.spots.map(fromApiSpot) };
+}
+
+interface ApiBicycleFacilityDetail {
+  id: number;
+  facility_title: string;
+  addr1: string | null;
+  rental_fee_type: string | null;
+  repair_available: boolean | null;
+  open_hours: string | null;
+  total_bikes: number | null;
+  available_bikes: number | null;
+}
+
+export async function getBicycleFacilityDetail(id: number) {
+  return apiGet<ApiBicycleFacilityDetail>(`/api/bicycle-facilities/${id}`);
+}
+
+interface ApiTourSpotDetail {
+  content_id: string;
+  content_type_id: string;
+  tour_spot_title: string;
+  addr1: string | null;
+  detail: Record<string, string | null>;
+}
+
+export async function getTourSpotDetail(contentId: string) {
+  return apiGet<ApiTourSpotDetail>(`/api/tour-spots/${contentId}`);
 }

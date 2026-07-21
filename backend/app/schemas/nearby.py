@@ -9,6 +9,7 @@ class NearbySpotOut(BaseModel):
     image_url: str | None
     distance_m: int
     duration_minutes: int
+    
 
 
 class NearbyListResponse(BaseModel):
