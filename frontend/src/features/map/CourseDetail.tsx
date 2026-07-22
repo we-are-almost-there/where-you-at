@@ -2,11 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { KakaoMap } from "./KakaoMap";
 import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "./components/ErrorNotice";
-import { getCourseDetail } from "./coursesApi";
-import type { CourseDetail as CourseDetailData, RouteDetail, RouteType } from "./types";
+import { getCourseDetail, getCourseGpx } from "./coursesApi";
+import type { CourseDetail as CourseDetailData, LatLng, RouteDetail, RouteType } from "./types";
 import { Nearby } from "../nearby";
 import { parseRouteTypeParam, setRouteTypeParam } from "./courseUrlState";
 import { useCourseTracking } from "./useCourseTracking";
+import { advanceProgress, distanceToCourse, type Direction } from "./courseProgress";
+import { useEndpointAddresses } from "./endpointAddress";
+import { DirectionSelector } from "./components/DirectionSelector";
+import { TrackingStats } from "./components/TrackingStats";
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
@@ -16,6 +20,14 @@ function formatDuration(min: number): string {
 }
 
 const MODE_ICON: Record<RouteType, string> = { 도보: "🚶", 자전거: "🚲" };
+
+// 이보다 멀리 떨어져 있으면 따라가기를 시작해도 진행률이 의미가 없다.
+// 주차장·역에서 접근하는 경우를 감안한 값이라 실외 테스트 후 조정이 필요하다.
+const MAX_START_DISTANCE_M = 1000;
+
+function formatDistance(m: number): string {
+  return m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`;
+}
 
 // 외부(두루누비) 설명의 <br> 태그를 실제 줄바꿈으로 안전하게 렌더한다.
 // dangerouslySetInnerHTML을 쓰지 않으므로 HTML/스크립트 주입 위험이 없다.
@@ -34,18 +46,21 @@ type InfoTab = "course" | "nearby";
 function ModeCard({
   route,
   active,
+  disabled,
   onSelect,
 }: {
   route: RouteDetail;
   active: boolean;
+  disabled: boolean;
   onSelect: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onSelect}
+      disabled={disabled}
       aria-pressed={active}
-      className={`@container flex flex-1 cursor-pointer flex-col gap-1.5 rounded-[14px] p-3.5 text-left transition-colors ${
+      className={`@container flex flex-1 cursor-pointer flex-col gap-1.5 rounded-[14px] p-3.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         active
           ? "border-2 border-accent bg-lavender text-accent shadow-[0px_4px_14px_0px_rgba(0,0,0,0.12)]"
           : "border-[1.5px] border-divider bg-white text-caption"
@@ -84,6 +99,13 @@ export function CourseDetail() {
   const [retryTick, setRetryTick] = useState(0); // '다시 시도' 트리거
   const validId = Number.isFinite(courseId);
   const { currentLocation, isTracking, error: trackingError, startTracking, stopTracking } = useCourseTracking();
+  const [waypoints, setWaypoints] = useState<LatLng[]>([]);
+  const [startAddress, endAddress] = useEndpointAddresses(waypoints);
+  const [direction, setDirection] = useState<Direction>("forward"); // 기본 정방향, 토글로 역방향
+  const [progress, setProgress] = useState(0); // 0~100, 최고 진행률 유지
+  const [now, setNow] = useState(0); // 예상 종료 시각 계산의 기준 시각(추적 중에만 갱신)
+  const [startChecked, setStartChecked] = useState(false); // 세션당 한 번만 시작 거리 판정
+  const [tooFarMeters, setTooFarMeters] = useState<number | null>(null); // null이 아니면 안내 팝업
 
   useEffect(() => {
     if (!validId) return; // 잘못된 id는 아래 렌더에서 파생 처리
@@ -101,6 +123,49 @@ export function CourseDetail() {
     };
   }, [courseId, validId, retryTick]);
 
+  // GPX는 지도 폴리라인과 진행률 계산이 함께 쓰므로 여기서 한 번만 받아 KakaoMap으로 내려준다.
+  useEffect(() => {
+    if (!validId) return;
+    let cancelled = false;
+    getCourseGpx(courseId, routeType)
+      .then((wps) => !cancelled && setWaypoints(wps))
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("[CourseDetail] gpx fetch error:", err);
+        setWaypoints([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId, validId, routeType]);
+
+  // 새 위치가 들어오면 진행률을 전진시킨다(최고 진행률 유지).
+  // effect가 아니라 렌더 중 조정 — 위치 갱신은 외부 이벤트라 effect로 되받으면 렌더가 한 번 더 돈다.
+  // 진행률 초기화는 추적 시작·방향 전환·주행 방식 변경 시점에 각 핸들러가 담당한다.
+  const [lastLocation, setLastLocation] = useState<LatLng | null>(null);
+  if (currentLocation !== lastLocation) {
+    setLastLocation(currentLocation);
+    if (isTracking && currentLocation && waypoints.length > 0) {
+      if (!startChecked) {
+        // 첫 위치가 잡힌 순간에만 "코스에서 너무 멂"을 판정한다.
+        // 걷는 도중의 일시적 이탈까지 막으면 오히려 방해가 된다.
+        setStartChecked(true);
+        const gap = distanceToCourse(waypoints, currentLocation);
+        if (gap > MAX_START_DISTANCE_M) setTooFarMeters(gap);
+        else setProgress((prev) => advanceProgress(prev, waypoints, currentLocation, direction));
+      } else if (tooFarMeters == null) {
+        setProgress((prev) => advanceProgress(prev, waypoints, currentLocation, direction));
+      }
+    }
+  }
+
+  // 추적 중에는 시계가 흘러야 예상 종료 시각이 현재 시각을 따라간다.
+  useEffect(() => {
+    if (!isTracking) return;
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, [isTracking]);
+
   // URL로 요청한 주행 방식이 없는 코스라면 보유한 첫 경로로 URL을 교정한다.
   useEffect(() => {
     if (!detail || detail.routes.some((route) => route.route_type === routeType) || !detail.routes[0]) return;
@@ -113,7 +178,26 @@ export function CourseDetail() {
     const nextParams = new URLSearchParams(searchParams);
     setRouteTypeParam(nextParams, next);
     setSearchParams(nextParams);
+    setProgress(0); // 코스 자체가 달라지므로 초기화
   };
+
+  // 새 추적 세션은 항상 0%에서 시작한다(이전 세션이 어떻게 끝났든).
+  const handleStartTracking = () => {
+    setProgress(0);
+    setNow(Date.now());
+    setStartChecked(false);
+    setTooFarMeters(null);
+    startTracking();
+  };
+
+  // 안내를 닫을 때 추적을 정리한다(clearWatch는 부수효과라 렌더 중엔 못 부른다).
+  const dismissTooFar = () => {
+    setTooFarMeters(null);
+    stopTracking();
+  };
+
+  // 방향 선택은 추적 시작 전에만 노출되고, 시작 시 진행률이 어차피 0으로 초기화된다.
+  const toggleDirection = () => setDirection((d) => (d === "forward" ? "reverse" : "forward"));
 
   const retry = () => {
     setLoading(true);
@@ -139,21 +223,67 @@ export function CourseDetail() {
     : [];
   const activeRoute = detail?.routes.find((r) => r.route_type === routeType) ?? detail?.routes[0];
 
+  // 남은 거리·예상 종료 시각은 코스의 공식 거리/소요시간을 진행률로 안분해 추정한다.
+  // (실제 이동 속도 기반이 아니라 GPS가 튀어도 값이 출렁이지 않는다)
+  //
+  // 진행률은 GPX 누적거리 기준인데 여기서 곱하는 건 API 공식 거리다. 둘은 조금 다르지만
+  // (1번 코스 기준 GPX 18.70km vs 공식 19.00km, 1.6%) 의도적으로 공식 거리를 쓴다.
+  // GPX 총합을 쓰면 0%일 때 "18.7km 남음"으로 떠서 코스 카드의 "19.0km"와 어긋나 보인다.
+  // 공식 거리에 비율을 곱하면 0%=19.0km, 100%=0km로 눈에 보이는 값끼리 항상 맞는다.
+  // 코스에서 너무 멀어 안내가 뜬 상태면 진행률(0%)을 띄우지 않는다 — 시작하지 못한 것이라서.
+  const showStats =
+    isTracking && currentLocation != null && waypoints.length > 0 && tooFarMeters == null;
+  const remainingRatio = 1 - progress / 100;
+  const remainingKm = (activeRoute?.distance ?? 0) * remainingRatio;
+  const eta = new Date(
+    now + Math.round((activeRoute?.estimated_time ?? 0) * remainingRatio) * 60_000,
+    // 좁은 폭(폴드)에서 "오후 04:12"가 두 줄로 깨지므로 24시간 표기로 고정
+  ).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false });
+
   // 모바일에선 바텀시트가 지도 하단을 가리므로, 시트 높이만큼 코스를 위로 올려 fit.
   // 데스크톱은 지도가 시트와 겹치지 않아 0. (시트 접기/펼치기 시 재fit)
+  // 추적 중에는 모바일 시트가 진행 상황만 남겨 짧아지므로 그만큼만 띄운다.
+  const sheetRatio = isTracking ? 0.3 : sheetExpanded ? 0.72 : 0.38;
   const mapBottomInset =
     typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
-      ? Math.round(window.innerHeight * (sheetExpanded ? 0.72 : 0.38))
+      ? Math.round(window.innerHeight * sheetRatio)
       : 0;
 
   return (
     // 모바일: 지도 풀블리드 + 하단 바텀시트 / md+: 좌 패널 + 우 지도
     <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-white md:flex-row">
+      {/* 코스에서 너무 멀 때 안내 (지도·시트 위에 뜨는 팝업) */}
+      {/* isTracking을 함께 보는 이유: 종료 버튼·주변 탭 이동으로 추적이 멈추면 안내도 닫혀야 한다 */}
+      {tooFarMeters != null && isTracking && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-label="코스에서 너무 멀어요"
+          className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 px-6"
+        >
+          <div className="w-full max-w-sm rounded-[18px] bg-white px-5 py-6 text-center shadow-[0px_8px_24px_0px_rgba(0,0,0,0.2)]">
+            {/* break-keep: 한글은 기본값이 글자 단위로 끊겨 "있어요"가 "있/어요"처럼 갈라진다 */}
+            <p className="break-keep text-[17px] font-bold text-ink">코스에서 조금 먼 것 같아요</p>
+            <p className="mt-2 break-keep text-[14px] leading-relaxed text-caption">
+              지금 계신 곳이 코스에서 약 {formatDistance(tooFarMeters)} 떨어져 있어요. 코스 근처에서
+              다시 시작해 주시겠어요?
+            </p>
+            <button
+              type="button"
+              onClick={dismissTooFar}
+              className="mt-5 h-12 w-full cursor-pointer rounded-[14px] bg-accent text-[15px] font-bold text-lavender"
+            >
+              알겠어요
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 지도 (z-0으로 stacking context를 가둬 Kakao 내부 레이어가 시트를 덮지 않게 함) */}
       <div className="absolute inset-0 z-0 md:relative md:order-2 md:h-full md:min-w-0 md:flex-1">
         <KakaoMap
-          courseId={Number.isFinite(courseId) ? courseId : undefined}
-          routeType={routeType}
+          waypoints={waypoints}
+          direction={direction}
           bottomInset={mapBottomInset}
           currentLocation={currentLocation}
           followCurrentLocation={isTracking}
@@ -166,7 +296,7 @@ export function CourseDetail() {
         static으로 바꾸면 시트가 기준을 잃고 지도까지 덮는 전체화면으로 퍼져버림. */}
       <section
         className={`absolute inset-x-0 bottom-0 z-10 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] transition-[max-height] duration-300 md:relative md:order-1 md:h-full md:max-h-none md:basis-[46%] md:rounded-none md:shadow-none lg:basis-[44%] ${
-          sheetExpanded ? "max-h-[72%]" : "max-h-[38%]"
+          isTracking ? "max-h-[60%]" : sheetExpanded ? "max-h-[72%]" : "max-h-[38%]"
         }`}
       >
         {/* 바텀시트 핸들 (모바일 전용) — 탭하면 시트를 접어 지도(전체 코스)를 넓게 본다 */}
@@ -174,7 +304,7 @@ export function CourseDetail() {
           type="button"
           onClick={() => setSheetExpanded((v) => !v)}
           aria-label={sheetExpanded ? "코스 정보 접기" : "코스 정보 펼치기"}
-          className="shrink-0 cursor-pointer pt-2.5 pb-1 md:hidden"
+          className={`shrink-0 cursor-pointer pt-2.5 pb-1 md:hidden ${isTracking ? "hidden" : ""}`}
         >
           <span className="mx-auto block h-[5px] w-11 rounded-full bg-divider" />
         </button>
@@ -199,8 +329,14 @@ export function CourseDetail() {
           <ErrorNotice title="코스를 찾을 수 없어요" onBack={() => navigate(-1)} />
         ) : (
           <>
-            {/* 스크롤 영역 (모바일은 콘텐츠 높이에 맞춰 시트가 줄어 따라가기 버튼과 붙는다) */}
-            <div className="min-h-0 overflow-y-auto px-5 pb-6 pt-3 md:flex-1">
+            {/* 스크롤 영역 (모바일은 콘텐츠 높이에 맞춰 시트가 줄어 따라가기 버튼과 붙는다)
+              추적 중에는 모바일에서만 숨겨 지도를 넓게 쓴다. 데스크톱은 지도와 나란히 놓여
+              가릴 일이 없고, 숨기면 좌측 컬럼이 텅 비므로 그대로 둔다. */}
+            <div
+              className={`min-h-0 overflow-y-auto px-5 pb-6 pt-3 md:flex-1 ${
+                isTracking ? "hidden md:block" : ""
+              }`}
+            >
               {/* 뒤로 + 제목 + 주소 */}
               <button
                 type="button"
@@ -211,7 +347,20 @@ export function CourseDetail() {
                 ←
               </button>
               <h1 className="mt-2 font-bold text-ink text-[20px]">{detail.title}</h1>
-              <p className="mt-1.5 text-[14px] text-caption">📍 {detail.start_address}</p>
+
+              {/* 출발/도착 주소를 보여주는 유일한 자리라 탭과 무관하게 항상 띄운다.
+                추적 중엔 방향을 바꿀 수 없게(진행률 계산과 꼬이므로) 숨긴다 —
+                모바일에서 이 블록을 포함한 정보 영역 전체가 접히는 것과도 맞아떨어진다. */}
+              {!isTracking && (
+                <div className="mt-3">
+                  <DirectionSelector
+                    start={startAddress}
+                    end={endAddress}
+                    direction={direction}
+                    onToggle={toggleDirection}
+                  />
+                </div>
+              )}
 
               {/* 코스 정보 / 주변 정보 토글 */}
               <div
@@ -281,6 +430,7 @@ export function CourseDetail() {
                         key={r.route_type}
                         route={r}
                         active={r.route_type === routeType}
+                        disabled={isTracking}
                         onSelect={() => changeRouteType(r.route_type)}
                       />
                     ))}
@@ -296,29 +446,44 @@ export function CourseDetail() {
             {/* 따라가기 (하단 고정) */}
             {infoTab === "course" && (
             <div
+              // 버튼 위 여백(mt-3=12px)과 아래 흰 여백을 같게 맞춘다.
               className="shrink-0 px-5 pt-3"
-              style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+              style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
             >
               {trackingError && (
                 <p role="alert" className="mb-2 text-center text-[13px] leading-relaxed text-caption">
                   {trackingError}
                 </p>
               )}
+
+              {showStats && (
+                <TrackingStats progress={progress} remainingKm={remainingKm} eta={eta} />
+              )}
+
               <button
                 type="button"
-                onClick={isTracking ? stopTracking : startTracking}
+                onClick={isTracking ? stopTracking : handleStartTracking}
                 disabled={!activeRoute}
                 aria-pressed={isTracking}
                 className={`flex h-14 w-full items-center justify-center gap-2 rounded-[14px] text-[15px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
+                  showStats ? "mt-3" : ""
+                } ${
                   isTracking
                     ? "cursor-pointer border border-accent bg-white text-accent"
                     : "cursor-pointer bg-accent text-lavender"
                 }`}
               >
+                {isTracking && !currentLocation && (
+                  // 작은 글리프는 뭔지 알아보기 어려워 회전 스피너로 '찾는 중'을 표현
+                  <span
+                    aria-hidden
+                    className="size-4 animate-spin rounded-full border-2 border-accent border-t-transparent"
+                  />
+                )}
                 {isTracking
                   ? currentLocation
                     ? "■ 따라가기 종료"
-                    : "⌖ 현재 위치 확인 중…"
+                    : "현재 위치 찾는 중…"
                   : `${activeRoute ? MODE_ICON[activeRoute.route_type] : "🚶"} 따라가기`}
               </button>
             </div>
