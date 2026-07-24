@@ -32,7 +32,10 @@ export const Nearby = forwardRef<NearbyHandle, NearbyProps>(function Nearby(
   useImperativeHandle(ref, () => ({
     selectSpotById: (id: number) => {
       const spot = currentSpotsRef.current.find((s) => s.id === id);
-      if (spot) setSelected(spot);
+      if (spot) {
+        setSelected(spot);
+        onSelectedChange?.(spot);
+      }
     },
   }));
 

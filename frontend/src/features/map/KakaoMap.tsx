@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CustomOverlayMap, Map, MapMarker, MarkerClusterer, Polyline } from "react-kakao-maps-sdk";
 import type { Direction } from "./courseProgress";
 import type { LatLng } from "./types";
@@ -184,6 +184,21 @@ export function KakaoMap({
     map.panTo(new kakao.maps.LatLng(spot.lat, spot.lng));
   }, [map, selectedSpotId, nearbySpots]);
 
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+
+  // 카카오맵 SDK는 컨테이너 크기를 마운트 시점 기준으로 캐싱한다.
+  // flex/grid 레이아웃에서는 마운트 직후엔 아직 최종 크기가 확정 안 된 경우가 있어서,
+  // 이때 마커의 클릭 판정 좌표가 실제 보이는 위치와 어긋난다(시각적으로는 멀쩡해 보임).
+  // 컨테이너 크기가 바뀔 때마다 relayout()으로 강제 재계산시켜 이 어긋남을 막는다.
+  useEffect(() => {
+    if (!map || !mapContainerRef.current) return;
+    const observer = new ResizeObserver(() => {
+      map.relayout();
+    });
+    observer.observe(mapContainerRef.current);
+    return () => observer.disconnect();
+  }, [map]);
+
   const hasSelection = selectedSpotId != null;
 
   // 스팟별 마커 이미지(핀 아이콘)를 미리 계산 — id/카테고리/선택 여부가 바뀔 때만 재생성
@@ -217,80 +232,83 @@ export function KakaoMap({
   if (!sdkReady) return null;
 
   return (
-    <Map
-      center={{ lat: 35.1, lng: 129.0 }}
-      style={{ width: "100%", height: "100%" }}
-      level={9}
-      onCreate={setMap}
-    >
-      {waypoints.length > 0 && (
-        <>
-          <Polyline path={waypoints} strokeWeight={4} strokeColor="#6C5CE7" strokeOpacity={0.9} />
-          <EndpointMarker
-            point={waypoints[0]}
-            color={forward ? "#03C75A" : "#FF4D4F"}
-            label={forward ? startLabel : endLabel}
-          />
-          <EndpointMarker
-            point={waypoints[waypoints.length - 1]}
-            color={forward ? "#FF4D4F" : "#03C75A"}
-            label={forward ? endLabel : startLabel}
-            labelBelow
-          />
-        </>
-      )}
-      {nearbySpots.length > 0 && (
-        <MarkerClusterer
-          key={nearbySpots.map((s) => s.id).join(",")}
-          averageCenter
-          minLevel={5}
-          gridSize={60}
-          minClusterSize={5}
-          styles={CLUSTER_STYLES}
-        >
-          {nearbySpots
-            .filter((spot) => spot.id !== selectedSpotId) // 선택된 건 클러스터러 밖에서 따로 그림
-            .map((spot) => {
-              const img = markerImages[spot.id];
-              if (!img) return null;
-              return (
-                <MapMarker
-                  key={spot.id}
-                  position={{ lat: spot.lat, lng: spot.lng }}
-                  image={{
-                    src: img.src,
-                    size: { width: img.size[0], height: img.size[1] },
-                    options: { offset: { x: img.offset[0], y: img.offset[1] } },
-                  }}
-                  zIndex={1}
-                  onClick={() => onSpotMarkerClick?.(spot.id)}
-                />
-              );
-            })}
-        </MarkerClusterer>
-      )}
-
-      {/* 선택된 스팟은 클러스터링 대상에서 완전히 제외 — 확대 레벨과 무관하게 항상 독립적으로, 항상 보이게 */}
-      {hasSelection &&
-        (() => {
-          const selectedSpot = nearbySpots.find((s) => s.id === selectedSpotId);
-          const img = selectedSpot ? markerImages[selectedSpot.id] : undefined;
-          if (!selectedSpot || !img) return null;
-          return (
-            <MapMarker
-              position={{ lat: selectedSpot.lat, lng: selectedSpot.lng }}
-              image={{
-                src: img.src,
-                size: { width: img.size[0], height: img.size[1] },
-                options: { offset: { x: img.offset[0], y: img.offset[1] } },
-              }}
-              zIndex={10}
-              onClick={() => onSpotMarkerClick?.(selectedSpot.id)}
+    <div ref={mapContainerRef} className="h-full w-full">
+      <Map
+        center={{ lat: 35.1, lng: 129.0 }}
+        style={{ width: "100%", height: "100%" }}
+        level={9}
+        onCreate={setMap}
+      >
+        {waypoints.length > 0 && (
+          <>
+            <Polyline path={waypoints} strokeWeight={4} strokeColor="#6C5CE7" strokeOpacity={0.9} />
+            <EndpointMarker
+              point={waypoints[0]}
+              color={forward ? "#03C75A" : "#FF4D4F"}
+              label={forward ? startLabel : endLabel}
             />
-          );
-        })()}
-       
-      {currentLocation && <CurrentLocationMarker point={currentLocation} />}
-    </Map>
+            <EndpointMarker
+              point={waypoints[waypoints.length - 1]}
+              color={forward ? "#FF4D4F" : "#03C75A"}
+              label={forward ? endLabel : startLabel}
+              labelBelow
+            />
+          </>
+        )}
+        {nearbySpots.length > 0 && (
+          <MarkerClusterer
+            key={nearbySpots.map((s) => s.id).join(",")}
+            averageCenter
+            minLevel={5}
+            gridSize={60}
+            minClusterSize={5}
+            styles={CLUSTER_STYLES}
+          >
+            {nearbySpots
+              .filter((spot) => spot.id !== selectedSpotId)
+              .map((spot) => {
+                const img = markerImages[spot.id];
+                if (!img) return null;
+                return (
+                  <MapMarker
+                    key={spot.id}
+                    position={{ lat: spot.lat, lng: spot.lng }}
+                    image={{
+                      src: img.src,
+                      size: { width: img.size[0], height: img.size[1] },
+                      options: { offset: { x: img.offset[0], y: img.offset[1] } },
+                    }}
+                    zIndex={1}
+                    onClick={() => {
+                      onSpotMarkerClick?.(spot.id);
+                    }}
+                  />
+                );
+              })}
+          </MarkerClusterer>
+        )}
+
+        {hasSelection &&
+          (() => {
+            const selectedSpot = nearbySpots.find((s) => s.id === selectedSpotId);
+            const img = selectedSpot ? markerImages[selectedSpot.id] : undefined;
+            if (!selectedSpot || !img) return null;
+            return (
+              <MapMarker
+                position={{ lat: selectedSpot.lat, lng: selectedSpot.lng }}
+                image={{
+                  src: img.src,
+                  size: { width: img.size[0], height: img.size[1] },
+                  options: { offset: { x: img.offset[0], y: img.offset[1] } },
+                }}
+                zIndex={10}
+                onClick={() => onSpotMarkerClick?.(selectedSpot.id)}
+              />
+            );
+          })()}
+
+        {currentLocation && <CurrentLocationMarker point={currentLocation} />}
+      </Map>
+    </div>
   );
 }

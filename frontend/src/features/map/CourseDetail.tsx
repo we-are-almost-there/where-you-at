@@ -296,7 +296,9 @@ export function CourseDetail() {
           followCurrentLocation={isTracking}
           nearbySpots={infoTab === "nearby" ? nearbySpots : []}
           selectedSpotId={infoTab === "nearby" ? selectedNearbySpotId : null}
-          onSpotMarkerClick={(id) => nearbyRef.current?.selectSpotById(id)}
+          onSpotMarkerClick={(id) => {
+            nearbyRef.current?.selectSpotById(id);
+          }}
         />
       </div>
 
