@@ -7,6 +7,8 @@ class NearbySpotOut(BaseModel):
     name: str
     address: str | None
     image_url: str | None
+    lat: float
+    lng: float
     distance_m: int
     duration_minutes: int
     

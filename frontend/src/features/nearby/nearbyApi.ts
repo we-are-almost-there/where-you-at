@@ -8,6 +8,8 @@ interface ApiNearbySpot {
   name: string;
   address: string | null;
   image_url: string | null;
+  lat: number;
+  lng: number;
   distance_m: number;
   duration_minutes: number;
 }
@@ -42,6 +44,8 @@ function fromApiSpot(s: ApiNearbySpot): NearbySpot {
     name: s.name,
     address: s.address ?? "",
     image_url: s.image_url ?? "",
+    lat: s.lat,
+    lng: s.lng,
     distance_m: s.distance_m,
     duration_minutes: s.duration_minutes,
   };

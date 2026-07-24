@@ -21,30 +21,8 @@ export interface NearbySpot {
   name: string;
   address: string;
   image_url: string;
+  lat: number;
+  lng: number;
   distance_m: number;
   duration_minutes: number;
-
-  // // 관광지 (attraction 테이블)
-  // info_center?: string;
-  // rest_date?: string;
-  // use_time?: string;
-  // parking?: string;
-  // use_fee?: string;
-
-  // // 음식점 (restaurant 테이블)
-  // first_menu?: string;
-  // treat_menu?: string;
-  // open_time?: string;
-
-  // // 숙박 (accommodation 테이블)
-  // checkin_time?: string;
-  // checkout_time?: string;
-  // reservation_url?: string;
-
-  // // 자전거 (bicycle_facility 테이블)
-  // open_hours?: string;
-  // repair_available?: boolean;
-  // rental_fee_type?: string;
-  // total_bikes?: number;
-  // available_bikes?: number;
 }

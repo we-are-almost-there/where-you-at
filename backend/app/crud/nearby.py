@@ -1,30 +1,28 @@
 from datetime import datetime, timedelta, timezone
 from psycopg2.extras import RealDictCursor, execute_values
 
-# category → tour_spot.content_type_id 매핑
 _CATEGORY_CONTENT_TYPES = {
     "attraction": ["12", "14", "38"],
     "restaurant": ["39"],
     "accommodation": ["32"],
 }
 
-# route_type별 카테고리별 기본 반경(m)
 _RADIUS_M = {
     "trail": {"attraction": 1500, "restaurant": 1000, "accommodation": 1000, "bicycle": 1000},
     "bicycle": {"attraction": 3000, "restaurant": 2000, "accommodation": 2000, "bicycle": 2000},
 }
 
-# route_type별 이동 속도(m/분)
 _SPEED_M_PER_MIN = {
-    "trail": 67,     # 도보 약 4km/h
-    "bicycle": 300,  # 자전거 약 18km/h
+    "trail": 67,
+    "bicycle": 300,
 }
 
 _CACHE_TTL_DAYS = 30
 
 _CACHE_LOOKUP_SQL = """
 SELECT ns.nearby_content_id, ns.distance_km, ts.tour_spot_title AS name,
-       ts.addr1 AS address, ts.first_image AS image_url
+       ts.addr1 AS address, ts.first_image AS image_url,
+       ts.map_y AS lat, ts.map_x AS lng
 FROM nearby_spot ns
 JOIN tour_spot ts ON ts.content_id = ns.nearby_content_id
 WHERE ns.base_type = 'course' AND ns.base_id = %(course_id)s
@@ -36,7 +34,8 @@ ORDER BY ns.distance_km
 
 _BICYCLE_CACHE_LOOKUP_SQL = """
 SELECT ns.nearby_content_id, ns.distance_km, bf.facility_title AS name,
-       bf.addr1 AS address, NULL AS image_url
+       bf.addr1 AS address, NULL AS image_url,
+       bf.map_y AS lat, bf.map_x AS lng
 FROM nearby_spot ns
 JOIN bicycle_facility bf ON bf.bicycle_id::text = ns.nearby_content_id
 WHERE ns.base_type = 'course' AND ns.base_id = %(course_id)s
@@ -57,6 +56,8 @@ SELECT
     ts.tour_spot_title AS name,
     ts.addr1 AS address,
     ts.first_image AS image_url,
+    ts.map_y AS lat,
+    ts.map_x AS lng,
     ST_Distance(ts.geom::geography, cl.geom::geography) AS distance_m
 FROM tour_spot ts, course_line cl
 WHERE ts.content_type_id = ANY(%(content_types)s)
@@ -76,6 +77,8 @@ SELECT
     bf.facility_title AS name,
     bf.addr1 AS address,
     NULL AS image_url,
+    bf.map_y AS lat,
+    bf.map_x AS lng,
     ST_Distance(bf.geom::geography, cl.geom::geography) AS distance_m
 FROM bicycle_facility bf, course_line cl
 WHERE cl.geom IS NOT NULL
@@ -144,6 +147,8 @@ def list_nearby_spots(
 ) -> tuple[int, list[dict]]:
     """코스 경로 주변의 관광지/음식점/숙박/자전거 시설 목록을 (total_count, 목록)으로 반환한다.
     nearby_spot 캐시(30일, route_type별 구분)를 우선 조회하고, 없거나 만료됐으면 PostGIS로 재계산 후 캐시에 저장한다.
+    캐시 조회 경로는 좌표를 원본 테이블(tour_spot/bicycle_facility)에서 매번 다시 조인해 가져오므로,
+    좌표가 바뀌어도(예: 표준데이터 재수집) 캐시가 오래된 좌표를 들고 있지 않는다.
     """
     if category == "bicycle":
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -160,6 +165,8 @@ def list_nearby_spots(
                     "name": r["name"],
                     "address": r["address"],
                     "image_url": r["image_url"],
+                    "lat": r["lat"],
+                    "lng": r["lng"],
                     "distance_m": r["distance_km"] * 1000,
                 }
                 for r in cached_rows
@@ -179,6 +186,8 @@ def list_nearby_spots(
                 "name": r["name"],
                 "address": r["address"],
                 "image_url": r["image_url"],
+                "lat": r["lat"],
+                "lng": r["lng"],
                 "distance_m": int(r["distance_m"]),
                 "duration_minutes": max(1, round(r["distance_m"] / speed)),
             }
@@ -203,6 +212,8 @@ def list_nearby_spots(
                 "name": r["name"],
                 "address": r["address"],
                 "image_url": r["image_url"],
+                "lat": r["lat"],
+                "lng": r["lng"],
                 "distance_m": r["distance_km"] * 1000,
             }
             for r in cached_rows
@@ -223,6 +234,8 @@ def list_nearby_spots(
             "name": row["name"],
             "address": row["address"],
             "image_url": row["image_url"],
+            "lat": row["lat"],
+            "lng": row["lng"],
             "distance_m": int(row["distance_m"]),
             "duration_minutes": max(1, round(row["distance_m"] / speed)),
         }
