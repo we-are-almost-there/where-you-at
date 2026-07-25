@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LatLng } from "./types";
+import { useWakeLock } from "./useWakeLock";
 
 export interface TrackedLocation extends LatLng {
   accuracy: number;
@@ -27,6 +28,9 @@ export function useCourseTracking() {
   const [currentLocation, setCurrentLocation] = useState<TrackedLocation | null>(null);
   const [isTracking, setIsTracking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 추적 상태에만 묶어 둔다. 종료 경로(종료 버튼·탭 이동·권한 거부·언마운트)가 여럿이라
+  // 각자 해제하게 하면 하나만 빠져도 화면이 켜진 채 남는다.
+  const wakeLockFailed = useWakeLock(isTracking);
 
   const clearActiveWatch = useCallback(() => {
     if (watchIdRef.current == null) return;
@@ -78,5 +82,5 @@ export function useCourseTracking() {
 
   useEffect(() => clearActiveWatch, [clearActiveWatch]);
 
-  return { currentLocation, isTracking, error, startTracking, stopTracking };
+  return { currentLocation, isTracking, error, wakeLockFailed, startTracking, stopTracking };
 }

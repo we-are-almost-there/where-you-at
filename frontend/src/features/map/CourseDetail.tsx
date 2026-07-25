@@ -7,6 +7,7 @@ import type { CourseDetail as CourseDetailData, LatLng, RouteDetail, RouteType }
 import { Nearby } from "../nearby";
 import { parseRouteTypeParam, setRouteTypeParam } from "./courseUrlState";
 import { useCourseTracking } from "./useCourseTracking";
+import { WAKE_LOCK_FAILURE_MESSAGE } from "./useWakeLock";
 import { advanceProgress, distanceToCourse, type Direction } from "./courseProgress";
 import { useEndpointAddresses } from "./endpointAddress";
 import { DirectionSelector } from "./components/DirectionSelector";
@@ -98,7 +99,14 @@ export function CourseDetail() {
   const [sheetExpanded, setSheetExpanded] = useState(true); // 모바일 바텀시트 펼침/접힘
   const [retryTick, setRetryTick] = useState(0); // '다시 시도' 트리거
   const validId = Number.isFinite(courseId);
-  const { currentLocation, isTracking, error: trackingError, startTracking, stopTracking } = useCourseTracking();
+  const {
+    currentLocation,
+    isTracking,
+    error: trackingError,
+    wakeLockFailed,
+    startTracking,
+    stopTracking,
+  } = useCourseTracking();
   const [waypoints, setWaypoints] = useState<LatLng[]>([]);
   const [startAddress, endAddress] = useEndpointAddresses(waypoints);
   const [direction, setDirection] = useState<Direction>("forward"); // 기본 정방향, 토글로 역방향
@@ -177,7 +185,9 @@ export function CourseDetail() {
   const changeRouteType = (next: RouteType) => {
     const nextParams = new URLSearchParams(searchParams);
     setRouteTypeParam(nextParams, next);
-    setSearchParams(nextParams);
+    // replace: 히스토리에 쌓으면 뒤로가기가 목록이 아니라 이전 주행 방식으로 돌아가고,
+    // 그때 화면은 그대로라 추적이 살아 있는 채 코스만 바뀐다.
+    setSearchParams(nextParams, { replace: true });
     setProgress(0); // 코스 자체가 달라지므로 초기화
   };
 
@@ -453,6 +463,13 @@ export function CourseDetail() {
               {trackingError && (
                 <p role="alert" className="mb-2 text-center text-[13px] leading-relaxed text-caption">
                   {trackingError}
+                </p>
+              )}
+
+              {/* 화면 유지 실패는 추적 자체는 되는 경고라 role="alert" 없이 조용히 알린다 */}
+              {wakeLockFailed && (
+                <p className="mb-2 break-keep text-center text-[13px] leading-relaxed text-caption">
+                  {WAKE_LOCK_FAILURE_MESSAGE}
                 </p>
               )}
 
