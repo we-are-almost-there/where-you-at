@@ -1,2 +1,2 @@
-export { SupportList } from "./components/SupportList";
+export { Support } from "./Support";
 export { SupportDetail } from "./components/SupportDetail";

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useSearchParams } from "react-router";
 import type { SupportDetail as SupportDetailType } from "../support.types";
 import { fetchSupportDetail } from "../supportApi";
 
@@ -13,10 +13,12 @@ function loadChecked(id: number): Record<number, boolean> {
   }
 }
 
-export function SupportDetail() {
-  const { id: idParam } = useParams();
-  const navigate = useNavigate();
-  const id = Number(idParam);
+type Props = {
+  id: number;
+};
+
+export function SupportDetail({ id }: Props) {
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [detail, setDetail] = useState<SupportDetailType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,6 +42,12 @@ export function SupportDetail() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  // 제도 목록으로 = support 쿼리만 제거 (region 유지)
+  function backToList() {
+    searchParams.delete("support");
+    setSearchParams(searchParams);
+  }
+
   function toggleCheck(itemId: number) {
     setChecked((prev) => {
       const next = { ...prev, [itemId]: !prev[itemId] };
@@ -48,14 +56,17 @@ export function SupportDetail() {
     });
   }
 
-  if (loading) return <p className="mx-auto max-w-md px-4 py-4 text-sm text-slate-400">불러오는 중…</p>;
-  if (error) return <p className="mx-auto max-w-md px-4 py-4 text-sm text-rose-600">{error}</p>;
+  if (loading) return <p className="px-4 py-4 text-sm text-slate-400">불러오는 중…</p>;
+  if (error) return <p className="px-4 py-4 text-sm text-rose-600">{error}</p>;
   if (!detail) return null;
 
+  const refundRules = detail.refund_rules ?? [];
+  const checklist = detail.checklist ?? [];
+
   return (
-    <div className="mx-auto flex max-w-md flex-col gap-5 px-4 py-4">
+    <div className="flex flex-col gap-5 px-4 py-4">
       <button
-        onClick={() => navigate(-1)}
+        onClick={backToList}
         className="self-start text-[13px] text-slate-400 hover:text-slate-600"
       >
         ← 목록으로
@@ -65,11 +76,11 @@ export function SupportDetail() {
 
       <p className="text-[13px] leading-relaxed text-slate-600">{detail.description}</p>
 
-      {detail.refund_rules.length > 0 && (
+      {refundRules.length > 0 && (
         <section>
           <h3 className="mb-2 text-sm font-extrabold text-indigo-900">환급 조건</h3>
           <ul className="flex flex-col gap-1.5">
-            {detail.refund_rules.map((rule, i) => (
+            {refundRules.map((rule, i) => (
               <li key={i} className="text-[13px] text-slate-600">
                 <strong className="text-indigo-950">{rule.category}</strong>
                 {" · "}
@@ -85,25 +96,29 @@ export function SupportDetail() {
 
       <section>
         <h3 className="mb-2 text-sm font-extrabold text-indigo-900">신청 체크리스트</h3>
-        <ul className="flex flex-col gap-2">
-          {detail.checklist.map((item) => (
-            <li key={item.id} className="flex items-start gap-2.5">
-              <input
-                type="checkbox"
-                id={`check-${item.id}`}
-                checked={!!checked[item.id]}
-                onChange={() => toggleCheck(item.id)}
-                className="mt-1 h-4 w-4 shrink-0 accent-violet-600"
-              />
-              <label htmlFor={`check-${item.id}`} className="text-[13px] text-indigo-950">
-                {item.content}
-                {item.is_essential && (
-                  <span className="ml-1.5 text-[11px] font-bold text-violet-700">필수</span>
-                )}
-              </label>
-            </li>
-          ))}
-        </ul>
+        {checklist.length === 0 ? (
+          <p className="text-sm text-slate-400">체크리스트가 없어요.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {checklist.map((item) => (
+              <li key={item.id} className="flex items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  id={`check-${item.id}`}
+                  checked={!!checked[item.id]}
+                  onChange={() => toggleCheck(item.id)}
+                  className="mt-1 h-4 w-4 shrink-0 accent-violet-600"
+                />
+                <label htmlFor={`check-${item.id}`} className="text-[13px] text-indigo-950">
+                  {item.content}
+                  {item.is_essential && (
+                    <span className="ml-1.5 text-[11px] font-bold text-violet-700">필수</span>
+                  )}
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {detail.apply_url && (
