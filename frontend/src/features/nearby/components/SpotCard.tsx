@@ -16,9 +16,16 @@ export function SpotCard({ spot, routeType, onSelect }: Props) {
       onClick={() => onSelect(spot)}
       className="flex flex-col overflow-hidden rounded-xl bg-white text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)]"
     >
-      <div className="aspect-square w-full bg-lavender">
-        {spot.image_url && (
+      <div className="flex aspect-square w-full flex-col items-center justify-center gap-1 bg-lavender">
+        {spot.image_url ? (
           <img src={spot.image_url} alt={spot.name} className="h-full w-full object-cover" />
+        ) : (
+          <>
+            <span className="text-[24px]" aria-hidden="true">
+              🖼️
+            </span>
+            <span className="text-[12px] text-caption">준비중이에요</span>
+          </>
         )}
       </div>
       <div className="flex flex-col gap-1 p-3">
