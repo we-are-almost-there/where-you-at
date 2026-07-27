@@ -5,6 +5,8 @@ import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "./co
 import { getCourseDetail, getCourseGpx } from "./coursesApi";
 import type { CourseDetail as CourseDetailData, LatLng, RouteDetail, RouteType } from "./types";
 import { Nearby } from "../nearby";
+import type { NearbyHandle } from "../nearby";
+import type { NearbySpot } from "../nearby/types";
 import { parseRouteTypeParam, setRouteTypeParam } from "./courseUrlState";
 import { useCourseTracking } from "./useCourseTracking";
 import { WAKE_LOCK_FAILURE_MESSAGE } from "./useWakeLock";
@@ -87,7 +89,7 @@ export function CourseDetail() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const courseId = Number(id);
-
+  
   const [detail, setDetail] = useState<CourseDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +116,12 @@ export function CourseDetail() {
   const [now, setNow] = useState(0); // 예상 종료 시각 계산의 기준 시각(추적 중에만 갱신)
   const [startChecked, setStartChecked] = useState(false); // 세션당 한 번만 시작 거리 판정
   const [tooFarMeters, setTooFarMeters] = useState<number | null>(null); // null이 아니면 안내 팝업
-
+  
+  const nearbyRef = useRef<NearbyHandle>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [nearbySpots, setNearbySpots] = useState<NearbySpot[]>([]);
+  const [selectedNearbySpotId, setSelectedNearbySpotId] = useState<number | null>(null);
+  
   useEffect(() => {
     if (!validId) return; // 잘못된 id는 아래 렌더에서 파생 처리
     let cancelled = false;
@@ -297,6 +304,11 @@ export function CourseDetail() {
           bottomInset={mapBottomInset}
           currentLocation={currentLocation}
           followCurrentLocation={isTracking}
+          nearbySpots={infoTab === "nearby" ? nearbySpots : []}
+          selectedSpotId={infoTab === "nearby" ? selectedNearbySpotId : null}
+          onSpotMarkerClick={(id) => {
+            nearbyRef.current?.selectSpotById(id);
+          }}
         />
       </div>
 
@@ -305,6 +317,7 @@ export function CourseDetail() {
         이 section이 relative여야 시트가 이 패널 안에서만 뜸.
         static으로 바꾸면 시트가 기준을 잃고 지도까지 덮는 전체화면으로 퍼져버림. */}
       <section
+        ref={panelRef}
         className={`absolute inset-x-0 bottom-0 z-10 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] transition-[max-height] duration-300 md:relative md:order-1 md:h-full md:max-h-none md:basis-[46%] md:rounded-none md:shadow-none lg:basis-[44%] ${
           isTracking ? "max-h-[60%]" : sheetExpanded ? "max-h-[72%]" : "max-h-[38%]"
         }`}
@@ -448,7 +461,13 @@ export function CourseDetail() {
                 </div>
               ) : (
                 <div className="mt-4">
-                  <Nearby courseId={courseId} routeType={routeType === "자전거" ? "bicycle" : "trail"} />
+                  <Nearby
+                    ref={nearbyRef}
+                    courseId={courseId}
+                    routeType={routeType === "자전거" ? "bicycle" : "trail"}
+                    onSpotsChange={setNearbySpots}
+                    onSelectedChange={(spot) => setSelectedNearbySpotId(spot?.id ?? null)}
+                  />
                 </div>
               )}
             </div>
