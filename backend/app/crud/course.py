@@ -73,6 +73,8 @@ def list_courses(
     keyword: str | None = None,
     distance: str | None = None,
     sort: str | None = None,
+    lat: float | None = None,
+    lng: float | None = None,
     page: int = 1,
     size: int = 20,
 ) -> tuple[int, list[dict]]:
@@ -105,7 +107,21 @@ def list_courses(
             params.append(max_d)
 
     where_sql = "WHERE " + " AND ".join(where)
-    order_col = _SORT_COLUMNS.get(sort, "c.id")
+
+    # 정렬: 화이트리스트 컬럼 또는 '가까운 순'(사용자 좌표 기준 시작점 거리).
+    # nearest는 lat/lng가 있어야 계산 가능 — 없으면(권한 거부 등) 기본(c.id) 정렬로 폴백한다.
+    order_params: list = []
+    if sort == "nearest" and lat is not None and lng is not None:
+        # 시작점까지 근사 거리(제곱). 경도 차이는 위도로 보정한다(고위도일수록 경도 1도가 짧다).
+        # 값은 파라미터 바인딩이라 SQL injection 안전. NULLS LAST: 좌표 없는 코스가
+        # '가장 가까운' 자리로 잘못 올라오지 않게 뒤로 민다.
+        order_sql = (
+            "(power(cr.start_lat - %s, 2) + "
+            "power((cr.start_lng - %s) * cos(radians(%s)), 2)) ASC NULLS LAST"
+        )
+        order_params = [lat, lng, lat]
+    else:
+        order_sql = _SORT_COLUMNS.get(sort, "c.id")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
@@ -121,10 +137,10 @@ def list_courses(
             FROM course c
             JOIN course_route cr ON c.id = cr.course_id
             {where_sql}
-            ORDER BY {order_col}
+            ORDER BY {order_sql}
             LIMIT %s OFFSET %s
             """,
-            [*params, size, (page - 1) * size],
+            [*params, *order_params, size, (page - 1) * size],
         )
         rows = cur.fetchall()
 
