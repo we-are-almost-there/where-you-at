@@ -22,6 +22,9 @@ def get_courses(
     difficulty: str | None = None,
     keyword: str | None = None,
     sort: str | None = None,
+    # 가까운 순 정렬용 사용자 좌표. sort=nearest일 때만 사용, 없으면 기본 정렬로 폴백.
+    lat: float | None = Query(None, ge=-90, le=90),
+    lng: float | None = Query(None, ge=-180, le=180),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     conn=Depends(get_db),
@@ -34,6 +37,8 @@ def get_courses(
         keyword=keyword,
         distance=distance,
         sort=sort,
+        lat=lat,
+        lng=lng,
         page=page,
         size=size,
     )
