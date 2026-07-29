@@ -4,6 +4,8 @@ import { useWakeLock } from "./useWakeLock";
 
 export interface TrackedLocation extends LatLng {
   accuracy: number;
+  // 이동 방향(도, 북쪽=0, 시계방향). 정지 상태거나 기기가 못 주면 null.
+  heading: number | null;
 }
 
 const GEOLOCATION_OPTIONS: PositionOptions = {
@@ -60,6 +62,7 @@ export function useCourseTracking() {
             lat: coords.latitude,
             lng: coords.longitude,
             accuracy: coords.accuracy,
+            heading: coords.heading,
           });
           setError(null);
         },

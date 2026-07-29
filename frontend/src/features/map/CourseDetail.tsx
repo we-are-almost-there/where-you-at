@@ -99,6 +99,8 @@ export function CourseDetail() {
   const descRef = useRef<HTMLParagraphElement>(null);
   const [descOverflow, setDescOverflow] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(true); // 모바일 바텀시트 펼침/접힘
+  const [sheetHeight, setSheetHeight] = useState(0); // 바텀시트 실측 높이(지도 하단이 가려지는 양)
+  const [isNarrow, setIsNarrow] = useState(false); // md 미만 — 시트가 지도를 덮는 구간
   const [retryTick, setRetryTick] = useState(0); // '다시 시도' 트리거
   const validId = Number.isFinite(courseId);
   const {
@@ -234,6 +236,27 @@ export function CourseDetail() {
     return () => window.removeEventListener("resize", measure);
   }, [detail?.description, infoTab, descExpanded]);
 
+  // md 미만에서만 바텀시트가 지도를 덮는다(그 구간에서만 지도를 시트 높이만큼 올린다).
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsNarrow(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  // 지도 하단이 가려지는 양 = 바텀시트의 실측 높이. 접힘/펼침·추적 전환에 따라 높이가 바뀌므로
+  // 비율 추정 대신 ResizeObserver로 실제 높이를 추적해 코스 fit·현위치 이동을 정확히 맞춘다.
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const measure = () => setSheetHeight(el.getBoundingClientRect().height);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // 디자인 순서: 도보 먼저, 자전거 다음 (API는 알파벳순 bicycle→trail로 내려줌)
   const orderedRoutes = detail
     ? [...detail.routes].sort((a, b) => (a.route_type === "도보" ? -1 : 1) - (b.route_type === "도보" ? -1 : 1))
@@ -257,14 +280,9 @@ export function CourseDetail() {
     // 좁은 폭(폴드)에서 "오후 04:12"가 두 줄로 깨지므로 24시간 표기로 고정
   ).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false });
 
-  // 모바일에선 바텀시트가 지도 하단을 가리므로, 시트 높이만큼 코스를 위로 올려 fit.
-  // 데스크톱은 지도가 시트와 겹치지 않아 0. (시트 접기/펼치기 시 재fit)
-  // 추적 중에는 모바일 시트가 진행 상황만 남겨 짧아지므로 그만큼만 띄운다.
-  const sheetRatio = isTracking ? 0.3 : sheetExpanded ? 0.72 : 0.38;
-  const mapBottomInset =
-    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
-      ? Math.round(window.innerHeight * sheetRatio)
-      : 0;
+  // 모바일에선 바텀시트가 지도 하단을 가리므로, 실측한 시트 높이만큼 코스를 위로 올려 fit.
+  // 데스크톱은 지도가 시트와 겹치지 않아 0.
+  const mapBottomInset = isNarrow ? Math.round(sheetHeight) : 0;
 
   return (
     // 모바일: 지도 풀블리드 + 하단 바텀시트 / md+: 좌 패널 + 우 지도
@@ -304,6 +322,7 @@ export function CourseDetail() {
           bottomInset={mapBottomInset}
           currentLocation={currentLocation}
           followCurrentLocation={isTracking}
+          showLocateButton={infoTab === "course"}
           nearbySpots={infoTab === "nearby" ? nearbySpots : []}
           selectedSpotId={infoTab === "nearby" ? selectedNearbySpotId : null}
           onSpotMarkerClick={(id) => {
