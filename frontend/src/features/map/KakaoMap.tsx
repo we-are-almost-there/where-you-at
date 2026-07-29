@@ -1,7 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CustomOverlayMap, Map, MapMarker, MarkerClusterer, Polyline } from "react-kakao-maps-sdk";
 import type { Direction } from "./courseProgress";
 import type { LatLng } from "./types";
+import { getGeolocationErrorMessage } from "./useCourseTracking";
+
+const ACCENT = "#6c5ce7"; // --color-accent (시그니처 바이올렛)
+
+// 현재 위치 마커용 좌표 — 이동 방향(heading)이 있으면 마커가 그 방향으로 회전한다.
+export interface LocationPoint {
+  lat: number;
+  lng: number;
+  heading?: number | null;
+}
 
 // nearby 스팟 마커용 최소 타입 (features/nearby의 NearbySpot과 중복 정의 대신 필요한 필드만)
 export interface NearbyMapSpot {
@@ -20,10 +30,12 @@ interface Props {
   direction?: Direction;
   /** 하단이 바텀시트에 가릴 때, 그 높이(px)만큼 코스를 위로 올려 fit (모바일). */
   bottomInset?: number;
-  /** 코스 따라가기 중 표시할 사용자의 현재 위치. */
-  currentLocation?: LatLng | null;
+  /** 코스 따라가기 중 표시할 사용자의 현재 위치(이동 방향 heading 포함 가능). */
+  currentLocation?: LocationPoint | null;
   /** 현재 위치가 갱신될 때 지도 중심도 함께 이동할지 여부. */
   followCurrentLocation?: boolean;
+  /** 지도 우하단에 '현재 위치로 이동' 버튼을 표시할지. */
+  showLocateButton?: boolean;
   /** 주변 정보 탭에서 현재 카테고리의 스팟 목록 (지도에 마커로 표시). */
   nearbySpots?: NearbyMapSpot[];
   /** 상세 시트가 열려있는 스팟의 id — 이 마커만 강조, 나머지는 흐리게. */
@@ -126,15 +138,52 @@ function EndpointMarker({
   );
 }
 
-function CurrentLocationMarker({ point }: { point: LatLng }) {
+// 현재 위치 마커 — 점 + (이동 방향이 있으면) 그 방향으로 회전하는 원뿔 빔.
+// 북쪽=0, 시계방향인 heading을 CSS rotate로 그대로 매핑(지도는 북쪽 고정).
+function CurrentLocationMarker({ point }: { point: LocationPoint }) {
+  const gradientId = useId(); // 마커가 여러 개 렌더돼도 그래디언트 id가 충돌하지 않게
+  const heading = point.heading ?? null;
+  const hasHeading = heading != null && !Number.isNaN(heading);
   return (
     <CustomOverlayMap position={point} xAnchor={0.5} yAnchor={0.5}>
-      <div
-        role="img"
-        aria-label="현재 위치"
-        className="size-5 rounded-full border-[3px] border-white bg-accent shadow-[0_1px_5px_rgba(0,0,0,0.4)]"
-      />
+      {/* 64px 정사각 박스의 중심에 점을 놓고, 빔 SVG는 이 박스 중심을 축으로 회전 */}
+      <div className="relative grid size-16 place-items-center">
+        {hasHeading && (
+          <svg
+            aria-hidden
+            viewBox="0 0 64 64"
+            className="pointer-events-none absolute inset-0 size-16"
+            style={{ transform: `rotate(${heading}deg)` }}
+          >
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0%" stopColor={ACCENT} stopOpacity="0.55" />
+                <stop offset="100%" stopColor={ACCENT} stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path d="M32 32 L18 10 Q32 3 46 10 Z" fill={`url(#${gradientId})`} />
+          </svg>
+        )}
+        <span
+          role="img"
+          aria-label="현재 위치"
+          className="size-5 rounded-full border-[3px] border-white bg-accent shadow-[0_1px_5px_rgba(0,0,0,0.4)]"
+        />
+      </div>
     </CustomOverlayMap>
+  );
+}
+
+// '현재 위치로 이동' 버튼 아이콘 (링을 가로지르는 십자선, 가운데는 비어 있음)
+function LocateIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke={ACCENT} strokeWidth={2} strokeLinecap="round">
+      <circle cx="12" cy="12" r="7" />
+      <line x1="12" y1="1.5" x2="12" y2="7" />
+      <line x1="12" y1="17" x2="12" y2="22.5" />
+      <line x1="1.5" y1="12" x2="7" y2="12" />
+      <line x1="17" y1="12" x2="22.5" y2="12" />
+    </svg>
   );
 }
 
@@ -146,6 +195,7 @@ export function KakaoMap({
   bottomInset = 0,
   currentLocation = null,
   followCurrentLocation = false,
+  showLocateButton = false,
   nearbySpots = [],
   selectedSpotId = null,
   onSpotMarkerClick,
@@ -154,6 +204,46 @@ export function KakaoMap({
   const [map, setMap] = useState<kakao.maps.Map | null>(null);
   const forward = direction === "forward";
 
+  // 버튼으로 한 번 찍은 내 위치(추적과 별개). 추적이 시작되면 currentLocation이 이 역할을 대신한다.
+  const [previewLocation, setPreviewLocation] = useState<LocationPoint | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locateError, setLocateError] = useState<string | null>(null);
+
+  // 진행 중인 1회성 위치 요청의 콜백에서 '그 사이 추적이 시작됐는지'를 판별하기 위한 최신값 참조.
+  const currentLocationRef = useRef(currentLocation);
+  useEffect(() => {
+    currentLocationRef.current = currentLocation;
+  }, [currentLocation]);
+
+  // locateError 자동 숨김 타이머 — 하나만 유지해 겹침/조기 삭제/언마운트 누수를 막는다.
+  const errorTimerRef = useRef<number | null>(null);
+  const showLocateError = useCallback((message: string) => {
+    setLocateError(message);
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = window.setTimeout(() => setLocateError(null), 4000);
+  }, []);
+  useEffect(() => () => {
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+  }, []);
+
+  // 목표 좌표를 '보이는 영역'의 중앙에 맞춰 이동한다.
+  // 모바일은 바텀시트(bottomInset)가 지도 하단을 가리므로, 그만큼 중심을 남쪽으로 내려
+  // 목표가 시트 위 여백의 한가운데로 오게 한다. 데스크톱(bottomInset=0)은 그대로 중앙.
+  const panToVisibleCenter = useCallback(
+    (lat: number, lng: number) => {
+      if (!map) return;
+      const latlng = new kakao.maps.LatLng(lat, lng);
+      if (bottomInset <= 0) {
+        map.panTo(latlng);
+        return;
+      }
+      const proj = map.getProjection();
+      const pt = proj.pointFromCoords(latlng);
+      map.panTo(proj.coordsFromPoint(new kakao.maps.Point(pt.x, pt.y + bottomInset / 2)));
+    },
+    [map, bottomInset],
+  );
+
   useEffect(() => {
     if (typeof kakao === "undefined") return;
     kakao.maps.load(() => setSdkReady(true));
@@ -161,18 +251,58 @@ export function KakaoMap({
 
   useEffect(() => {
     if (!map || waypoints.length === 0) return;
+    // 추적 중에는 현위치 추적(panTo)이 우선이라 코스 fit을 건너뛴다.
+    // 추적이 꺼지는 순간(따라가기 종료·'알겠어요') 이 이펙트가 재실행되며 코스 전체로 복귀한다.
+    // (데스크톱은 bottomInset이 0 고정이라, 이 의존성이 없으면 종료 후 재fit이 안 됐다)
+    if (followCurrentLocation) return;
     const bounds = new kakao.maps.LatLngBounds();
     waypoints.forEach(({ lat, lng }) => bounds.extend(new kakao.maps.LatLng(lat, lng)));
     const pad = 24;
     map.setBounds(bounds, pad, pad, pad + bottomInset, pad);
-  }, [map, waypoints, bottomInset]);
+  }, [map, waypoints, bottomInset, followCurrentLocation]);
 
   useEffect(() => {
     if (!map || !followCurrentLocation || !currentLocation) return;
-    map.panTo(new kakao.maps.LatLng(currentLocation.lat, currentLocation.lng));
-  }, [map, currentLocation, followCurrentLocation, waypoints]);
+    panToVisibleCenter(currentLocation.lat, currentLocation.lng);
+  }, [map, currentLocation, followCurrentLocation, panToVisibleCenter]);
+
+  // 추적이 실제 위치를 잡으면(=따라가기 시작) 버튼의 1회성 위치 미리보기 상태를 정리한다.
+  // (렌더 중 조정 — 미리보기 마커가 추적 종료 후 되살아나거나, 요청 중이던 스피너가 남는 걸 막는다.)
+  if (currentLocation) {
+    if (previewLocation) setPreviewLocation(null);
+    if (locating) setLocating(false);
+  }
+
+  const handleLocate = () => {
+    // 추적 중이면 이미 살아있는 현위치가 있으니, 새 GPS 요청·미리보기 없이 그 위치로 리센터만 한다.
+    if (currentLocation) {
+      panToVisibleCenter(currentLocation.lat, currentLocation.lng);
+      return;
+    }
+    if (!navigator.geolocation) {
+      showLocateError("이 기기에서는 현재 위치를 사용할 수 없어요.");
+      return;
+    }
+    setLocateError(null);
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        // 요청이 도는 사이 따라가기가 시작됐으면 이 결과는 버린다(추적 follow와 충돌 방지).
+        if (currentLocationRef.current) return;
+        setLocating(false);
+        setPreviewLocation({ lat: coords.latitude, lng: coords.longitude, heading: coords.heading });
+        panToVisibleCenter(coords.latitude, coords.longitude);
+      },
+      ({ code }) => {
+        if (currentLocationRef.current) return;
+        setLocating(false);
+        showLocateError(getGeolocationErrorMessage(code));
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 3_000 },
+    );
+  };
   // 스팟이 선택되면 그 위치로 확대해서, 클러스터에 묶여 있던 주변 마커들도 자연스럽게 풀려나게 한다.
- 
+
   useEffect(() => {
     if (!map || selectedSpotId == null) return;
     const spot = nearbySpots.find((s) => s.id === selectedSpotId);
@@ -232,7 +362,7 @@ export function KakaoMap({
   if (!sdkReady) return null;
 
   return (
-    <div ref={mapContainerRef} className="h-full w-full">
+    <div ref={mapContainerRef} className="relative h-full w-full">
       <Map
         center={{ lat: 35.1, lng: 129.0 }}
         style={{ width: "100%", height: "100%" }}
@@ -308,7 +438,39 @@ export function KakaoMap({
           })()}
 
         {currentLocation && <CurrentLocationMarker point={currentLocation} />}
+        {!currentLocation && previewLocation && <CurrentLocationMarker point={previewLocation} />}
       </Map>
+
+      {/* 현재 위치 버튼 — 바텀시트에 가리지 않게 bottomInset(모바일 시트 높이)만큼 위로 띄운다.
+          데스크톱은 bottomInset=0이라 지도 우하단에 붙는다. */}
+      {showLocateButton && (
+        <div
+          className="pointer-events-none absolute right-4 z-10 flex flex-col items-end gap-2"
+          style={{ bottom: `calc(${bottomInset}px + env(safe-area-inset-bottom) + 16px)` }}
+        >
+          {locateError && (
+            <p className="pointer-events-none max-w-[240px] rounded-lg bg-black/70 px-3 py-1.5 text-[12px] leading-snug text-white shadow-md">
+              {locateError}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={handleLocate}
+            disabled={locating}
+            aria-label="현재 위치로 이동"
+            className="pointer-events-auto grid size-11 place-items-center rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.25)] transition-transform active:scale-95 disabled:opacity-70"
+          >
+            {locating ? (
+              <span
+                aria-hidden
+                className="size-5 animate-spin rounded-full border-2 border-accent border-t-transparent"
+              />
+            ) : (
+              <LocateIcon />
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
