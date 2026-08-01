@@ -14,6 +14,8 @@ import { advanceProgress, distanceToCourse, type Direction } from "./courseProgr
 import { useEndpointAddresses } from "./endpointAddress";
 import { DirectionSelector } from "./components/DirectionSelector";
 import { TrackingStats } from "./components/TrackingStats";
+import SidebarDrawer from "../../components/layout/SidebarDrawer";
+
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
@@ -27,6 +29,7 @@ const MODE_ICON: Record<RouteType, string> = { 도보: "🚶", 자전거: "🚲"
 // 이보다 멀리 떨어져 있으면 따라가기를 시작해도 진행률이 의미가 없다.
 // 주차장·역에서 접근하는 경우를 감안한 값이라 실외 테스트 후 조정이 필요하다.
 const MAX_START_DISTANCE_M = 1000;
+
 
 function formatDistance(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`;
@@ -123,6 +126,7 @@ export function CourseDetail() {
   const panelRef = useRef<HTMLDivElement>(null);
   const [nearbySpots, setNearbySpots] = useState<NearbySpot[]>([]);
   const [selectedNearbySpotId, setSelectedNearbySpotId] = useState<number | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   useEffect(() => {
     if (!validId) return; // 잘못된 id는 아래 렌더에서 파생 처리
@@ -328,6 +332,7 @@ export function CourseDetail() {
           onSpotMarkerClick={(id) => {
             nearbyRef.current?.selectSpotById(id);
           }}
+          onMenuClick={() => setIsSidebarOpen(true)}
         />
       </div>
 
@@ -546,6 +551,7 @@ export function CourseDetail() {
           </>
         )}
       </section>
+      <SidebarDrawer isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
     </div>
   );
 }

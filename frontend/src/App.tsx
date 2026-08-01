@@ -3,6 +3,7 @@ import { CourseExplore, CourseDetail } from "./features/map";
 import { Support } from "./features/support";
 import { Race } from "./features/race";
 
+
 function App() {
   return (
     <Routes>

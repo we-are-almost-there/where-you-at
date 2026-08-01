@@ -58,3 +58,24 @@ export async function fetchRaceDetail(eventId: number): Promise<Race> {
   if (!res.ok) throw new Error(`대회 상세 조회 실패 (${res.status})`);
   return res.json();
 }
+
+export interface NearbyAccommodation {
+  content_id: string;
+  tour_spot_title: string;
+  addr1: string | null;
+  first_image: string | null;
+  distance_km: number;
+  map_x: number | null;
+  map_y: number | null;
+}
+
+export async function fetchNearbyAccommodations(
+  eventId: number,
+  radiusKm: number = 5
+): Promise<NearbyAccommodation[]> {
+  const res = await fetch(
+    `${API_BASE}/api/races/${eventId}/nearby-accommodations?radius_km=${radiusKm}`
+  );
+  if (!res.ok) throw new Error(`주변 숙박 조회 실패 (${res.status})`);
+  return res.json();
+}

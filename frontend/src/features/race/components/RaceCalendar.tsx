@@ -4,25 +4,38 @@ import { EVENT_TYPE_COLOR } from "../types";
 
 interface RaceCalendarProps {
   races: Race[];
+  selectedRaceId?: number | null;
   onSelectRace: (race: Race) => void;
 }
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const MAX_VISIBLE_PER_DAY = 2;
 
-function toDateKey(dateStr: string) {
-  return dateStr; // "YYYY-MM-DD" 그대로 키로 사용
+// Date 객체를 로컬 타임존 기준 "YYYY-MM-DD"로 포맷.
+// toISOString()은 UTC 기준이라 KST(UTC+9)에서 하루가 밀리는 문제가 있어 사용하지 않는다.
+function formatDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// "YYYY-MM-DD" 문자열을 로컬 타임존 기준 Date로 파싱.
+// new Date("YYYY-MM-DD")는 UTC 자정으로 해석되어 formatDateKey와 기준이 어긋난다.
+function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d);
 }
 
 // 대회 하나가 여러 날짜(start_date~end_date)에 걸치면 그 기간의 모든 날짜에 표시
 function buildDateMap(races: Race[]): Map<string, Race[]> {
   const map = new Map<string, Race[]>();
   for (const race of races) {
-    const start = new Date(race.start_date);
-    const end = race.end_date ? new Date(race.end_date) : start;
+    const start = parseLocalDate(race.start_date);
+    const end = race.end_date ? parseLocalDate(race.end_date) : start;
     const cursor = new Date(start);
     while (cursor <= end) {
-      const key = cursor.toISOString().slice(0, 10);
+      const key = formatDateKey(cursor);
       const list = map.get(key) ?? [];
       list.push(race);
       map.set(key, list);
@@ -32,7 +45,7 @@ function buildDateMap(races: Race[]): Map<string, Race[]> {
   return map;
 }
 
-export default function RaceCalendar({ races, onSelectRace }: RaceCalendarProps) {
+export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: RaceCalendarProps) {
   const [viewDate, setViewDate] = useState(() => new Date());
 
   const dateMap = useMemo(() => buildDateMap(races), [races]);
@@ -51,12 +64,12 @@ export default function RaceCalendar({ races, onSelectRace }: RaceCalendarProps)
     }
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(year, month, d);
-      list.push({ date, key: date.toISOString().slice(0, 10) });
+      list.push({ date, key: formatDateKey(date) });
     }
     return list;
   }, [year, month]);
 
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = formatDateKey(new Date());
 
   const goPrevMonth = () => setViewDate(new Date(year, month - 1, 1));
   const goNextMonth = () => setViewDate(new Date(year, month + 1, 1));
@@ -103,9 +116,8 @@ export default function RaceCalendar({ races, onSelectRace }: RaceCalendarProps)
         {cells.map(({ date, key }) => {
           if (!date) return <div key={key} />;
 
-          const dateKey = toDateKey(key);
-          const dayRaces = dateMap.get(dateKey) ?? [];
-          const isToday = dateKey === todayKey;
+          const dayRaces = dateMap.get(key) ?? [];
+          const isToday = key === todayKey;
 
           return (
             <div key={key} className="flex min-h-[64px] flex-col items-center gap-1 py-1">
@@ -120,22 +132,27 @@ export default function RaceCalendar({ races, onSelectRace }: RaceCalendarProps)
               </span>
 
               <div className="flex w-full flex-col items-center gap-0.5 px-0.5">
-                {dayRaces.slice(0, MAX_VISIBLE_PER_DAY).map((race) => (
-                  <button
-                    key={race.event_id}
-                    type="button"
-                    onClick={() => onSelectRace(race)}
-                    className="w-full truncate rounded px-1 text-[10px] leading-4 text-white"
-                    style={{
-                      backgroundColor: race.event_type
-                        ? EVENT_TYPE_COLOR[race.event_type]
-                        : "#9CA3AF",
-                    }}
-                    title={race.race_title}
-                  >
-                    {race.race_title}
-                  </button>
-                ))}
+                {dayRaces.slice(0, MAX_VISIBLE_PER_DAY).map((race) => {
+                  const isSelected = race.event_id === selectedRaceId;
+                  return (
+                    <button
+                      key={race.event_id}
+                      type="button"
+                      onClick={() => onSelectRace(race)}
+                      className={`w-full truncate rounded px-1 text-[10px] leading-4 text-white transition-opacity ${
+                        selectedRaceId != null && !isSelected ? "opacity-40" : "opacity-100"
+                      }`}
+                      style={{
+                        backgroundColor: race.event_type
+                          ? EVENT_TYPE_COLOR[race.event_type]
+                          : "#9CA3AF",
+                      }}
+                      title={race.race_title}
+                    >
+                      {race.race_title}
+                    </button>
+                  );
+                })}
                 {dayRaces.length > MAX_VISIBLE_PER_DAY && (
                   <span className="text-[10px] text-gray-400">
                     +{dayRaces.length - MAX_VISIBLE_PER_DAY}
