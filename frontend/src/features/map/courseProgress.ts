@@ -107,17 +107,52 @@ export function rawProgress(waypoints: LatLng[], location: LatLng, direction: Di
   return progressAtIndex(cum, total, nearestIndex(waypoints, location, direction), direction);
 }
 
+// 현재 위치를 선분 [a,b] 위로 정사영한 점. 짧은 거리라 경도만 위도 수렴(cos)으로 보정한
+// 평면 근사로 t를 구한 뒤, 그 t로 실제 좌표를 선형보간한다. t는 [0,1]로 잘라 선분 밖은 끝점에 붙인다.
+function projectOntoSegment(location: LatLng, a: LatLng, b: LatLng): LatLng {
+  const cosLat = Math.cos(toRad((a.lat + b.lat) / 2));
+  const ax = a.lng * cosLat;
+  const bx = b.lng * cosLat;
+  const px = location.lng * cosLat;
+  const dx = bx - ax;
+  const dy = b.lat - a.lat;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return a; // a와 b가 같은 점
+  let t = ((px - ax) * dx + (location.lat - a.lat) * dy) / len2;
+  t = Math.min(1, Math.max(0, t));
+  return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+}
+
 /**
- * 현재 위치에서 코스까지의 거리(m). 가장 가까운 GPX 지점 기준의 근사값이다.
- * 지점이 없으면 Infinity(= 판정 불가)를 돌려준다.
+ * 현재 위치에서 코스까지의 가장 가까운 점과 그 거리(m).
+ * 꼭짓점이 아니라 각 선분에 내린 수선(cross-track) 기준이라 GPX 점 간격에 덜 흔들린다.
+ * 지점이 없으면 point=null, distance=Infinity(= 판정 불가).
+ */
+export function nearestPointOnCourse(
+  waypoints: LatLng[],
+  location: LatLng,
+): { point: LatLng | null; distance: number } {
+  if (waypoints.length === 0) return { point: null, distance: Infinity };
+  if (waypoints.length === 1) return { point: waypoints[0], distance: haversineMeters(waypoints[0], location) };
+
+  let bestPoint = waypoints[0];
+  let bestDist = Infinity;
+  for (let i = 1; i < waypoints.length; i++) {
+    const foot = projectOntoSegment(location, waypoints[i - 1], waypoints[i]);
+    const d = haversineMeters(location, foot);
+    if (d < bestDist) {
+      bestDist = d;
+      bestPoint = foot;
+    }
+  }
+  return { point: bestPoint, distance: bestDist };
+}
+
+/**
+ * 현재 위치에서 코스까지의 거리(m). 지점이 없으면 Infinity(= 판정 불가)를 돌려준다.
  */
 export function distanceToCourse(waypoints: LatLng[], location: LatLng): number {
-  let best = Infinity;
-  for (const wp of waypoints) {
-    const d = haversineMeters(wp, location);
-    if (d < best) best = d;
-  }
-  return best;
+  return nearestPointOnCourse(waypoints, location).distance;
 }
 
 /**

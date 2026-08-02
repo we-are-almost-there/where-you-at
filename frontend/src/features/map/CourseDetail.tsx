@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
+import { CircleAlert } from "lucide-react";
 import { KakaoMap } from "./KakaoMap";
 import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "./components/ErrorNotice";
 import { getCourseDetail, getCourseGpx } from "./coursesApi";
@@ -10,7 +11,8 @@ import type { NearbySpot } from "../nearby/types";
 import { parseRouteTypeParam, setRouteTypeParam } from "./courseUrlState";
 import { useCourseTracking } from "./useCourseTracking";
 import { WAKE_LOCK_FAILURE_MESSAGE } from "./useWakeLock";
-import { advanceProgress, distanceToCourse, type Direction } from "./courseProgress";
+import { advanceProgress, distanceToCourse, nearestPointOnCourse, type Direction } from "./courseProgress";
+import { announce, primeSpeech } from "./speech";
 import { useEndpointAddresses } from "./endpointAddress";
 import { DirectionSelector } from "./components/DirectionSelector";
 import { TrackingStats } from "./components/TrackingStats";
@@ -29,6 +31,11 @@ const MODE_ICON: Record<RouteType, string> = { 도보: "🚶", 자전거: "🚲"
 // 이보다 멀리 떨어져 있으면 따라가기를 시작해도 진행률이 의미가 없다.
 // 주차장·역에서 접근하는 경우를 감안한 값이라 실외 테스트 후 조정이 필요하다.
 const MAX_START_DISTANCE_M = 1000;
+
+// 주행 중 코스 이탈 판정(선분 수선거리 기준). 진입/복귀 임계값을 벌린 히스테리시스로
+// GPS 튐에 배너·음성이 깜빡이는 걸 막는다. 실외 테스트 후 조정이 필요한 값이다.
+const OFF_COURSE_ENTER_M = 40; // 이보다 멀어지면 이탈로 표시
+const OFF_COURSE_EXIT_M = 15; // 이보다 가까워지면 복귀
 
 
 function formatDistance(m: number): string {
@@ -121,7 +128,10 @@ export function CourseDetail() {
   const [now, setNow] = useState(0); // 예상 종료 시각 계산의 기준 시각(추적 중에만 갱신)
   const [startChecked, setStartChecked] = useState(false); // 세션당 한 번만 시작 거리 판정
   const [tooFarMeters, setTooFarMeters] = useState<number | null>(null); // null이 아니면 안내 팝업
-  
+  const [offCourseMeters, setOffCourseMeters] = useState<number | null>(null); // null이 아니면 이탈 중(배너·유도선)
+  const [offCourseGuidePoint, setOffCourseGuidePoint] = useState<LatLng | null>(null); // 유도선이 향할 코스 위 지점
+  const wasOffCourseRef = useRef(false); // 이탈 진입 순간(아님→이탈)에만 음성이 나가도록 직전 상태 보관
+
   const nearbyRef = useRef<NearbyHandle>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [nearbySpots, setNearbySpots] = useState<NearbySpot[]>([]);
@@ -176,6 +186,16 @@ export function CourseDetail() {
         else setProgress((prev) => advanceProgress(prev, waypoints, currentLocation, direction));
       } else if (tooFarMeters == null) {
         setProgress((prev) => advanceProgress(prev, waypoints, currentLocation, direction));
+        // 주행 중 이탈 감지 — 히스테리시스: 이탈 중이면 EXIT까지 유지, 아니면 ENTER를 넘어야 이탈.
+        const { point, distance } = nearestPointOnCourse(waypoints, currentLocation);
+        const off = offCourseMeters != null ? distance >= OFF_COURSE_EXIT_M : distance > OFF_COURSE_ENTER_M;
+        if (off) {
+          setOffCourseMeters(distance);
+          setOffCourseGuidePoint(point);
+        } else {
+          if (offCourseMeters != null) setOffCourseMeters(null);
+          if (offCourseGuidePoint != null) setOffCourseGuidePoint(null);
+        }
       }
     }
   }
@@ -185,6 +205,21 @@ export function CourseDetail() {
     if (!isTracking) return;
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
+  }, [isTracking]);
+
+  // 이탈 진입(아님→이탈)의 순간에만 1회 음성 안내. 계속 이탈 중이면 반복하지 않는다.
+  const isOffCourse = offCourseMeters != null;
+  useEffect(() => {
+    if (isOffCourse && !wasOffCourseRef.current) announce("코스에서 벗어났어요");
+    wasOffCourseRef.current = isOffCourse;
+  }, [isOffCourse]);
+
+  // 추적이 멈추면(종료·주변 탭 이동·권한 거부) 이탈 상태를 정리해 배너·유도선이 남지 않게 한다.
+  useEffect(() => {
+    if (isTracking) return;
+    setOffCourseMeters(null);
+    setOffCourseGuidePoint(null);
+    wasOffCourseRef.current = false;
   }, [isTracking]);
 
   // URL로 요청한 주행 방식이 없는 코스라면 보유한 첫 경로로 URL을 교정한다.
@@ -210,6 +245,10 @@ export function CourseDetail() {
     setNow(Date.now());
     setStartChecked(false);
     setTooFarMeters(null);
+    setOffCourseMeters(null);
+    setOffCourseGuidePoint(null);
+    wasOffCourseRef.current = false;
+    primeSpeech(); // 버튼 탭(사용자 제스처) 시점에 iOS 음성 잠금 해제
     startTracking();
   };
 
@@ -277,6 +316,8 @@ export function CourseDetail() {
   // 코스에서 너무 멀어 안내가 뜬 상태면 진행률(0%)을 띄우지 않는다 — 시작하지 못한 것이라서.
   const showStats =
     isTracking && currentLocation != null && waypoints.length > 0 && tooFarMeters == null;
+  // 이탈 배너·유도선은 실제 따라가는 중이고 이탈 판정이 선 경우에만.
+  const showOffCourse = showStats && offCourseMeters != null;
   const remainingRatio = 1 - progress / 100;
   const remainingKm = (activeRoute?.distance ?? 0) * remainingRatio;
   const eta = new Date(
@@ -320,12 +361,26 @@ export function CourseDetail() {
 
       {/* 지도 (z-0으로 stacking context를 가둬 Kakao 내부 레이어가 시트를 덮지 않게 함) */}
       <div className="absolute inset-0 z-0 md:relative md:order-2 md:h-full md:min-w-0 md:flex-1">
+        {/* 코스 이탈 배너 — 메뉴 버튼(top 16 + 높이 44) 아래, 가로 중앙. 조작 UI를 가리지 않는 비모달 안내. */}
+        {showOffCourse && (
+          <div
+            role="status"
+            className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2"
+            style={{ top: "calc(env(safe-area-inset-top) + 68px)" }}
+          >
+            <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-[13px] font-bold text-[#FF4D4F] shadow-[0_2px_10px_rgba(0,0,0,0.22)]">
+              <CircleAlert size={16} aria-hidden className="shrink-0" />
+              코스에서 약 {formatDistance(offCourseMeters!)} 벗어났어요
+            </div>
+          </div>
+        )}
         <KakaoMap
           waypoints={waypoints}
           direction={direction}
           bottomInset={mapBottomInset}
           currentLocation={currentLocation}
           followCurrentLocation={isTracking}
+          offCourseGuidePoint={showOffCourse ? offCourseGuidePoint : null}
           showLocateButton={infoTab === "course"}
           nearbySpots={infoTab === "nearby" ? nearbySpots : []}
           selectedSpotId={infoTab === "nearby" ? selectedNearbySpotId : null}

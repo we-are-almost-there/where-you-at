@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advanceProgress, distanceToCourse, rawProgress } from "./courseProgress";
+import { advanceProgress, distanceToCourse, nearestPointOnCourse, rawProgress } from "./courseProgress";
 import type { LatLng } from "./types";
 
 // 같은 위도에서 경도만 균등 간격으로 벌린 5개 지점 → 구간 길이가 모두 같아
@@ -83,6 +83,28 @@ describe("distanceToCourse", () => {
 
   it("빈 GPX는 Infinity", () => {
     expect(distanceToCourse([], LINE[0])).toBe(Infinity);
+  });
+});
+
+describe("nearestPointOnCourse", () => {
+  it("코스 위 지점은 자기 자신, 거리 0m", () => {
+    const { point, distance } = nearestPointOnCourse(LINE, LINE[2]);
+    expect(distance).toBeCloseTo(0, 5);
+    expect(point?.lat).toBeCloseTo(35.0, 5);
+    expect(point?.lng).toBeCloseTo(129.02, 5);
+  });
+
+  it("선분 중간 옆으로 벗어난 위치는 꼭짓점이 아닌 선분 위 수선의 발을 돌려준다", () => {
+    // 두 꼭짓점(129.0 / 129.01) 사이 중간(129.005) 바로 북쪽 → 발은 그 중간점
+    const { point, distance } = nearestPointOnCourse(LINE, { lat: 35.001, lng: 129.005 });
+    expect(point?.lng).toBeCloseTo(129.005, 4);
+    expect(point?.lat).toBeCloseTo(35.0, 4);
+    expect(distance).toBeGreaterThan(100);
+    expect(distance).toBeLessThan(120); // 위도 0.001° ≈ 111m
+  });
+
+  it("빈 GPX는 point=null, distance=Infinity", () => {
+    expect(nearestPointOnCourse([], LINE[0])).toEqual({ point: null, distance: Infinity });
   });
 });
 
