@@ -1,3 +1,4 @@
+import { splitIntoSegments } from "../courseSegments";
 import type { LatLng } from "../types";
 
 const W = 169;
@@ -24,9 +25,9 @@ export function RoutePreview({ points }: { points: LatLng[] }) {
     return [x, y] as const;
   };
 
-  const coords = points.map(toXY);
-  const polyline = coords.map(([x, y]) => `${x},${y}`).join(" ");
-  const [sx, sy] = coords[0];
+  // 끊긴 구간(pen-up)을 직선으로 잇지 않도록 세그먼트별로 폴리라인을 그린다.
+  const segments = splitIntoSegments(points);
+  const [sx, sy] = toXY(points[0]);
 
   return (
     <svg
@@ -35,14 +36,17 @@ export function RoutePreview({ points }: { points: LatLng[] }) {
       className="absolute inset-0 h-full w-full"
       aria-hidden="true"
     >
-      <polyline
-        points={polyline}
-        fill="none"
-        stroke="var(--color-accent)"
-        strokeWidth={3}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
+      {segments.map((seg, i) => (
+        <polyline
+          key={i}
+          points={seg.map((p) => toXY(p).join(",")).join(" ")}
+          fill="none"
+          stroke="var(--color-accent)"
+          strokeWidth={3}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+      ))}
       <circle cx={sx} cy={sy} r={5} fill="var(--color-start)" stroke="#fff" strokeWidth={2} />
     </svg>
   );
