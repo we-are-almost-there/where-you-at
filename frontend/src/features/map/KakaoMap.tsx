@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CustomOverlayMap, Map, MapMarker, MarkerClusterer, Polyline } from "react-kakao-maps-sdk";
 import type { Direction } from "./courseProgress";
+import { splitIntoSegments } from "./courseSegments";
 import type { LatLng } from "./types";
 import { getGeolocationErrorMessage } from "./useCourseTracking";
 import { Menu } from "lucide-react";
@@ -211,6 +212,9 @@ export function KakaoMap({
   const [map, setMap] = useState<kakao.maps.Map | null>(null);
   const forward = direction === "forward";
 
+  // 끊긴 구간(pen-up)을 직선으로 잇지 않도록 좌표를 세그먼트로 나눠 폴리라인을 여러 개 그린다.
+  const segments = useMemo(() => splitIntoSegments(waypoints), [waypoints]);
+
   // 버튼으로 한 번 찍은 내 위치(추적과 별개). 추적이 시작되면 currentLocation이 이 역할을 대신한다.
   const [previewLocation, setPreviewLocation] = useState<LocationPoint | null>(null);
   const [locating, setLocating] = useState(false);
@@ -378,7 +382,9 @@ export function KakaoMap({
       >
         {waypoints.length > 0 && (
           <>
-            <Polyline path={waypoints} strokeWeight={4} strokeColor="#6C5CE7" strokeOpacity={0.9} />
+            {segments.map((seg, i) => (
+              <Polyline key={i} path={seg} strokeWeight={4} strokeColor="#6C5CE7" strokeOpacity={0.9} />
+            ))}
             <EndpointMarker
               point={waypoints[0]}
               color={forward ? "#03C75A" : "#FF4D4F"}
