@@ -519,7 +519,7 @@ export function KakaoMap({
       {/* 사이드바 진입 버튼 — CourseDetail은 풀스크린 지도 레이아웃이라 AppHeader가 없다.
           위치추적 버튼과 대칭되는 좌상단에 배치해 지도 위 플로팅 UI로서의 일관성을 유지한다. */}
       {onMenuClick && (
-        <div className="absolute left-4 top-4 z-10">
+        <div className="absolute left-4 top-4 z-10 md:hidden">
           <button
             type="button"
             onClick={onMenuClick}
