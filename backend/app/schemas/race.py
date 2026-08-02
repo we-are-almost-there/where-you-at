@@ -32,3 +32,12 @@ class RaceListResponse(BaseModel):
     page: int
     per_page: int
     items: List[RaceOut]
+
+class NearbyAccommodationOut(BaseModel):
+    content_id: str
+    tour_spot_title: str
+    addr1: Optional[str] = None
+    first_image: Optional[str] = None
+    distance_km: float
+    map_x: Optional[float] = None  # 경도
+    map_y: Optional[float] = None  # 위도

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Race } from "../types";
 import { EVENT_TYPE_COLOR } from "../types";
+import { parseLocalDate } from "../dateUtils";
 
 interface RaceCalendarProps {
   races: Race[];
@@ -18,13 +19,6 @@ function formatDateKey(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
-}
-
-// "YYYY-MM-DD" 문자열을 로컬 타임존 기준 Date로 파싱.
-// new Date("YYYY-MM-DD")는 UTC 자정으로 해석되어 formatDateKey와 기준이 어긋난다.
-function parseLocalDate(dateStr: string): Date {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(y, m - 1, d);
 }
 
 // 대회 하나가 여러 날짜(start_date~end_date)에 걸치면 그 기간의 모든 날짜에 표시

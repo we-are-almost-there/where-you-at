@@ -2,20 +2,12 @@ import { useState } from "react";
 import type { Race } from "../types";
 import { EVENT_TYPE_COLOR, EVENT_TYPE_LABEL } from "../types";
 import RaceMap from "./RaceMap";
+import { formatDateRange } from "../dateUtils";
 
 interface RaceDetailSheetProps {
   race: Race;
   onClose: () => void;
   backLabel?: string;
-}
-
-function formatDateRange(start: string, end: string | null) {
-  const fmt = (s: string) => {
-    const d = new Date(s);
-    return `${d.getMonth() + 1}.${d.getDate()}(${"일월화수목금토"[d.getDay()]})`;
-  };
-  if (!end || end === start) return fmt(start);
-  return `${fmt(start)} ~ ${fmt(end)}`;
 }
 
 // TourAPI eventhomepage가 &amp; 같은 HTML 엔티티를 이스케이프하지 않은 채로

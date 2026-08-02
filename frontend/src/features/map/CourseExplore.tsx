@@ -134,7 +134,6 @@ export function CourseExplore() {
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white md:order-1 md:min-w-0 md:flex-none md:basis-[46%] lg:basis-[44%]">
         {/* 상단바 (모바일 전용, Figma) */}
         <AppHeader />
-        
         {/* 제목 + 탭 */}
         <div className="shrink-0 px-4 pb-0 pt-4 md:pt-5">
           <h1 className="font-bold text-ink text-[20px]">코스 목록</h1>

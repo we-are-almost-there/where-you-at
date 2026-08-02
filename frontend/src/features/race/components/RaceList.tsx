@@ -1,19 +1,11 @@
 import type { Race } from "../types";
 import { EVENT_TYPE_COLOR, EVENT_TYPE_LABEL } from "../types";
+import { formatDateRange } from "../dateUtils";
 
 interface RaceListProps {
   races: Race[];
   selectedRaceId?: number | null;
   onSelectRace: (race: Race) => void;
-}
-
-function formatDateRange(start: string, end: string | null) {
-  const fmt = (s: string) => {
-    const d = new Date(s);
-    return `${d.getMonth() + 1}.${d.getDate()}(${"일월화수목금토"[d.getDay()]})`;
-  };
-  if (!end || end === start) return fmt(start);
-  return `${fmt(start)} ~ ${fmt(end)}`;
 }
 
 export default function RaceList({ races, selectedRaceId, onSelectRace }: RaceListProps) {
@@ -44,14 +36,10 @@ export default function RaceList({ races, selectedRaceId, onSelectRace }: RaceLi
           >
             <span
               className="h-full min-h-[44px] w-1 shrink-0 rounded-full"
-              style={{
-                backgroundColor: race.event_type
-                  ? EVENT_TYPE_COLOR[race.event_type]
-                  : "#9CA3AF",
-              }}
+              style={{ backgroundColor: race.event_type ? EVENT_TYPE_COLOR[race.event_type] : "#9CA3AF" }}
             />
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 flex items-center gap-2">
+            <span className="min-w-0 flex-1">
+              <span className="mb-1 flex items-center gap-2">
                 {race.event_type && (
                   <span
                     className="rounded-full px-2 py-0.5 text-[11px] font-medium text-white"
@@ -63,21 +51,19 @@ export default function RaceList({ races, selectedRaceId, onSelectRace }: RaceLi
                 <span className="text-xs text-gray-400">
                   {formatDateRange(race.start_date, race.end_date)}
                 </span>
-              </div>
-              <p
-                className={`truncate text-sm ${
+              </span>
+              <span
+                className={`block truncate text-sm ${
                   isSelected ? "font-semibold text-[#6C5CE7]" : "font-medium text-gray-900"
                 }`}
               >
                 {race.race_title}
-              </p>
+              </span>
               {race.location_name && (
-                <p className="truncate text-xs text-gray-500">{race.location_name}</p>
+                <span className="block truncate text-xs text-gray-500">{race.location_name}</span>
               )}
-            </div>
-            <span className={`shrink-0 ${isSelected ? "text-[#6C5CE7]" : "text-gray-300"}`}>
-              ›
             </span>
+            <span className={`shrink-0 ${isSelected ? "text-[#6C5CE7]" : "text-gray-300"}`}>›</span>
           </button>
         );
       })}

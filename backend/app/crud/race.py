@@ -100,3 +100,34 @@ def get_races_by_course(conn, course_id: int, upcoming_only: bool = True):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(query, {"course_id": course_id})
         return cur.fetchall()
+
+def get_nearby_accommodations(conn, event_id: int, radius_km: float = 5.0, limit: int = 10):
+    """대회 좌표 기준 반경 내 숙박시설 조회 (가까운 순)."""
+    query = """
+        SELECT
+            ts.content_id,
+            ts.tour_spot_title,
+            ts.addr1,
+            ts.first_image,
+            ts.map_x,
+            ts.map_y,
+            ST_Distance(ts.geom::geography, r.geom::geography) / 1000.0 AS distance_km
+        FROM race r
+        JOIN tour_spot ts
+            ON ST_DWithin(ts.geom::geography, r.geom::geography, %(radius_m)s)
+        JOIN accommodation a ON a.content_id = ts.content_id
+        WHERE r.event_id = %(event_id)s
+          AND r.geom IS NOT NULL
+        ORDER BY distance_km ASC
+        LIMIT %(limit)s
+    """
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            query,
+            {
+                "event_id": event_id,
+                "radius_m": radius_km * 1000,
+                "limit": limit,
+            },
+        )
+        return cur.fetchall()

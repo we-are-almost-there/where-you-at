@@ -52,7 +52,7 @@ export default function Race() {
             <div className="mb-4 flex gap-5 border-b border-gray-100">
               <button
                 type="button"
-                onClick={() => setActiveType(null)}
+                onClick={() => {setActiveType(null); setSelectedRace(null);}}
                 className={`relative pb-2 text-sm font-medium transition-colors ${
                   activeType === null ? "text-gray-900" : "text-gray-400"
                 }`}
@@ -68,7 +68,7 @@ export default function Race() {
                   <button
                     key={type}
                     type="button"
-                    onClick={() => setActiveType(isActive ? null : type)}
+                    onClick={() => {setActiveType(isActive ? null : type);  setSelectedRace(null);}}
                     className={`relative pb-2 text-sm font-medium transition-colors ${
                       isActive ? "text-gray-900" : "text-gray-400"
                     }`}

@@ -6,7 +6,7 @@ export default function AppHeader() {
 
   return (
     <>
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-divider px-4 md:hidden">
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-divider px-4">
         <button
           type="button"
           onClick={() => setIsSidebarOpen(true)}

@@ -29,6 +29,6 @@ export function Support() {
           )}
         </div>
       </div>
-   </>
+    </>
   );
 }
