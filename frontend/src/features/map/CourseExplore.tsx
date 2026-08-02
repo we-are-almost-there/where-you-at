@@ -12,6 +12,7 @@ import { getCourses, getRegions } from "./coursesApi";
 import { buildRegionOptions, type RegionSelectItem } from "./regionOptions";
 import type { CourseFilterState, CourseListResponse, LatLng, RouteType } from "./types";
 import { buildCourseSearchParams, parseCourseUrlState, type CourseUrlState } from "./courseUrlState";
+import AppHeader from "../../components/layout/AppHeader";
 
 const EMPTY_RES: CourseListResponse = {
   total_count: 0,
@@ -132,13 +133,7 @@ export function CourseExplore() {
       {/* 코스 목록 영역 */}
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white md:order-1 md:min-w-0 md:flex-none md:basis-[46%] lg:basis-[44%]">
         {/* 상단바 (모바일 전용, Figma) */}
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-divider px-4 md:hidden">
-          <button type="button" aria-label="메뉴" className="cursor-pointer text-[20px] leading-none text-ink">
-            ☰
-          </button>
-          <span className="font-bold text-ink text-[19px]">어디까지왔니</span>
-        </header>
-
+        <AppHeader />
         {/* 제목 + 탭 */}
         <div className="shrink-0 px-4 pb-0 pt-4 md:pt-5">
           <h1 className="font-bold text-ink text-[20px]">코스 목록</h1>

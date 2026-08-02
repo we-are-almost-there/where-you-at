@@ -3,6 +3,7 @@ import { CustomOverlayMap, Map, MapMarker, MarkerClusterer, Polyline } from "rea
 import type { Direction } from "./courseProgress";
 import type { LatLng } from "./types";
 import { getGeolocationErrorMessage } from "./useCourseTracking";
+import { Menu } from "lucide-react";
 
 const ACCENT = "#6c5ce7"; // --color-accent (시그니처 바이올렛)
 
@@ -42,6 +43,8 @@ interface Props {
   selectedSpotId?: number | null;
   /** 지도 마커 클릭 시 호출 (상세 시트 열기용). */
   onSpotMarkerClick?: (id: number) => void;
+  /** 지도 좌상단에 '메뉴(사이드바 열기)' 버튼을 표시할지. 넘기지 않으면 버튼 자체가 렌더링되지 않는다. */
+  onMenuClick?: () => void;
 }
 
 const NEARBY_MARKER_COLOR = "#6C5CE7";
@@ -199,6 +202,7 @@ export function KakaoMap({
   nearbySpots = [],
   selectedSpotId = null,
   onSpotMarkerClick,
+  onMenuClick,
 }: Props) {
   const [sdkReady, setSdkReady] = useState(false);
   const [map, setMap] = useState<kakao.maps.Map | null>(null);
@@ -468,6 +472,22 @@ export function KakaoMap({
             ) : (
               <LocateIcon />
             )}
+          </button>
+        </div>
+      )}
+
+      {/* 사이드바 진입 버튼 — CourseDetail은 풀스크린 지도 레이아웃이라 AppHeader가 없다.
+          위치추적 버튼과 대칭되는 좌상단에 배치해 지도 위 플로팅 UI로서의 일관성을 유지한다. */}
+      {onMenuClick && (
+        <div className="absolute left-4 top-4 z-10">
+          <button
+            type="button"
+            onClick={onMenuClick}
+            aria-label="메뉴"
+            className="flex h-11 items-center gap-2 rounded-full bg-white px-4 shadow-[0_2px_8px_rgba(0,0,0,0.25)] transition-transform active:scale-95"
+          >
+            <Menu size={20} strokeWidth={1.75} className="text-ink" />
+            <span className="text-[15px] font-bold text-ink">어디까지왔니</span>
           </button>
         </div>
       )}
