@@ -35,6 +35,8 @@ interface Props {
   currentLocation?: LocationPoint | null;
   /** 현재 위치가 갱신될 때 지도 중심도 함께 이동할지 여부. */
   followCurrentLocation?: boolean;
+  /** 코스에서 벗어났을 때, 현위치에서 코스 위 가장 가까운 지점까지 그을 점선 유도선의 끝점. */
+  offCourseGuidePoint?: LatLng | null;
   /** 지도 우하단에 '현재 위치로 이동' 버튼을 표시할지. */
   showLocateButton?: boolean;
   /** 주변 정보 탭에서 현재 카테고리의 스팟 목록 (지도에 마커로 표시). */
@@ -198,6 +200,7 @@ export function KakaoMap({
   bottomInset = 0,
   currentLocation = null,
   followCurrentLocation = false,
+  offCourseGuidePoint = null,
   showLocateButton = false,
   nearbySpots = [],
   selectedSpotId = null,
@@ -440,6 +443,20 @@ export function KakaoMap({
               />
             );
           })()}
+
+        {/* 코스 이탈 시 현위치→가장 가까운 코스 지점 점선 유도선 (마커보다 먼저 그려 아래에 깔림) */}
+        {currentLocation && offCourseGuidePoint && (
+          <Polyline
+            path={[
+              { lat: currentLocation.lat, lng: currentLocation.lng },
+              offCourseGuidePoint,
+            ]}
+            strokeWeight={3}
+            strokeColor="#FF4D4F"
+            strokeOpacity={0.85}
+            strokeStyle="shortdash"
+          />
+        )}
 
         {currentLocation && <CurrentLocationMarker point={currentLocation} />}
         {!currentLocation && previewLocation && <CurrentLocationMarker point={previewLocation} />}
