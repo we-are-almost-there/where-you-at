@@ -45,3 +45,22 @@ export interface SupportListQuery {
   region_code?: string;
   target?: string;
 }
+
+// 환급 계산 요청/응답
+export type CalculateRequest = {
+  region_code: string;
+  spent_by_category: Record<string, number>; // 키는 한글 ("숙박" 등)
+  stay_duration: number;
+};
+
+export type CalculationBasisItem = {
+  item: string;        // 제도명 (support_title)
+  amount: number;      // 이 항목 환급액
+  description: string; // 규칙 설명 (없으면 "")
+};
+
+export type CalculateResponse = {
+  expected_refund: number;
+  calculation_basis: CalculationBasisItem[];
+  tips: string[];
+};
