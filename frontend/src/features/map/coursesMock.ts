@@ -40,15 +40,16 @@ const RAW: Array<{
   difficulty: Difficulty;
   hasBicycle: boolean;
   landmarks: string[];
+  isPopulationDrop?: boolean;
 }> = [
   { id: 1, title: "남파랑길 2코스", start_address: "부산 영도구 태종대로", region_code: "26", distance: 19.0, difficulty: "보통", hasBicycle: true, landmarks: ["태종대", "흰여울문화마을", "절영해안산책로"] },
   { id: 2, title: "남파랑길 3코스", start_address: "부산 사하구 다대로", region_code: "26", distance: 14.0, difficulty: "보통", hasBicycle: true, landmarks: ["몰운대", "다대포해수욕장", "아미산전망대"] },
   { id: 3, title: "남파랑길 4코스", start_address: "부산 강서구 녹산산단", region_code: "26", distance: 22.0, difficulty: "어려움", hasBicycle: true, landmarks: ["을숙도", "가덕도", "낙동강하구"] },
   { id: 4, title: "갈맷길 해운대 구간", start_address: "부산 해운대구 우동", region_code: "26", distance: 8.5, difficulty: "쉬움", hasBicycle: false, landmarks: ["해운대해수욕장", "동백섬", "누리마루"] },
-  { id: 5, title: "이순신 백의종군로", start_address: "경남 남해군 고현면", region_code: "48", distance: 27.5, difficulty: "어려움", hasBicycle: true, landmarks: ["이순신순국공원", "남해대교", "관음포"] },
+  { id: 5, title: "이순신 백의종군로", start_address: "경남 남해군 고현면", region_code: "48", distance: 27.5, difficulty: "어려움", hasBicycle: true, landmarks: ["이순신순국공원", "남해대교", "관음포"], isPopulationDrop: true },
   { id: 6, title: "통영 한려해상 둘레길", start_address: "경남 통영시 도남동", region_code: "48", distance: 11.2, difficulty: "보통", hasBicycle: false, landmarks: ["미륵산", "통영케이블카", "달아공원"] },
   { id: 7, title: "여수 금오도 비렁길", start_address: "전남 여수시 남면", region_code: "46", distance: 6.4, difficulty: "쉬움", hasBicycle: false, landmarks: ["함구미마을", "촛대바위", "매봉전망대"] },
-  { id: 8, title: "순천만 갈대길", start_address: "전남 순천시 대대동", region_code: "46", distance: 16.8, difficulty: "보통", hasBicycle: true, landmarks: ["순천만습지", "갈대밭", "용산전망대"] },
+  { id: 8, title: "순천만 갈대길", start_address: "전남 순천시 대대동", region_code: "46", distance: 16.8, difficulty: "보통", hasBicycle: true, landmarks: ["순천만습지", "갈대밭", "용산전망대"], isPopulationDrop: true },
 ];
 
 const BASES: Record<string, LatLng> = {
@@ -65,6 +66,7 @@ export const MOCK_COURSES: Course[] = RAW.map((c) => {
     start_address: c.start_address,
     image_url: "",
     region_code: c.region_code,
+    is_population_drop_zone: c.isPopulationDrop ?? false,
     landmarks: c.landmarks,
     routes: routesFor(c.distance, c.difficulty, c.hasBicycle),
     path_trail: trail,

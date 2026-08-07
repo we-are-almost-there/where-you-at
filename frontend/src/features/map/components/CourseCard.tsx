@@ -31,7 +31,12 @@ export function CourseCard({ course, routeType, onSelect }: Props) {
       >
         {/* 미리보기: 경로와 대표 사진이 모두 있으면 반씩 표시하고, 하나만 있으면 전체 폭.
             둘 다 없으면 🏞️ fallback을 유지한다. */}
-        <div className="flex h-[120px] shrink-0">
+        <div className="relative flex h-[120px] shrink-0">
+          {course.is_population_drop_zone && (
+            <span className="absolute left-2 top-2 z-10 rounded-md bg-white px-2 py-1.5 text-[11px] font-semibold leading-none text-accent shadow-[0px_1px_4px_0px_rgba(0,0,0,0.18)]">
+              방문 혜택 지역
+            </span>
+          )}
           {(hasRoute || !course.image_url) && (
             <div
               className={`relative flex items-center justify-center overflow-hidden bg-mapbg ${
@@ -39,7 +44,8 @@ export function CourseCard({ course, routeType, onSelect }: Props) {
               }`}
             >
               {hasRoute ? (
-                <RoutePreview points={points} />
+                // 뱃지(하단 31px) + 시작점 원 반지름(6px) + 여유를 두고 경로를 아래로 민다.
+                <RoutePreview points={points} padTop={course.is_population_drop_zone ? 42 : undefined} />
               ) : (
                 <span className="text-[26px]" aria-hidden="true">
                   🏞️
