@@ -11,6 +11,10 @@ const ACTIVE_SIDO = new Set([
   "12", "26", "27", "28", "41", "43", "44", "47", "48", "51", "52",
 ]);
 
+const COLOR_HOVER = "#6C5CE7"; // --color-accent (SVG fill이라 토큰 클래스 대신 값으로)
+const COLOR_INACTIVE = "#F1EFFC"; // --color-lavender
+const COLOR_SIGUNGU = "#C9B8F0"; // accent를 옅게 깐 시군구 기본 채움
+
 // 시도별 색상 (활성 시도만)
 const SIDO_COLOR: Record<string, string> = {
   "41": "#A9C7F5", // 경기 - 파랑
@@ -170,8 +174,9 @@ export function SupportRegionMap() {
     return nodes;
   }, [badges, selectedSido]);
 
-  if (error) return <p className="py-4 text-sm text-rose-600">{error}</p>;
-  if (!sido || !support) return <p className="py-4 text-sm text-slate-400">지도를 불러오는 중…</p>;
+  if (error) return <p className="py-16 text-center text-[14px] text-caption">{error}</p>;
+  if (!sido || !support)
+    return <p className="py-16 text-center text-[14px] text-caption">지도를 불러오는 중…</p>;
 
   const selectedSidoName =
     selectedSido != null
@@ -185,16 +190,17 @@ export function SupportRegionMap() {
       <div className="mb-2 flex items-center gap-2">
         {selectedSido != null && (
           <button
+            type="button"
             onClick={() => {
               setSelectedSido(null);
               setHovered(null);
             }}
-            className="text-[13px] text-slate-400 hover:text-slate-600"
+            className="cursor-pointer text-[13px] text-caption transition-colors hover:text-ink"
           >
             ← 전국으로
           </button>
         )}
-        <span className="text-sm font-bold text-indigo-950">
+        <span className="text-[15px] font-bold text-ink">
           {selectedSido == null ? "지역을 선택하세요" : selectedSidoName}
         </span>
       </div>
@@ -213,10 +219,10 @@ export function SupportRegionMap() {
                   d={toPath(f.geometry, project)}
                   fill={
                     hovered === code
-                      ? "#6C5CE7"
+                      ? COLOR_HOVER
                       : active
-                        ? SIDO_COLOR[code] ?? "#C9B8F0"
-                        : "#F1EFF7"
+                        ? SIDO_COLOR[code] ?? COLOR_SIGUNGU
+                        : COLOR_INACTIVE
                   }
                   stroke="#fff"
                   strokeWidth={0.8}
@@ -233,7 +239,7 @@ export function SupportRegionMap() {
               <path
                 key={code}
                 d={toPath(f.geometry, project)}
-                fill={hovered === code ? "#6C5CE7" : "#C9B8F0"}
+                fill={hovered === code ? COLOR_HOVER : COLOR_SIGUNGU}
                 stroke="#fff"
                 strokeWidth={0.6}
                 className="cursor-pointer transition-colors"
@@ -254,7 +260,7 @@ export function SupportRegionMap() {
               y1={b.y}
               x2={b.ox}
               y2={b.oy}
-              stroke="#C9B8F0"
+              stroke={COLOR_SIGUNGU}
               strokeWidth={0.8}
             />
           ) : null;
@@ -271,6 +277,7 @@ export function SupportRegionMap() {
             style={{ overflow: "visible" }}
           >
             <button
+              type="button"
               onClick={() =>
                 selectedSido == null
                   ? setSelectedSido(b.code)
@@ -278,14 +285,12 @@ export function SupportRegionMap() {
               }
               onMouseEnter={() => setHovered(b.code)}
               onMouseLeave={() => setHovered(null)}
-              className={`flex items-center justify-center gap-0.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold shadow-sm transition-colors ${
-                hovered === b.code
-                  ? "bg-violet-600 text-white"
-                  : "bg-white text-indigo-950 ring-1 ring-violet-200"
+              className={`flex cursor-pointer items-center justify-center gap-0.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold shadow-[0px_1px_4px_0px_rgba(0,0,0,0.18)] transition-colors ${
+                hovered === b.code ? "bg-accent text-white" : "bg-white text-ink"
               }`}
             >
               {b.name}
-              <span className="text-violet-400">›</span>
+              <span className={hovered === b.code ? "text-white/70" : "text-caption"}>›</span>
             </button>
           </foreignObject>
         ))}

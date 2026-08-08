@@ -1,19 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router";
-import type { SupportListItem, BadgeType } from "../support.types";
+import { BADGE_CLASS, BADGE_LABEL, type SupportListItem } from "../support.types";
 import { fetchSupportList } from "../supportApi";
-
-const BADGE_LABEL: Record<BadgeType, string> = {
-  refund: "환급",
-  discount: "할인",
-  pass: "무료 패스",
-};
-
-const BADGE_CLASS: Record<BadgeType, string> = {
-  refund: "bg-violet-600 text-white",
-  pass: "bg-indigo-950 text-white",
-  discount: "bg-violet-100 text-indigo-950",
-};
 
 function formatAmount(amount: number | null): string {
   if (amount == null) return "금액 상이";
@@ -41,23 +29,25 @@ export function SupportList() {
   return (
     <div className="mx-auto max-w-md px-4 py-4">
       <header className="mb-4">
-        <h2 className="text-lg font-extrabold text-indigo-950">여행 지원금·혜택</h2>
-        <p className="mt-1 text-sm text-slate-400">
+        <h2 className="font-bold text-ink text-[18px]">여행 지원금·혜택</h2>
+        <p className="mt-1 text-[13px] text-caption">
           {regionCode
             ? "선택한 지역에서 받을 수 있는 지원 제도예요."
             : "인구감소지역 여행 시 받을 수 있는 지원 제도를 모았어요."}
         </p>
         {regionCode && (
-          <Link to="/support" className="mt-2 inline-block text-xs font-semibold text-violet-600">
+          <Link to="/support" className="mt-2 inline-block text-[12px] font-bold text-accent">
             전체 지원 제도 보기 →
           </Link>
         )}
       </header>
 
-      {loading && <p className="py-4 text-sm text-slate-400">지원 제도를 불러오는 중…</p>}
-      {error && <p className="py-4 text-sm text-rose-600">{error}</p>}
+      {loading && (
+        <p className="py-6 text-center text-[13px] text-caption">지원 제도를 불러오는 중…</p>
+      )}
+      {error && <p className="py-6 text-center text-[13px] text-caption">{error}</p>}
       {!loading && !error && items.length === 0 && (
-        <p className="py-4 text-sm text-slate-400">
+        <p className="py-6 text-center text-[13px] text-caption">
           {regionCode
             ? "이 지역에 해당하는 지원 제도가 없어요."
             : "표시할 지원 제도가 없습니다."}
@@ -68,24 +58,30 @@ export function SupportList() {
         {items.map((item) => (
           <button
             key={item.id}
+            type="button"
             onClick={() => navigate(`/support/${item.id}`)}
-            className="rounded-2xl border border-violet-100 bg-white p-4 text-left transition hover:border-violet-300"
+            className="cursor-pointer rounded-[14px] bg-white p-4 text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)]"
           >
-            <div className="mb-2 flex items-center justify-between">
+            <div className="mb-2 flex items-center justify-between gap-2">
               <span
-                className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${BADGE_CLASS[item.badge_type]}`}
+                className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${BADGE_CLASS[item.badge_type]}`}
               >
                 {BADGE_LABEL[item.badge_type]}
               </span>
-              <span className="text-[11px] text-slate-400">~{item.end_date}</span>
+              {item.end_date && <span className="text-[11px] text-caption">~{item.end_date}</span>}
             </div>
 
-            <h3 className="text-[15px] font-extrabold text-indigo-950">{item.title}</h3>
-            <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{item.summary}</p>
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="font-bold text-ink text-[15px]">{item.title}</h3>
+              <span className="shrink-0 text-[18px] leading-none text-caption">›</span>
+            </div>
+            {item.summary && (
+              <p className="mt-1 text-[13px] leading-relaxed text-caption">{item.summary}</p>
+            )}
 
-            <div className="mt-3 flex items-center justify-between border-t border-violet-100 pt-3">
-              <span className="text-[11px] text-slate-400">{item.agency}</span>
-              <span className="text-[13px] font-extrabold text-violet-700">
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-divider pt-3">
+              <span className="truncate text-[12px] text-caption">{item.agency}</span>
+              <span className="shrink-0 font-bold text-accent text-[14px]">
                 {formatAmount(item.max_amount)}
               </span>
             </div>

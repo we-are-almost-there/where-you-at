@@ -77,28 +77,28 @@ export function SupportCalculator({ regionCode }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {/* 입력폼 */}
-      <div className="rounded-xl border border-violet-100 bg-white p-4">
+      <div className="rounded-[14px] bg-white p-4 shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)]">
         <div className="flex flex-col gap-3">
           {CATEGORIES.map(({ key, label }) => (
-            <label key={key} className="flex flex-col gap-1">
-              <span className="text-xs font-bold text-slate-500">{label}</span>
-              <div className="flex items-center rounded-lg border border-slate-200 px-3 py-2 focus-within:border-violet-400">
+            <label key={key} className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-bold text-caption">{label}</span>
+              <div className="flex items-center rounded-lg border border-divider bg-white px-3.5 py-2.5 focus-within:border-accent">
                 <input
                   type="text"
                   inputMode="numeric"
                   value={spent[key] ? Number(spent[key]).toLocaleString("ko-KR") : ""}
                   onChange={(e) => handleChange(key, e.target.value)}
                   placeholder="0"
-                  className="w-full text-right text-sm text-indigo-950 outline-none placeholder:text-slate-300"
+                  className="w-full text-right text-[14px] text-ink outline-none placeholder:text-caption"
                 />
-                <span className="ml-1 text-sm text-slate-400">원</span>
+                <span className="ml-1 text-[14px] text-caption">원</span>
               </div>
             </label>
           ))}
 
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-bold text-slate-500">숙박일수</span>
-            <div className="flex items-center rounded-lg border border-slate-200 px-3 py-2 focus-within:border-violet-400">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12px] font-bold text-caption">숙박일수</span>
+            <div className="flex items-center rounded-lg border border-divider bg-white px-3.5 py-2.5 focus-within:border-accent">
               <input
                 type="text"
                 inputMode="numeric"
@@ -108,32 +108,33 @@ export function SupportCalculator({ regionCode }: Props) {
                 }
                 // 비운 채로 칸을 벗어나면 기본값을 되돌려, 화면 값과 계산에 쓰는 값이 어긋나지 않게 한다
                 onBlur={() => stayDuration === "" && setStayDuration("1")}
-                className="w-full text-right text-sm text-indigo-950 outline-none"
+                className="w-full text-right text-[14px] text-ink outline-none"
               />
-              <span className="ml-1 text-sm text-slate-400">박</span>
+              <span className="ml-1 text-[14px] text-caption">박</span>
             </div>
           </label>
         </div>
 
         <button
+          type="button"
           onClick={handleCalculate}
           disabled={loading || stayNights == null}
-          className="mt-4 w-full rounded-xl bg-violet-600 py-2.5 text-sm font-extrabold text-white hover:bg-violet-700 disabled:opacity-50"
+          className="mt-4 w-full cursor-pointer rounded-[14px] bg-accent py-3 text-[14px] font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "계산 중…" : "예상 환급액 계산"}
         </button>
       </div>
 
-      {error && <p className="text-sm text-rose-600">{error}</p>}
+      {error && <p className="text-[13px] text-caption">{error}</p>}
 
       {/* 영수증 */}
       {result && (
-        <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
+        <div className="rounded-[14px] bg-lavender p-4">
           {result.expected_refund > 0 ? (
             <>
-              <div className="mb-3 flex items-baseline justify-between border-b border-dashed border-violet-200 pb-3">
-                <span className="text-sm font-bold text-indigo-900">예상 환급액</span>
-                <span className="text-xl font-extrabold text-violet-700">
+              <div className="mb-3 flex items-baseline justify-between border-b border-dashed border-divider pb-3">
+                <span className="text-[12px] font-bold text-caption">예상 환급액</span>
+                <span className="text-[22px] font-bold leading-none text-accent">
                   {won(result.expected_refund)}
                 </span>
               </div>
@@ -141,12 +142,14 @@ export function SupportCalculator({ regionCode }: Props) {
               <ul className="flex flex-col gap-2">
                 {grouped.map((g) => (
                   <li key={g.title} className="flex flex-col">
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-sm font-bold text-indigo-950">{g.title}</span>
-                      <span className="text-sm font-bold text-indigo-950">{won(g.total)}</span>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[13px] font-bold text-ink">{g.title}</span>
+                      <span className="shrink-0 text-[13px] font-bold text-figure">
+                        {won(g.total)}
+                      </span>
                     </div>
                     {g.notes.length > 0 && (
-                      <span className="mt-0.5 text-xs text-slate-400">
+                      <span className="mt-0.5 text-[12px] text-caption">
                         {g.notes.join(" · ")}
                       </span>
                     )}
@@ -155,15 +158,15 @@ export function SupportCalculator({ regionCode }: Props) {
               </ul>
             </>
           ) : (
-            <p className="text-center text-sm text-slate-400">
+            <p className="text-center text-[13px] text-caption">
               입력한 지출로는 해당하는 환급 혜택이 없어요.
             </p>
           )}
 
           {result.tips.length > 0 && (
-            <ul className="mt-3 flex flex-col gap-1 border-t border-dashed border-violet-200 pt-3">
+            <ul className="mt-3 flex flex-col gap-1 border-t border-dashed border-divider pt-3">
               {result.tips.map((tip, i) => (
-                <li key={i} className="text-xs text-slate-500">· {tip}</li>
+                <li key={i} className="text-[12px] text-caption">· {tip}</li>
               ))}
             </ul>
           )}
