@@ -23,6 +23,7 @@ export interface Course {
   start_address: string;
   image_url: string;
   region_code: string;
+  is_population_drop_zone: boolean; // 인구감소지역 여부 (카드 뱃지 표시용)
   landmarks: string[]; // 코스 대표 관광지 (카드 칩 표시용)
   routes: CourseRoute[];
   path_trail: LatLng[]; // 썸네일용 단순화 좌표

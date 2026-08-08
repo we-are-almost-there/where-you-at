@@ -27,6 +27,7 @@ class CourseSummary(BaseModel):
     start_address: str | None
     image_url: str | None
     region_code: str | None
+    is_population_drop_zone: bool       # 인구감소지역 여부 (목록 카드 뱃지용)
     routes: list[RouteSummary]          # 도보/자전거 메트릭 (자전거 없으면 trail만)
     path_trail: list[LatLng]            # 도보 썸네일 좌표
     path_bicycle: list[LatLng]          # 자전거 썸네일 좌표 (없으면 빈 배열)

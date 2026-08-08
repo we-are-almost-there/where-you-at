@@ -28,6 +28,7 @@ interface ApiCourse {
   start_address: string | null;
   image_url: string | null;
   region_code: string | null;
+  is_population_drop_zone?: boolean;
   landmarks?: string[];
   routes?: ApiRoute[];
   path_trail?: LatLng[];
@@ -70,6 +71,7 @@ function fromApiCourse(c: ApiCourse): Course {
     start_address: c.start_address ?? "",
     image_url: c.image_url ?? "",
     region_code: c.region_code ?? "",
+    is_population_drop_zone: c.is_population_drop_zone ?? false,
     landmarks: c.landmarks ?? [],
     routes,
     path_trail: c.path_trail ?? [],
@@ -102,7 +104,6 @@ interface ApiListResponse {
 type ApiCourseDetail = ApiCourse & {
   description?: string;
   original_gpx_url?: string;
-  is_population_drop_zone?: boolean;
 };
 
 /**

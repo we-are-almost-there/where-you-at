@@ -5,8 +5,9 @@ const W = 169;
 const H = 120;
 const PAD = 24;
 
-/** 코스 좌표를 카드 썸네일용 미니 폴리라인(SVG)으로 단순 렌더 */
-export function RoutePreview({ points }: { points: LatLng[] }) {
+/** 코스 좌표를 카드 썸네일용 미니 폴리라인(SVG)으로 단순 렌더.
+ *  padTop: 위쪽 여백. 뱃지가 얹히는 카드에서 경로가 뱃지에 가리지 않게 넓혀 쓴다. */
+export function RoutePreview({ points, padTop = PAD }: { points: LatLng[]; padTop?: number }) {
   if (points.length < 2) return null;
 
   const lats = points.map((p) => p.lat);
@@ -21,7 +22,7 @@ export function RoutePreview({ points }: { points: LatLng[] }) {
   const toXY = (p: LatLng) => {
     const x = PAD + ((p.lng - minLng) / spanLng) * (W - PAD * 2);
     // 위도는 위로 갈수록 커지므로 y축 반전
-    const y = PAD + ((maxLat - p.lat) / spanLat) * (H - PAD * 2);
+    const y = padTop + ((maxLat - p.lat) / spanLat) * (H - padTop - PAD);
     return [x, y] as const;
   };
 

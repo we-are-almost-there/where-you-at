@@ -133,9 +133,11 @@ def list_courses(
 
         cur.execute(
             f"""
-            SELECT c.id, c.course_title AS title, c.start_address, c.image_url, c.region_code
+            SELECT c.id, c.course_title AS title, c.start_address, c.image_url, c.region_code,
+                    COALESCE(rg.is_population_drop, false) AS is_population_drop_zone
             FROM course c
             JOIN course_route cr ON c.id = cr.course_id
+            LEFT JOIN region rg ON c.region_code = rg.region_code
             {where_sql}
             ORDER BY {order_sql}
             LIMIT %s OFFSET %s
