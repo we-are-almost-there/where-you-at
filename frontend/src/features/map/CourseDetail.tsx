@@ -204,6 +204,12 @@ export function CourseDetail() {
     }
   }
 
+  // 추적이 멈추면(종료·주변 탭 이동·권한 거부) 이탈 상태를 정리해 배너·유도선이 남지 않게 한다.
+  if (!isTracking && (offCourseMeters != null || offCourseGuidePoint != null)) {
+    setOffCourseMeters(null);
+    setOffCourseGuidePoint(null);
+  }
+
   // 추적 중에는 시계가 흘러야 예상 종료 시각이 현재 시각을 따라간다.
   useEffect(() => {
     if (!isTracking) return;
@@ -449,17 +455,15 @@ export function CourseDetail() {
               }`}
             >
               {/* 뒤로(모바일 전용 — 데스크톱은 상단바의 뒤로가 이 역할을 대신함) + 제목 + 주소 */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => navigate(-1)}
-                  aria-label="뒤로"
-                  className="cursor-pointer text-[20px] leading-none text-ink"
-                >
-                  ←
-                </button>
-                <h1 className="font-bold text-ink text-[20px]">{detail.title}</h1>
-              </div>
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                aria-label="뒤로"
+                className="cursor-pointer text-[20px] leading-none text-ink"
+              >
+                ←
+              </button>
+              <h1 className="mt-2 font-bold text-ink text-[20px]">{detail.title}</h1>
 
               {/* 출발/도착 주소를 보여주는 유일한 자리라 탭과 무관하게 항상 띄운다.
                 추적 중엔 방향을 바꿀 수 없게(진행률 계산과 꼬이므로) 숨긴다 —
