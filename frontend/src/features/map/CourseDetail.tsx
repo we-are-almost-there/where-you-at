@@ -108,7 +108,9 @@ export function CourseDetail() {
   const [descExpanded, setDescExpanded] = useState(false);
   const descRef = useRef<HTMLParagraphElement>(null);
   const [descOverflow, setDescOverflow] = useState(false);
-  const [sheetExpanded, setSheetExpanded] = useState(true); // 모바일 바텀시트 펼침/접힘
+  // 모바일 바텀시트 펼침/접힘. 접힘으로 진입한다 — 접힘(51%)이 제목·진행 방향·탭까지
+  // 다 보여주는 기본 화면이고, 펼침(71%)은 코스 설명을 읽으러 갈 때 쓴다.
+  const [sheetExpanded, setSheetExpanded] = useState(false);
   const [sheetHeight, setSheetHeight] = useState(0); // 바텀시트 실측 높이(지도 하단이 가려지는 양)
   const [isNarrow, setIsNarrow] = useState(false); // md 미만 — 시트가 지도를 덮는 구간
   const [retryTick, setRetryTick] = useState(0); // '다시 시도' 트리거
@@ -398,7 +400,7 @@ export function CourseDetail() {
       <section
         ref={panelRef}
         className={`absolute inset-x-0 bottom-0 z-10 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] transition-[max-height] duration-300 md:relative md:order-1 md:h-full md:max-h-none md:basis-[46%] md:rounded-none md:shadow-none lg:basis-[44%] ${
-          isTracking ? "max-h-[60%]" : sheetExpanded ? "max-h-[72%]" : "max-h-[38%]"
+          isTracking ? "max-h-[60%]" : sheetExpanded ? "max-h-[71%]" : "max-h-[51%]"
         }`}
       >
         {/* 바텀시트 핸들 (모바일 전용) — 탭하면 시트를 접어 지도(전체 코스)를 넓게 본다 */}
@@ -550,6 +552,21 @@ export function CourseDetail() {
                 </div>
               )}
             </div>
+
+            {/* 시트 하단 페이드 — 시트가 콘텐츠 중간을 자르는 게 '깨진 레이아웃'이 아니라
+              '아래에 더 있음'으로 읽히게 한다. 진행 방향 카드가 역지오코딩된 주소 길이에 따라
+              높이가 변해(주소 로드 전후로도 커진다) 잘리는 위치가 코스마다·로드 전후로 달라지는데,
+              높이 수치로는 그걸 다 맞출 수 없어서 신호로 대신한다.
+              펼침·접힘 양쪽에 다 건다: 접힘에선 진행 방향 카드가, 펼침에선 설명·사진이 잘린다.
+              -mt-10으로 스크롤 영역 위에 겹쳐 레이아웃 높이는 차지하지 않는다.
+              relative 래퍼를 새로 두지 않는 이유: 주변 정보 탭의 SpotDetailSheet가
+              이 section을 기준으로 absolute 배치되므로 중간에 위치 기준이 생기면 안 된다. */}
+            {!isTracking && (
+              <div
+                aria-hidden
+                className="pointer-events-none -mt-10 h-10 shrink-0 bg-linear-to-t from-white to-transparent md:hidden"
+              />
+            )}
 
             {/* 따라가기 (하단 고정) */}
             {infoTab === "course" && (
