@@ -214,14 +214,6 @@ export function CourseDetail() {
     wasOffCourseRef.current = isOffCourse;
   }, [isOffCourse]);
 
-  // 추적이 멈추면(종료·주변 탭 이동·권한 거부) 이탈 상태를 정리해 배너·유도선이 남지 않게 한다.
-  useEffect(() => {
-    if (isTracking) return;
-    setOffCourseMeters(null);
-    setOffCourseGuidePoint(null);
-    wasOffCourseRef.current = false;
-  }, [isTracking]);
-
   // URL로 요청한 주행 방식이 없는 코스라면 보유한 첫 경로로 URL을 교정한다.
   useEffect(() => {
     if (!detail || detail.routes.some((route) => route.route_type === routeType) || !detail.routes[0]) return;
@@ -240,6 +232,8 @@ export function CourseDetail() {
   };
 
   // 새 추적 세션은 항상 0%에서 시작한다(이전 세션이 어떻게 끝났든).
+  // 이탈 상태도 여기서만 지운다 — 추적이 멈출 때 지울 필요는 없다.
+  // 배너·유도선은 showOffCourse가 isTracking을 요구하므로 값이 남아 있어도 그려지지 않는다.
   const handleStartTracking = () => {
     setProgress(0);
     setNow(Date.now());
