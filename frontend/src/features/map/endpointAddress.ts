@@ -89,7 +89,28 @@ export function buildEndpointAddresses(
   ];
 }
 
-function lookup(geocoder: kakao.maps.services.Geocoder, point: LatLng): Promise<AddressParts | null> {
+/**
+ * 행정구역 조회 결과를 주소 조각으로 바꾼다. 행정구역에는 번지가 없으므로 detail은 비운다.
+ *
+ * 바다 영역은 status가 OK로 오면서 depth 이름만 전부 빈 문자열이다(address_name에 "동해"만 담긴다).
+ * 그대로 두면 빈 줄이 렌더되므로 region_1depth_name이 비었는지로 걸러낸다.
+ *
+ * 리 지역은 coord2Address가 region_3depth_name에 "사천면 사천진리"로 합쳐 주는 것과 달리
+ * 3depth("사천면")와 4depth("사천진리")로 쪼개서 준다. 표기를 맞추려면 합쳐야 한다.
+ */
+export function regionToAddressParts(
+  region: kakao.maps.services.RegionCode | undefined,
+): AddressParts | null {
+  if (!region || !region.region_1depth_name) return null;
+  return {
+    region1: toOfficialSido(region.region_1depth_name),
+    region2: region.region_2depth_name,
+    region3: join(region.region_3depth_name, region.region_4depth_name),
+    detail: "",
+  };
+}
+
+function lookupAddress(geocoder: kakao.maps.services.Geocoder, point: LatLng): Promise<AddressParts | null> {
   return new Promise((resolve) => {
     geocoder.coord2Address(point.lng, point.lat, (result, status) => {
       const address = status === kakao.maps.services.Status.OK ? result[0]?.address : null;
@@ -105,6 +126,26 @@ function lookup(geocoder: kakao.maps.services.Geocoder, point: LatLng): Promise<
       );
     });
   });
+}
+
+/**
+ * 지번이 없는 좌표를 위한 폴백. coord2Address는 좌표를 필지에 매칭하므로, 항만·매립지처럼
+ * 지적공부에 필지가 없는 땅에서는 지번·도로명 모두 빈 결과가 온다(옆에 도로가 있어도 마찬가지 —
+ * 도로명주소는 도로가 아니라 그 도로에 접한 건물에 붙기 때문이다).
+ * 행정구역 경계는 그런 땅도 덮으므로 읍면동까지는 얻을 수 있다.
+ * 지번주소 체계와 계열을 맞추기 위해 행정동(H)이 아닌 법정동(B)을 우선한다.
+ */
+function lookupRegion(geocoder: kakao.maps.services.Geocoder, point: LatLng): Promise<AddressParts | null> {
+  return new Promise((resolve) => {
+    geocoder.coord2RegionCode(point.lng, point.lat, (result, status) => {
+      if (status !== kakao.maps.services.Status.OK) return resolve(null);
+      resolve(regionToAddressParts(result.find((r) => r.region_type === "B") ?? result[0]));
+    });
+  });
+}
+
+function lookup(geocoder: kakao.maps.services.Geocoder, point: LatLng): Promise<AddressParts | null> {
+  return lookupAddress(geocoder, point).then((address) => address ?? lookupRegion(geocoder, point));
 }
 
 /**
