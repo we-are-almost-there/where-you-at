@@ -282,9 +282,14 @@ export function CourseDetail() {
   }, [detail?.description, infoTab, descExpanded]);
 
   // md 미만에서만 바텀시트가 지도를 덮는다(그 구간에서만 지도를 시트 높이만큼 올린다).
+  //
+  // Tailwind md:의 여집합으로 판정한다. "(max-width: 767px)"를 쓰면 폭이 767과 768 사이의
+  // 소수점(디스플레이 배율·브라우저 줌으로 흔히 생긴다)일 때 이 쿼리도 false, md:도 미적용이라
+  // 시트는 지도를 덮는데 isNarrow만 false가 된다. 그러면 bottomInset이 0이 되어 시트 높이를
+  // 무시한 채 fit해 코스 아래쪽이 시트에 가려진다.
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 767px)");
-    const update = () => setIsNarrow(mq.matches);
+    const mq = window.matchMedia("(min-width: 768px)");
+    const update = () => setIsNarrow(!mq.matches);
     update();
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);

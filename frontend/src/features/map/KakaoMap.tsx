@@ -260,17 +260,28 @@ export function KakaoMap({
     kakao.maps.load(() => setSdkReady(true));
   }, []);
 
-  useEffect(() => {
-    if (!map || waypoints.length === 0) return;
-    // 추적 중에는 현위치 추적(panTo)이 우선이라 코스 fit을 건너뛴다.
-    // 추적이 꺼지는 순간(따라가기 종료·'알겠어요') 이 이펙트가 재실행되며 코스 전체로 복귀한다.
-    // (데스크톱은 bottomInset이 0 고정이라, 이 의존성이 없으면 종료 후 재fit이 안 됐다)
-    if (followCurrentLocation) return;
+  // 코스 전체가 보이도록 지도 경계를 맞춘다.
+  // 추적 중에는 현위치 추적(panTo)이 우선이라 코스 fit을 건너뛴다.
+  // 추적이 꺼지는 순간(따라가기 종료·'알겠어요') 이 콜백이 새로 만들어지며 코스 전체로 복귀한다.
+  // (데스크톱은 bottomInset이 0 고정이라, 이 의존성이 없으면 종료 후 재fit이 안 됐다)
+  const fitToCourse = useCallback(() => {
+    if (!map || waypoints.length === 0 || followCurrentLocation) return;
     const bounds = new kakao.maps.LatLngBounds();
     waypoints.forEach(({ lat, lng }) => bounds.extend(new kakao.maps.LatLng(lat, lng)));
     const pad = 24;
     map.setBounds(bounds, pad, pad, pad + bottomInset, pad);
   }, [map, waypoints, bottomInset, followCurrentLocation]);
+
+  useEffect(() => {
+    fitToCourse();
+  }, [fitToCourse]);
+
+  // 리사이즈 옵저버가 매번 최신 fit을 부르되 옵저버 자체는 재생성되지 않게 참조로 들고 있는다.
+  // (시트 펼침/접힘 애니메이션 동안 bottomInset이 연속으로 바뀌므로 의존성으로 걸면 옵저버가 계속 재생성된다)
+  const fitToCourseRef = useRef(fitToCourse);
+  useEffect(() => {
+    fitToCourseRef.current = fitToCourse;
+  }, [fitToCourse]);
 
   useEffect(() => {
     if (!map || !followCurrentLocation || !currentLocation) return;
@@ -331,10 +342,16 @@ export function KakaoMap({
   // flex/grid 레이아웃에서는 마운트 직후엔 아직 최종 크기가 확정 안 된 경우가 있어서,
   // 이때 마커의 클릭 판정 좌표가 실제 보이는 위치와 어긋난다(시각적으로는 멀쩡해 보임).
   // 컨테이너 크기가 바뀔 때마다 relayout()으로 강제 재계산시켜 이 어긋남을 막는다.
+  //
+  // relayout()은 컨테이너 크기만 다시 잴 뿐 중심·줌은 그대로 두므로 경계를 다시 맞추지 않는다.
+  // 창을 좌우로 반씩 나눌 때처럼 너비만 바뀌면 뷰포트 높이가 그대로여서 시트 높이(=bottomInset)도
+  // 안 바뀌고, 그러면 fit 이펙트의 의존성이 하나도 안 바뀌어 재fit이 돌지 않는다. 넓은 지도 기준의
+  // 경계를 좁아진 지도가 그대로 쓰게 되어 코스가 화면 밖으로 밀려난다. 그래서 여기서 함께 재fit한다.
   useEffect(() => {
     if (!map || !mapContainerRef.current) return;
     const observer = new ResizeObserver(() => {
       map.relayout();
+      fitToCourseRef.current();
     });
     observer.observe(mapContainerRef.current);
     return () => observer.disconnect();
