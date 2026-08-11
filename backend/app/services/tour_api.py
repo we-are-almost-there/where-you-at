@@ -209,13 +209,13 @@ def fetch_detail_intro(
     content_id: str,
     content_type_id: str,
 ) -> dict | None:
-    
+
     """타입별 부가 정보를 조회한다.
 
     관광지·숙박·음식점 유형에 따라 주차, 영업시간,
     체크인·체크아웃 등의 상세정보가 반환된다.
     """
-        
+
     params = {
         "serviceKey": settings.tour_api_key,
         "MobileOS": "ETC",
@@ -232,8 +232,8 @@ def fetch_detail_intro(
             timeout=15,
         )
 
-        # 할당량 초과 체크 (200 응답이지만 에러 메시지)
-        if "quota exceeded" in response.text.lower():
+        # 할당량 초과 체크 — 실제 응답: returnReasonCode "22" / errMsg LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR
+        if "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR" in response.text:
             raise RuntimeError("API_QUOTA_EXCEEDED")
 
         # 429 체크
