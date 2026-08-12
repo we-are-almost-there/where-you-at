@@ -14,15 +14,17 @@ export function SpotCard({ spot, routeType, onSelect }: Props) {
     <button
       type="button"
       onClick={() => onSelect(spot)}
-      className="flex flex-col overflow-hidden rounded-xl bg-white text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)]"
+      className="flex w-full flex-col self-start overflow-hidden rounded-xl bg-white text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)]"
     >
-      <div className="flex aspect-square w-full flex-col items-center justify-center gap-1 bg-lavender">
+      <div className="relative flex aspect-square w-full shrink-0 flex-col items-center justify-center gap-1 overflow-hidden bg-lavender">
         {spot.image_url ? (
-          <img src={spot.image_url} alt={spot.name} className="h-full w-full object-cover" />
+          <img
+            src={spot.image_url}
+            alt={spot.name}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
         ) : (
-          <>
-            <span className="text-[12px] text-caption">준비중이에요</span>
-          </>
+          <span className="text-[12px] text-caption">준비중이에요</span>
         )}
       </div>
       <div className="flex flex-col gap-1 p-3">
