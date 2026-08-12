@@ -21,16 +21,13 @@ export function SpotCard({ spot, routeType, onSelect }: Props) {
           <img src={spot.image_url} alt={spot.name} className="h-full w-full object-cover" />
         ) : (
           <>
-            <span className="text-[24px]" aria-hidden="true">
-              🖼️
-            </span>
             <span className="text-[12px] text-caption">준비중이에요</span>
           </>
         )}
       </div>
       <div className="flex flex-col gap-1 p-3">
         <p className="truncate text-[14px] font-bold text-ink">{spot.name}</p>
-        <p className="line-clamp-1 text-[12px] text-caption">📍 {spot.address}</p>
+        <p className="line-clamp-1 text-[12px] text-caption">{spot.address}</p>
         <p className="text-[12px] text-caption">
           {distanceLabel} · {modeLabel} {spot.duration_minutes}분
         </p>
