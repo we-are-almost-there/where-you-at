@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { NearbySpot } from "../types";
 import { getTourSpotDetail, getBicycleFacilityDetail } from "../nearbyApi";
 
@@ -30,14 +30,12 @@ type DetailFields = Partial<{
 }>;
 
 export function SpotDetailSheet({ spot, onClose }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  // 드래그 중이 아닐 땐 이 값이 null이고, 그때는 CSS 클래스(translate-y-[28%] / md:translate-y-0)로만
-  // 위치가 정해진다. h-dvh를 쓰고 있어서, 모바일 주소창이 접히고 펼쳐져도 브라우저가 알아서
-  // 부드럽게 반영해준다 (JS로 픽셀을 다시 계산해서 움직이면 그 타이밍이 어긋나며 "타닥" 튀는
-  // 원인이 됐었다). 드래그를 시작하는 순간에만 실제 화면상 px 위치로 전환해서 손가락을
-  // 따라가게 하고, 손을 떼면 다시 null로 돌려 CSS 클래스 방식으로 복귀한다.
-  const [dragTopPx, setDragTopPx] = useState<number | null>(null);
-  const dragState = useRef<{ startY: number; startTop: number } | null>(null);
+  // 시트는 absolute+inset-0으로 밑에 깔린 CourseDetail 패널(section)을 containing block으로
+  // 삼아 그 높이를 그대로 따라간다 — 패널이 접힘(51%)이든 펼침(71%)이든 항상 정확히 덮는다.
+  // 드래그는 닫기 전용이라 아래 방향 이동량(delta)만 다루면 된다 — 절대 좌표를 쫓을 필요가 없다.
+  // 드래그 중이 아닐 땐 dragDeltaPx가 null이고 위치는 CSS(absolute inset-0)로만 정해진다.
+  const [dragDeltaPx, setDragDeltaPx] = useState<number | null>(null);
+  const dragStartY = useRef<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [detail, setDetail] = useState<DetailFields | null>(null);
   const [detailLoading, setDetailLoading] = useState(true);
@@ -76,42 +74,37 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
 
   const onPointerDown = (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    const top = containerRef.current?.getBoundingClientRect().top ?? 0;
-    dragState.current = { startY: e.clientY, startTop: top };
+    dragStartY.current = e.clientY;
     setIsDragging(true);
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragState.current) return;
-    const delta = e.clientY - dragState.current.startY;
-    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-    const nextTop = Math.min(Math.max(dragState.current.startTop + delta, dragState.current.startTop), viewportHeight);
-    setDragTopPx(nextTop);
+    if (dragStartY.current == null) return;
+    const delta = e.clientY - dragStartY.current;
+    // 아래로만 끌리게 clamp — 위로 끌어올려 펼치는 동작은 지원하지 않는다.
+    setDragDeltaPx(Math.max(delta, 0));
   };
 
   const onPointerUp = () => {
-    if (!dragState.current) return;
-    const startTop = dragState.current.startTop;
-    dragState.current = null;
+    if (dragStartY.current == null) return;
+    dragStartY.current = null;
     setIsDragging(false);
 
-    const currentTop = dragTopPx ?? startTop;
-    if (currentTop > startTop + CLOSE_THRESHOLD) {
+    if ((dragDeltaPx ?? 0) > CLOSE_THRESHOLD) {
       onClose();
       return;
     }
-    setDragTopPx(null);
+    setDragDeltaPx(null);
   };
 
   return (
     <>
       <div className="absolute inset-0 z-40 bg-black/30" onClick={onClose} />
       <div
-        ref={containerRef}
-        className={`fixed inset-x-0 bottom-0 z-50 flex h-dvh translate-y-[28%] flex-col overflow-hidden rounded-t-2xl bg-white md:absolute md:h-full md:translate-y-0 ${
+        className={`absolute inset-0 z-50 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] md:rounded-none md:shadow-none ${
           isDragging ? "" : "transition-transform duration-200 ease-out"
         }`}
-        style={dragTopPx != null ? { transform: `translateY(${dragTopPx}px)` } : undefined}
+        style={dragDeltaPx != null ? { transform: `translateY(${dragDeltaPx}px)` } : undefined}
       >
         <div
           className="flex shrink-0 cursor-grab touch-none justify-center py-2.5 active:cursor-grabbing"
@@ -130,9 +123,11 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
             </button>
           </div>
 
-          <div className="aspect-video w-full overflow-hidden rounded-xl bg-lavender">
-            {spot.image_url && (
+          <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-xl bg-lavender">
+            {spot.image_url ? (
               <img src={spot.image_url} alt={spot.name} className="h-full w-full object-cover" />
+            ) : (
+              <span className="text-[13px] text-caption">준비중이에요</span>
             )}
           </div>
 
@@ -213,7 +208,28 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
             )}
           </dl>
         </div>
+
+        {/* 시트 하단 페이드 — CourseDetail과 동일한 처리 */}
+        <div
+          aria-hidden
+          className="pointer-events-none -mt-10 h-10 shrink-0 bg-linear-to-t from-white to-transparent md:hidden"
+        />
       </div>
+    </>
+  );
+}
+
+function formatTourText(text: string) {
+  const lines = text.split(/<br\s*\/?>/i);
+
+  return (
+    <>
+      {lines.map((line, i) => (
+        <Fragment key={i}>
+          {line}
+          {i < lines.length - 1 && <br />}
+        </Fragment>
+      ))}
     </>
   );
 }
@@ -222,7 +238,7 @@ function Row({ label, value }: { label: string; value?: string }) {
   return (
     <div className="flex gap-2">
       <dt className="w-24 shrink-0 text-caption">{label}</dt>
-      <dd className={value ? "text-ink" : "text-caption"}>{value || FALLBACK}</dd>
+      <dd className={value ? "text-ink" : "text-caption"}>{value ? formatTourText(value) : FALLBACK}</dd>
     </div>
   );
 }
