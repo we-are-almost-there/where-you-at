@@ -100,7 +100,7 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
     <>
       <div className="absolute inset-0 z-40 bg-black/30" onClick={onClose} />
       <div
-        className={`fixed inset-x-0 bottom-0 z-50 flex h-[51dvh] flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] md:absolute md:h-full md:rounded-none md:shadow-none ${
+        className={`absolute inset-0 z-50 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] md:rounded-none md:shadow-none ${
           isDragging ? "" : "transition-transform duration-200 ease-out"
         }`}
         style={dragDeltaPx != null ? { transform: `translateY(${dragDeltaPx}px)` } : undefined}
