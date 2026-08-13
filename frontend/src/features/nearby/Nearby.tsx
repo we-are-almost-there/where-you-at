@@ -66,14 +66,19 @@ export const Nearby = forwardRef<NearbyHandle, NearbyProps>(function Nearby(
     <>
       <CategoryFilter value={category} onChange={handleCategoryChange} />
 
-      <SpotList
-        key={`${courseId}:${category}:${routeType}`}
-        courseId={courseId}
-        category={category}
-        routeType={routeType}
-        onSelect={handleSelect}
-        onSpotsChange={handleSpotsChange}
-      />
+      {/* 주변정보 탭 콘텐츠 전체에 최소 높이를 건다 — 카테고리 전환 때마다(로딩/빈 결과/실제
+        목록 상관없이) 시트가 코스 정보 탭에서 사용자가 정해둔 펼침 상태(71%)를 그대로
+        유지하게 한다. 개별 분기(로딩만 등)에 걸면 카테고리 바뀔 때마다 시트가 오르락내리락한다. */}
+      <div className="min-h-[71dvh] md:min-h-0">
+        <SpotList
+          key={`${courseId}:${category}:${routeType}`}
+          courseId={courseId}
+          category={category}
+          routeType={routeType}
+          onSelect={handleSelect}
+          onSpotsChange={handleSpotsChange}
+        />
+      </div>
 
       {selected && (
         <SpotDetailSheet key={selected.id} spot={selected} onClose={handleClose} />
