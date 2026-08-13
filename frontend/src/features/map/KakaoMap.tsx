@@ -323,8 +323,8 @@ export function KakaoMap({
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 3_000 },
     );
   };
-  // 스팟이 선택되면 그 위치로 확대해서, 클러스터에 묶여 있던 주변 마커들도 자연스럽게 풀려나게 한다.
 
+  // 스팟이 선택되면 그 위치로 확대해서, 클러스터에 묶여 있던 주변 마커들도 자연스럽게 풀려나게 한다.
   useEffect(() => {
     if (!map || selectedSpotId == null) return;
     const spot = nearbySpots.find((s) => s.id === selectedSpotId);
@@ -333,8 +333,11 @@ export function KakaoMap({
     if (map.getLevel() > targetLevel) {
       map.setLevel(targetLevel);
     }
-    map.panTo(new kakao.maps.LatLng(spot.lat, spot.lng));
-  }, [map, selectedSpotId, nearbySpots]);
+    // panTo 대신 panToVisibleCenter를 써서, 바텀시트(bottomInset)에 가려지지 않는
+    // "실제 보이는 영역"의 중앙으로 마커를 이동시킨다. 그냥 panTo면 시트가 화면 하단을
+    // 덮고 있을 때 마커가 시트 뒤에 가려져 안 보이는 문제가 있었다.
+    panToVisibleCenter(spot.lat, spot.lng);
+  }, [map, selectedSpotId, nearbySpots, panToVisibleCenter]);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
