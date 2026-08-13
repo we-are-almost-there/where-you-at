@@ -156,9 +156,9 @@ function SpotList({ courseId, category, routeType, onSelect, onSpotsChange }: Sp
 
   const hasMore = spots.length < totalCount;
 
-  if (loading) return <p className="pt-10 text-center text-[13px] text-caption">불러오는 중…</p>;
-  if (error) return <p className="pt-10 text-center text-[13px] text-caption">{error}</p>;
-  if (spots.length === 0) return <p className="pt-10 text-center text-[13px] text-caption">주변 정보가 없어요</p>;
+  if (loading) return <p className="min-h-[71dvh] pt-10 text-center text-[13px] text-caption">불러오는 중…</p>;
+  if (error) return <p className="min-h-[71dvh] pt-10 text-center text-[13px] text-caption">{error}</p>;
+  if (spots.length === 0) return <p className="min-h-[71dvh] pt-10 text-center text-[13px] text-caption">주변 정보가 없어요</p>;
 
   return (
     <div className="mt-3">
