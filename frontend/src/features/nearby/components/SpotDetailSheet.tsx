@@ -30,9 +30,10 @@ type DetailFields = Partial<{
 }>;
 
 export function SpotDetailSheet({ spot, onClose }: Props) {
-  // 시트는 h-[51dvh] + bottom-0로 쉬는 위치가 이미 정해져 있다(CourseDetail 접힘 51%와 동일 비율).
+  // 시트는 absolute+inset-0으로 밑에 깔린 CourseDetail 패널(section)을 containing block으로
+  // 삼아 그 높이를 그대로 따라간다 — 패널이 접힘(51%)이든 펼침(71%)이든 항상 정확히 덮는다.
   // 드래그는 닫기 전용이라 아래 방향 이동량(delta)만 다루면 된다 — 절대 좌표를 쫓을 필요가 없다.
-  // 드래그 중이 아닐 땐 dragDeltaPx가 null이고 위치는 CSS(h-[51dvh]+bottom-0)로만 정해진다.
+  // 드래그 중이 아닐 땐 dragDeltaPx가 null이고 위치는 CSS(absolute inset-0)로만 정해진다.
   const [dragDeltaPx, setDragDeltaPx] = useState<number | null>(null);
   const dragStartY = useRef<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
