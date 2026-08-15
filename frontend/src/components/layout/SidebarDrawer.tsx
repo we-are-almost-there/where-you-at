@@ -16,7 +16,6 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: "홈", eyebrow: "HOME", description: "메인으로 돌아가기", to: null },
   { label: "코스 탐색", eyebrow: "COURSE", description: "걷기·자전거 코스 둘러보기", to: "/" },
-  { label: "주변 정보", eyebrow: "NEARBY", description: "코스 근처 명소·맛집", to: null },
   { label: "대회·이벤트", eyebrow: "EVENT", description: "가까운 대회 일정 확인", to: "/races" },
   { label: "지원금·환급", eyebrow: "SUPPORT", description: "지역별 여행 지원 혜택", to: "/support" },
 ];
@@ -26,9 +25,9 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
 
   return (
     <>
-      {/* 배경 딤 처리 */}
+      {/* 배경 딤 처리 — 순검정 대신 브랜드 잉크 톤 + 살짝 블러로 부드럽게 */}
       <div
-        className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-300 ${
+        className={`fixed inset-0 z-40 bg-ink/30 backdrop-blur-[1px] transition-opacity duration-300 ${
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         onClick={onClose}
@@ -48,7 +47,7 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
             type="button"
             onClick={onClose}
             aria-label="닫기"
-            className="cursor-pointer text-caption transition-colors hover:text-ink"
+            className="cursor-pointer text-caption transition-colors hover:text-accent"
           >
             <X size={18} strokeWidth={1.5} />
           </button>
@@ -131,7 +130,7 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
 
                 {/* 밑줄 — 평소엔 투명, hover/active 시에만 나타남(위치·길이는 항상 고정) */}
                 <span
-                  className={`relative mt-2 block h-px bg-ink transition-opacity duration-150 ${
+                  className={`relative mt-2 block h-px bg-accent transition-opacity duration-200 ${
                     isActive ? "opacity-100" : isDisabled ? "opacity-0" : "opacity-0 md:group-hover:opacity-40"
                   }`}
                 />
@@ -164,6 +163,7 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
         </nav>
 
         <div className="px-6 py-4">
+          <div className="mb-2.5 h-px bg-divider" />
           <p className="text-[11px] tracking-wide text-caption">© 2026 WHERE YOU AT</p>
         </div>
       </aside>
