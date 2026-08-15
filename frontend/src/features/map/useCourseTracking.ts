@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LatLng } from "./types";
+import { summarize, type RecordPoint, type TrackingRecord } from "./trackingRecord";
 import { useWakeLock } from "./useWakeLock";
 
 export interface TrackedLocation extends LatLng {
@@ -27,6 +28,9 @@ export function isTerminalGeolocationError(code: number): boolean {
 
 export function useCourseTracking() {
   const watchIdRef = useRef<number | null>(null);
+  // 기록은 화면에 실시간으로 그리지 않고 종료 시 한 번만 요약하므로 ref로 모은다(렌더 유발 없음).
+  const pointsRef = useRef<RecordPoint[]>([]);
+  const startedAtRef = useRef<number | null>(null);
   const [currentLocation, setCurrentLocation] = useState<TrackedLocation | null>(null);
   const [isTracking, setIsTracking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,11 +44,18 @@ export function useCourseTracking() {
     watchIdRef.current = null;
   }, []);
 
-  const stopTracking = useCallback(() => {
+  /** 추적을 멈추고 이번 세션의 기록을 돌려준다. 시작한 적이 없으면 null. */
+  const stopTracking = useCallback((): TrackingRecord | null => {
     clearActiveWatch();
     setIsTracking(false);
     setCurrentLocation(null);
     setError(null);
+
+    const startedAt = startedAtRef.current;
+    const points = pointsRef.current;
+    startedAtRef.current = null;
+    pointsRef.current = [];
+    return startedAt == null ? null : summarize(points, startedAt, Date.now());
   }, [clearActiveWatch]);
 
   const startTracking = useCallback(() => {
@@ -55,14 +66,22 @@ export function useCourseTracking() {
     }
 
     setError(null);
+    pointsRef.current = [];
+    startedAtRef.current = Date.now();
     try {
       watchIdRef.current = navigator.geolocation.watchPosition(
-        ({ coords }) => {
+        ({ coords, timestamp }) => {
           setCurrentLocation({
             lat: coords.latitude,
             lng: coords.longitude,
             accuracy: coords.accuracy,
             heading: coords.heading,
+          });
+          pointsRef.current.push({
+            lat: coords.latitude,
+            lng: coords.longitude,
+            accuracy: coords.accuracy,
+            timestamp,
           });
           setError(null);
         },
@@ -72,6 +91,9 @@ export function useCourseTracking() {
           clearActiveWatch();
           setIsTracking(false);
           setCurrentLocation(null);
+          // 권한 거부로 시작조차 못 했으므로 기록도 남기지 않는다.
+          startedAtRef.current = null;
+          pointsRef.current = [];
         },
         GEOLOCATION_OPTIONS,
       );
@@ -79,6 +101,7 @@ export function useCourseTracking() {
     } catch {
       clearActiveWatch();
       setIsTracking(false);
+      startedAtRef.current = null;
       setError("현재 위치를 불러오지 못했어요. 다시 시도해 주세요.");
     }
   }, [clearActiveWatch]);

@@ -16,6 +16,8 @@ import { announce, primeSpeech } from "./speech";
 import { useEndpointAddresses } from "./endpointAddress";
 import { DirectionSelector } from "./components/DirectionSelector";
 import { TrackingStats } from "./components/TrackingStats";
+import { RecordCard } from "./components/RecordCard";
+import type { TrackingRecord } from "./trackingRecord";
 import SidebarDrawer from "../../components/layout/SidebarDrawer";
 
 function formatDuration(min: number): string {
@@ -36,6 +38,9 @@ const MAX_START_DISTANCE_M = 1000;
 // GPS 튐에 배너·음성이 깜빡이는 걸 막는다. 실외 테스트 후 조정이 필요한 값이다.
 const OFF_COURSE_ENTER_M = 40; // 이보다 멀어지면 이탈로 표시
 const OFF_COURSE_EXIT_M = 15; // 이보다 가까워지면 복귀
+
+// 잘못 눌러 바로 끝낸 세션까지 기록 카드를 띄우면 방해만 된다.
+const MIN_RECORD_KM = 0.05;
 
 
 function formatDistance(m: number): string {
@@ -133,6 +138,7 @@ export function CourseDetail() {
   const [offCourseMeters, setOffCourseMeters] = useState<number | null>(null); // null이 아니면 이탈 중(배너·유도선)
   const [offCourseGuidePoint, setOffCourseGuidePoint] = useState<LatLng | null>(null); // 유도선이 향할 코스 위 지점
   const wasOffCourseRef = useRef(false); // 이탈 진입 순간(아님→이탈)에만 음성이 나가도록 직전 상태 보관
+  const [record, setRecord] = useState<TrackingRecord | null>(null); // null이 아니면 종료 후 기록 카드
 
   const nearbyRef = useRef<NearbyHandle>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -246,6 +252,13 @@ export function CourseDetail() {
     wasOffCourseRef.current = false;
     primeSpeech(); // 버튼 탭(사용자 제스처) 시점에 iOS 음성 잠금 해제
     startTracking();
+  };
+
+  // 종료 버튼으로 끝냈을 때만 기록 카드를 띄운다.
+  // 주변 탭 이동·"너무 멂" 안내로도 추적이 멈추지만, 그건 따라가기를 마친 게 아니다.
+  const handleStopTracking = () => {
+    const summary = stopTracking();
+    if (summary && summary.distanceKm >= MIN_RECORD_KM) setRecord(summary);
   };
 
   // 안내를 닫을 때 추적을 정리한다(clearWatch는 부수효과라 렌더 중엔 못 부른다).
@@ -593,7 +606,7 @@ export function CourseDetail() {
 
               <button
                 type="button"
-                onClick={isTracking ? stopTracking : handleStartTracking}
+                onClick={isTracking ? handleStopTracking : handleStartTracking}
                 disabled={!activeRoute}
                 aria-pressed={isTracking}
                 className={`flex h-14 w-full items-center justify-center gap-2 rounded-[14px] text-[15px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -622,6 +635,9 @@ export function CourseDetail() {
           </>
         )}
       </section>
+      {record && (
+        <RecordCard record={record} routePoints={waypoints} onClose={() => setRecord(null)} />
+      )}
       <SidebarDrawer isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
     </div>
   );

@@ -1,0 +1,85 @@
+import { haversineMeters } from "./courseProgress";
+import type { LatLng } from "./types";
+
+/** 추적 중 쌓아 둔 위치 표본. 진행률과 달리 "실제 이동한 궤적"이라 시각도 함께 보관한다. */
+export interface RecordPoint extends LatLng {
+  accuracy: number;
+  timestamp: number;
+}
+
+/** 따라가기 한 세션의 기록. 서버에 저장하지 않고 종료 화면에서만 쓴다. */
+export interface TrackingRecord {
+  distanceKm: number;
+  durationMs: number;
+  /** 평균 페이스(초/km). 거리가 너무 짧아 의미가 없으면 null. */
+  paceSecPerKm: number | null;
+}
+
+// 정확도가 이보다 나쁜 표본은 버린다. 도심에서는 오차가 수십 m씩 튄다.
+const MAX_ACCURACY_M = 30;
+// 이보다 짧은 이동은 정지 중 지터로 본다. 걸러내지 않으면 서 있어도 거리가 늘어난다.
+const MIN_STEP_M = 5;
+// 이보다 빠르면 GPS 튐으로 본다(=54km/h). 도보·자전거 모두 이 아래다.
+const MAX_SPEED_MPS = 15;
+// 이 아래 거리는 페이스를 내도 무의미해 null로 둔다.
+const MIN_PACE_DISTANCE_KM = 0.01;
+
+/**
+ * 표본 사이 거리를 누적한 실제 이동 거리(m).
+ * 버려진 표본은 기준점을 갱신하지 않는다 — 튄 점 하나 때문에 이후 구간까지 어긋나면 안 된다.
+ */
+export function accumulateDistanceMeters(points: RecordPoint[]): number {
+  let total = 0;
+  let prev: RecordPoint | null = null;
+
+  for (const point of points) {
+    if (point.accuracy > MAX_ACCURACY_M) continue;
+    if (!prev) {
+      prev = point;
+      continue;
+    }
+
+    const meters = haversineMeters(prev, point);
+    if (meters < MIN_STEP_M) continue;
+
+    const seconds = (point.timestamp - prev.timestamp) / 1000;
+    if (seconds > 0 && meters / seconds > MAX_SPEED_MPS) continue;
+
+    total += meters;
+    prev = point;
+  }
+  return total;
+}
+
+export function summarize(points: RecordPoint[], startedAt: number, endedAt: number): TrackingRecord {
+  const distanceKm = accumulateDistanceMeters(points) / 1000;
+  const durationMs = Math.max(0, endedAt - startedAt);
+  return {
+    distanceKm,
+    durationMs,
+    paceSecPerKm:
+      distanceKm >= MIN_PACE_DISTANCE_KM && durationMs > 0 ? durationMs / 1000 / distanceKm : null,
+  };
+}
+
+/** 5.01 — 러닝 앱 관례대로 소수 둘째 자리까지. */
+export function formatDistance(km: number): string {
+  return km.toFixed(2);
+}
+
+/** 6'19" — 분'초". 값이 없으면 자리만 채운다. */
+export function formatPace(secPerKm: number | null): string {
+  if (secPerKm == null || !Number.isFinite(secPerKm)) return "--'--\"";
+  const total = Math.round(secPerKm);
+  return `${Math.floor(total / 60)}'${String(total % 60).padStart(2, "0")}"`;
+}
+
+/** 33:23 / 1:01:28 — 한 시간을 넘을 때만 시간 자리를 붙인다. */
+export function formatDuration(ms: number): string {
+  const total = Math.round(ms / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const ss = String(seconds).padStart(2, "0");
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${ss}` : `${minutes}:${ss}`;
+}
