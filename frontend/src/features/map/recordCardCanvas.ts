@@ -367,9 +367,10 @@ export interface DrawOptions {
   statsOffset: Offset;
 }
 
-export function draw(canvas: HTMLCanvasElement, options: DrawOptions) {
+/** 그렸으면 true. 2D 컨텍스트를 못 얻으면 false — 호출부가 빈 카드를 안내할 수 있게 알려 준다. */
+export function draw(canvas: HTMLCanvasElement, options: DrawOptions): boolean {
   const ctx = canvas.getContext("2d");
-  if (!ctx) return;
+  if (!ctx) return false;
   const {
     record,
     image,
@@ -435,4 +436,5 @@ export function draw(canvas: HTMLCanvasElement, options: DrawOptions) {
 
   ctx.shadowColor = "transparent";
   ctx.shadowBlur = 0;
+  return true;
 }

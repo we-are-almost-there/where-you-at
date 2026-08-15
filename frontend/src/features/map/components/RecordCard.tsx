@@ -80,6 +80,27 @@ const TOOLS: { key: Tool; label: string }[] = [
 
 // 내보낼 PNG를 만드는 데 1080x1920 기준 200ms 가까이 걸린다. 조작이 멎은 뒤에 한 번만 만든다.
 const BLOB_DEBOUNCE_MS = 250;
+
+/**
+ * 포인터 캡처는 손가락이 요소 밖으로 나가도 이벤트를 계속 받기 위한 편의다.
+ * 포인터가 이미 활성 목록에서 빠졌으면(취소·빠른 탭 등) NotFoundError를 던지는데,
+ * 그건 끌기 동작의 성패와 무관하므로 삼킨다.
+ */
+function capturePointer(element: Element, pointerId: number) {
+  try {
+    element.setPointerCapture(pointerId);
+  } catch {
+    // 캡처 없이도 끌기는 동작한다.
+  }
+}
+
+function releasePointer(element: Element, pointerId: number) {
+  try {
+    element.releasePointerCapture(pointerId);
+  } catch {
+    // 이미 풀렸거나 사라진 포인터. 정리 목적이라 무시해도 된다.
+  }
+}
 // 다운로드가 시작될 여유를 준 뒤 blob URL을 놓아준다.
 const REVOKE_DELAY_MS = 30_000;
 
@@ -148,20 +169,31 @@ export function RecordCard({
     ensureCardFonts(family, weight).then(() => {
       const canvas = canvasRef.current;
       if (cancelled || !canvas) return;
-      draw(canvas, {
-        record,
-        image,
-        transform,
-        routePoints,
-        template,
-        textColor,
-        fontChoice,
-        textScale,
-        showRoute,
-        routeOffset,
-        routeScale,
-        statsOffset,
-      });
+      // 그리다 실패하면 여기서 잡아야 한다. 안 잡으면 처리되지 않은 거부로 새어 나가고
+      // 화면은 이전 그림 그대로라, 사용자는 조작이 왜 안 먹는지 알 수 없다.
+      let drawn: boolean;
+      try {
+        drawn = draw(canvas, {
+          record,
+          image,
+          transform,
+          routePoints,
+          template,
+          textColor,
+          fontChoice,
+          textScale,
+          showRoute,
+          routeOffset,
+          routeScale,
+          statsOffset,
+        });
+      } catch {
+        drawn = false;
+      }
+      if (!drawn) {
+        setErrorMessage("카드를 그리지 못했어요. 화면을 캡처해 주세요.");
+        return;
+      }
       // 그린 내용이 아직 blob에 없다는 표시는 항상 남긴다(끄는 중이라 인코딩을 미뤄도 마찬가지).
       dirtyRef.current = true;
       // 끄는 중에는 인코딩을 미룬다 — 매 프레임 돌면 드래그가 끊긴다.
@@ -190,7 +222,13 @@ export function RecordCard({
 
   const pickPhoto = (file: File | undefined) => {
     if (!file) return;
-    const url = URL.createObjectURL(file);
+    let url: string;
+    try {
+      url = URL.createObjectURL(file);
+    } catch {
+      setErrorMessage("이 사진은 열 수 없어요. 다른 사진을 골라 주세요.");
+      return;
+    }
     const next = new Image();
     // 로컬 파일이라 캔버스가 오염되지 않는다(외부 이미지와 달리 내보내기가 막히지 않음).
     next.onload = () => {
@@ -260,7 +298,9 @@ export function RecordCard({
     if (!onRoute && !onStats && !image) return;
     dragTargetRef.current = onRoute ? "route" : onStats ? "stats" : "photo";
     dragRef.current = { x: e.clientX, y: e.clientY };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    // 캡처는 손가락이 캔버스를 벗어나도 이벤트를 계속 받으려는 편의일 뿐이다.
+    // 포인터가 이미 사라졌으면 NotFoundError가 나는데, 그것 때문에 끌기가 통째로 막히면 안 된다.
+    capturePointer(e.currentTarget, e.pointerId);
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -296,7 +336,7 @@ export function RecordCard({
     const wasDragging = dragTargetRef.current != null;
     dragRef.current = null;
     dragTargetRef.current = null;
-    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    releasePointer(e.currentTarget, e.pointerId);
     // 끄는 동안 미뤄 둔 인코딩을 여기서 한 번 돌린다.
     if (wasDragging) scheduleBlob();
   };
