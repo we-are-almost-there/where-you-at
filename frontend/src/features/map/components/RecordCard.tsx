@@ -490,9 +490,17 @@ export function RecordCard({
                     label={item.label}
                     selected={fontChoice === item.key}
                     onClick={() => setFontChoice(item.key)}
-                    style={{ fontFamily: item.family }}
+                    // 글꼴마다 잉크 크기·높이가 달라 타일 안에서 제각각으로 보인다. 재서 맞춘 값.
+                    style={{
+                      fontFamily: item.family,
+                      fontWeight: item.weight,
+                      fontSize: item.previewPx,
+                    }}
                   >
-                    가
+                    {/* translateY는 레이아웃을 건드리지 않아 이동량이 정확하다(padding은 가운데정렬과 섞인다) */}
+                    <span className="block" style={{ transform: `translateY(${item.previewNudgeY}px)` }}>
+                      가
+                    </span>
                   </Tile>
                 ))}
               </Group>

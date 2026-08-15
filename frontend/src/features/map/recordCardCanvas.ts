@@ -21,10 +21,47 @@ export const ROUTE_BOX = 210;
 /** 3열 사이 최소 간격. 값이 열 폭을 꽉 채우면 옆 칸과 붙어 보인다. */
 const COLUMN_GAP = 24;
 
-export const FONTS: { key: FontChoice; label: string; family: string; weight: number }[] = [
-  { key: "pretendard", label: "Pretendard", family: '"Pretendard Variable", Pretendard, sans-serif', weight: 800 },
-  { key: "dohyeon", label: "Do Hyeon", family: '"Do Hyeon", sans-serif', weight: 400 },
-  { key: "blackhan", label: "Black Han Sans", family: '"Black Han Sans", sans-serif', weight: 400 },
+/**
+ * 카드에 쓰는 글꼴.
+ *
+ * previewPx·previewNudgeY는 글꼴 고르는 타일에 '가'를 찍을 때만 쓴다.
+ * 같은 font-size라도 글자가 실제로 차지하는 잉크는 글꼴마다 달라서
+ * (19px에서 Pretendard 18px, Do Hyeon 15px, Black Han Sans 14px)
+ * 그대로 두면 타일마다 글자 크기와 높이가 제각각으로 보인다.
+ * 잉크 높이를 16px로 맞추는 font-size와, 잉크 중심을 타일 중심에 놓는 보정값을 재서 넣었다.
+ */
+export const FONTS: {
+  key: FontChoice;
+  label: string;
+  family: string;
+  weight: number;
+  previewPx: number;
+  previewNudgeY: number;
+}[] = [
+  {
+    key: "pretendard",
+    label: "Pretendard",
+    family: '"Pretendard Variable", Pretendard, sans-serif',
+    weight: 800,
+    previewPx: 17,
+    previewNudgeY: 0,
+  },
+  {
+    key: "dohyeon",
+    label: "Do Hyeon",
+    family: '"Do Hyeon", sans-serif',
+    weight: 400,
+    previewPx: 20,
+    previewNudgeY: 1,
+  },
+  {
+    key: "blackhan",
+    label: "Black Han Sans",
+    family: '"Black Han Sans", sans-serif',
+    weight: 400,
+    previewPx: 22,
+    previewNudgeY: 2.5,
+  },
 ];
 
 // 수치 블록의 글자 크기(배율 1 기준). 한 곳에서 고쳐야 그리기와 끌기 판정이 어긋나지 않는다.
