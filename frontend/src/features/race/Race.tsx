@@ -42,10 +42,15 @@ export default function Race() {
 
   return (
     <>
-      <AppHeader />
-      <div className="mx-auto w-full max-w-6xl px-4 py-4">
-        <div className="flex flex-col gap-4 md:flex-row">
-          <div className={`transition-all duration-500 ${selectedRace ? "md:w-2/3" : "w-full"}`}>
+      <AppHeader variant="wide" />
+      {/* 예전엔 "가운데 정렬 컨테이너 제거 → 전체 폭 사용"으로 갔었지만,
+        넓은 화면에서 콘텐츠가 왼쪽에만 쏠려 보이는 문제로 다시 max-w 컨테이너를 추가함.
+        헤더(AppHeader wide variant)의 md:px-24와 리듬을 맞춤. */}
+      <div className="mx-auto w-full max-w-[1200px] px-6 pt-4 pb-4">
+        {/* selectedRace가 없으면(좌측 블록만 있을 때) md:justify-center로 그 블록을
+          컨테이너 가운데로. 상세가 열리면 좌+우 두 블록이 나란히 있어야 하니 기본 정렬로 되돌림. */}
+        <div className={`flex flex-col gap-4 md:flex-row ${!selectedRace ? "md:justify-center" : ""}`}>
+          <div className={`w-full max-w-[662px] transition-all duration-500 ${selectedRace ? "md:w-2/3" : ""}`}>
             <h1 className="mb-3 text-xl font-bold text-gray-900">대회</h1>
 
             {/* 카테고리 필터 */}
