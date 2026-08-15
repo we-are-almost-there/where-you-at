@@ -42,8 +42,11 @@ export function accumulateDistanceMeters(points: RecordPoint[]): number {
     const meters = haversineMeters(prev, point);
     if (meters < MIN_STEP_M) continue;
 
+    // 시각이 흐르지 않았거나 거꾸로 간 표본은 속도를 잴 수 없다.
+    // 검사를 건너뛰면 튐이 그대로 거리에 더해지므로 아예 버린다.
     const seconds = (point.timestamp - prev.timestamp) / 1000;
-    if (seconds > 0 && meters / seconds > MAX_SPEED_MPS) continue;
+    if (seconds <= 0) continue;
+    if (meters / seconds > MAX_SPEED_MPS) continue;
 
     total += meters;
     prev = point;

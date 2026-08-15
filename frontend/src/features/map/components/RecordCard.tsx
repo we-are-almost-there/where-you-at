@@ -15,6 +15,7 @@ import {
   draw,
   routeBoxAt,
   statsBoxAt,
+  statsHitBox,
   type FontChoice,
   type Offset,
   type PhotoTransform,
@@ -79,6 +80,8 @@ const TOOLS: { key: Tool; label: string }[] = [
 
 // 내보낼 PNG를 만드는 데 1080x1920 기준 200ms 가까이 걸린다. 조작이 멎은 뒤에 한 번만 만든다.
 const BLOB_DEBOUNCE_MS = 250;
+// 다운로드가 시작될 여유를 준 뒤 blob URL을 놓아준다.
+const REVOKE_DELAY_MS = 30_000;
 
 export function RecordCard({
   record,
@@ -93,6 +96,8 @@ export function RecordCard({
   // 공유는 사용자 제스처 안에서 동기적으로 불러야 iOS에서 막히지 않는다.
   // 조작이 멎으면 미리 만들어 두고, 버튼에서는 그대로 넘긴다.
   const blobRef = useRef<Blob | null>(null);
+  // 마지막으로 그린 내용이 아직 blob에 담기지 않았는지. 저장 시 낡은 이미지를 내보내지 않으려고 둔다.
+  const dirtyRef = useRef(true);
   const blobTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
   const dragTargetRef = useRef<"photo" | "route" | "stats" | null>(null);
@@ -109,16 +114,16 @@ export function RecordCard({
   const [ratio, setRatio] = useState<Ratio>("feed");
   const [activeTool, setActiveTool] = useState<Tool>("photo");
   const [hasDragged, setHasDragged] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const hasRoute = routePoints.length >= 2;
   const canvasH = RATIOS.find((r) => r.key === ratio)?.height ?? RATIOS[0].height;
   const routeDraggable = showRoute && hasRoute;
   const routeSize = ROUTE_BOX * routeScale;
+  // 실제로 끌 수 있는 것만 말한다 — 없는 대상을 안내하면 그걸 찾게 만든다.
   // 수치는 항상 있으므로 미리보기는 언제나 끌 수 있다.
-  const dragHint = image
-    ? "사진·수치·경로를 끌어 원하는 자리에 놓아 보세요"
-    : "수치와 경로를 끌어 원하는 자리에 놓아 보세요";
+  const draggableNames = [image && "사진", "수치", routeDraggable && "경로"].filter(Boolean);
+  const dragHint = `${draggableNames.join("·")}를 끌어 원하는 자리에 놓아 보세요`;
 
   // PNG 인코딩은 무거워서 그리기와 분리한다. 조작이 멎은 뒤 한 번만 만든다.
   const scheduleBlob = useCallback(() => {
@@ -126,6 +131,7 @@ export function RecordCard({
     blobTimerRef.current = setTimeout(() => {
       canvasRef.current?.toBlob((blob) => {
         blobRef.current = blob;
+        dirtyRef.current = false;
       }, "image/png");
     }, BLOB_DEBOUNCE_MS);
   }, []);
@@ -156,6 +162,8 @@ export function RecordCard({
         routeScale,
         statsOffset,
       });
+      // 그린 내용이 아직 blob에 없다는 표시는 항상 남긴다(끄는 중이라 인코딩을 미뤄도 마찬가지).
+      dirtyRef.current = true;
       // 끄는 중에는 인코딩을 미룬다 — 매 프레임 돌면 드래그가 끊긴다.
       if (!dragTargetRef.current) scheduleBlob();
     });
@@ -190,6 +198,12 @@ export function RecordCard({
       setTransform(INITIAL_TRANSFORM); // 새 사진은 항상 기본 배치에서 시작
       setHasDragged(false); // 새 사진마다 이동 안내를 다시 보여 준다
       URL.revokeObjectURL(url);
+    };
+    // 브라우저가 못 읽는 형식(HEIC 등)이나 손상된 파일이면 onload가 끝내 오지 않는다.
+    // 안내가 없으면 사용자는 사진 고르기가 왜 안 되는지 알 수 없고 URL도 남는다.
+    next.onerror = () => {
+      URL.revokeObjectURL(url);
+      setErrorMessage("이 사진은 열 수 없어요. 다른 사진을 골라 주세요.");
     };
     next.src = url;
   };
@@ -232,7 +246,11 @@ export function RecordCard({
       y >= route.top &&
       y <= route.top + route.size;
 
-    const stats = statsBoxAt(template, canvasH, textScale, statsOffset);
+    // 글자가 실제로 차지하는 폭만 잡는다 — 레이아웃 폭 그대로면 빈 여백을 눌러도 수치가 끌린다.
+    const ctx = e.currentTarget.getContext("2d");
+    const stats = ctx
+      ? statsHitBox(ctx, record, template, canvasH, textScale, fontChoice, statsOffset)
+      : statsBoxAt(template, canvasH, textScale, statsOffset);
     const onStats =
       x >= stats.left &&
       x <= stats.left + stats.width &&
@@ -290,9 +308,23 @@ export function RecordCard({
   };
 
   const save = useCallback(async () => {
-    const blob = blobRef.current;
-    if (!blob) return;
-    setSaveError(null);
+    setErrorMessage(null);
+
+    // 인코딩은 디바운스로 미뤄 두므로, 방금 바꾼 내용이 아직 blob에 안 담겼을 수 있다.
+    // 미리 만들어 둔 게 낡았으면 여기서 즉시 굽는다 — 안 그러면 변경 전 이미지가 저장된다.
+    let blob = dirtyRef.current ? null : blobRef.current;
+    if (!blob) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) {
+        setErrorMessage("이미지를 만들지 못했어요. 화면을 캡처해 주세요.");
+        return;
+      }
+      blobRef.current = blob;
+      dirtyRef.current = false;
+    }
+
     const file = new File([blob], "record.png", { type: "image/png" });
 
     if (navigator.canShare?.({ files: [file] })) {
@@ -302,6 +334,7 @@ export function RecordCard({
       } catch (e) {
         // 사용자가 공유 시트를 닫은 것뿐이면 조용히 끝낸다.
         if (e instanceof DOMException && e.name === "AbortError") return;
+        // 그 밖의 실패(제스처 요건 등)는 아래 다운로드로 떨어진다.
       }
     }
 
@@ -310,10 +343,14 @@ export function RecordCard({
       const link = document.createElement("a");
       link.href = url;
       link.download = "record.png";
+      // 일부 브라우저는 문서에 붙지 않은 링크의 클릭을 무시한다.
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      link.remove();
+      // 클릭 직후 동기적으로 해제하면 다운로드가 시작되기 전에 URL이 죽을 수 있다.
+      setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
     } catch {
-      setSaveError("이미지를 저장하지 못했어요. 화면을 캡처해 주세요.");
+      setErrorMessage("이미지를 저장하지 못했어요. 화면을 캡처해 주세요.");
     }
   }, []);
 
@@ -351,9 +388,9 @@ export function RecordCard({
         </div>
       </div>
 
-      {saveError && (
+      {errorMessage && (
         <p role="alert" className="px-5 pb-2 text-center text-[13px] text-white">
-          {saveError}
+          {errorMessage}
         </p>
       )}
 
@@ -376,7 +413,11 @@ export function RecordCard({
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => pickPhoto(e.target.files?.[0])}
+                  onChange={(e) => {
+                    pickPhoto(e.target.files?.[0]);
+                    // 값을 비워야 같은 사진을 다시 골랐을 때도 change가 발생한다(배치 되돌리기 용도).
+                    e.target.value = "";
+                  }}
                 />
               </label>
               <Divider />

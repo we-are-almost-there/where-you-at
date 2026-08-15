@@ -45,6 +45,12 @@ describe("accumulateDistanceMeters", () => {
     expect(accumulateDistanceMeters(jitter)).toBe(0);
   });
 
+  it("시각이 흐르지 않은 표본은 속도를 잴 수 없어 버린다", () => {
+    // 같은 timestamp로 111m 떨어진 좌표가 오는 기기가 있다. 속도 검사를 건너뛰면 그대로 더해진다.
+    const sameTime = { ...point(1), timestamp: point(0).timestamp };
+    expect(accumulateDistanceMeters([point(0), sameTime])).toBe(0);
+  });
+
   it("비현실적으로 빠른 튐은 버리고 기준점을 유지한다", () => {
     // 1초 만에 111m(=400km/h) 떨어진 곳으로 튀었다가 제자리로 돌아온 표본
     const spike = { ...point(50), timestamp: 1_000_001 };

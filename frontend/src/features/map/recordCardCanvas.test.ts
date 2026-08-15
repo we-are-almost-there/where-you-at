@@ -9,6 +9,7 @@ import {
   routeBoxAt,
   routeLayout,
   statsBoxAt,
+  statsHitBox,
   statsLayout,
 } from "./recordCardCanvas";
 
@@ -85,6 +86,47 @@ describe("statsBoxAt", () => {
     // 글자를 키우면 블록이 높아져 같은 오프셋으로는 넘친다
     const box = statsBoxAt("top", FEED_H, 1.4, small);
     expect(box.top + box.height).toBeLessThanOrEqual(FEED_H + 0.001);
+  });
+});
+
+describe("statsHitBox", () => {
+  // jsdom에는 캔버스가 없으므로 폭 측정만 흉내 낸다(글자당 0.5em).
+  const fontState = { value: "" };
+  const fakeCtx = {
+    get font() {
+      return fontState.value;
+    },
+    set font(next: string) {
+      fontState.value = next;
+    },
+    measureText(text: string) {
+      const size = Number(/(\d+(?:\.\d+)?)px/.exec(fontState.value)?.[1] ?? 0);
+      return { width: text.length * size * 0.5 };
+    },
+  } as unknown as CanvasRenderingContext2D;
+
+  const record = { distanceKm: 9.73, durationMs: 3_688_000, paceSecPerKm: 379 };
+
+  it("글자가 실제로 차지하는 폭만 잡는다", () => {
+    const layout = statsBoxAt("top", FEED_H, 1, { x: 0, y: 0 });
+    const hit = statsHitBox(fakeCtx, record, "top", FEED_H, 1, "pretendard", { x: 0, y: 0 });
+    expect(hit.width).toBeLessThan(layout.width);
+    // 마지막 열의 시작(2/3 지점)보다는 넓어야 세 번째 수치를 잡을 수 있다
+    expect(hit.width).toBeGreaterThan(((CANVAS_W - PADDING * 2) / 3) * 2);
+  });
+
+  it("자리·높이는 레이아웃과 같다", () => {
+    const layout = statsBoxAt("top", FEED_H, 1, { x: 0, y: 0 });
+    const hit = statsHitBox(fakeCtx, record, "top", FEED_H, 1, "pretendard", { x: 0, y: 0 });
+    expect(hit.left).toBe(layout.left);
+    expect(hit.top).toBe(layout.top);
+    expect(hit.height).toBe(layout.height);
+  });
+
+  it("레이아웃 폭을 넘지 않는다", () => {
+    const long = { distanceKm: 1234.56, durationMs: 359_999_000, paceSecPerKm: 3599 };
+    const hit = statsHitBox(fakeCtx, long, "top", FEED_H, 1.4, "blackhan", { x: 0, y: 0 });
+    expect(hit.width).toBeLessThanOrEqual(CANVAS_W - PADDING * 2);
   });
 });
 

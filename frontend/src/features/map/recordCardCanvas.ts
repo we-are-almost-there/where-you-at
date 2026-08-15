@@ -55,6 +55,15 @@ interface Stat {
   caption: string;
 }
 
+/** 카드에 찍히는 세 수치. 그리기와 끌기 판정이 같은 문자열을 봐야 폭이 어긋나지 않는다. */
+function statValues(record: TrackingRecord): Stat[] {
+  return [
+    { value: formatDistance(record.distanceKm), caption: "Km" },
+    { value: formatPace(record.paceSecPerKm), caption: "평균 페이스" },
+    { value: formatDuration(record.durationMs), caption: "시간" },
+  ];
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -157,6 +166,43 @@ export function statsBoxAt(
   // 글자 크기·비율이 바뀌면 저장된 오프셋이 범위를 벗어날 수 있어 여기서도 한 번 더 자른다.
   const safe = clampStatsOffset(offset, template, canvasH, textScale);
   return { ...layout, left: layout.defaultLeft + safe.x, top: layout.defaultTop + safe.y };
+}
+
+/**
+ * 끌기 판정에 쓸 수치 블록의 실제 글자 범위.
+ *
+ * 레이아웃 폭은 항상 콘텐츠 전체 폭(912px)이라 글자가 없는 빈 곳까지 수치로 잡힌다.
+ * 그러면 사진을 옮기려고 여백을 눌러도 수치가 딸려 움직인다. 실제로 그려질 글자 폭을 재서
+ * 그만큼만 잡히게 한다. 측정에는 그리기와 같은 글꼴·크기를 써야 어긋나지 않는다.
+ */
+export function statsHitBox(
+  ctx: CanvasRenderingContext2D,
+  record: TrackingRecord,
+  template: Template,
+  canvasH: number,
+  textScale: number,
+  fontChoice: FontChoice,
+  offset: Offset,
+) {
+  const box = statsBoxAt(template, canvasH, textScale, offset);
+  const { family, weight } = FONTS.find((f) => f.key === fontChoice) ?? FONTS[0];
+  const values = statValues(record);
+
+  let width: number;
+  if (template === "center") {
+    ctx.font = `${weight} ${box.hero}px ${family}`;
+    const heroWidth = ctx.measureText(values[0].value).width;
+    // 아래 두 열은 열 간격만큼 벌어져 있으므로 두 번째 열의 오른쪽 끝이 전체 폭이 된다.
+    const columnWidth = (CANVAS_W - PADDING * 2) / 2;
+    ctx.font = `${weight} ${box.sub}px ${family}`;
+    const rowWidth = columnWidth + ctx.measureText(values[2].value).width;
+    width = Math.max(heroWidth, rowWidth);
+  } else {
+    const columnWidth = (CANVAS_W - PADDING * 2) / 3;
+    ctx.font = `${weight} ${box.sub}px ${family}`;
+    width = columnWidth * 2 + ctx.measureText(values[2].value).width;
+  }
+  return { ...box, width: Math.min(box.width, width) };
 }
 
 /** 경로 썸네일의 좌상단 좌표와 크기. */
@@ -319,12 +365,7 @@ export function draw(canvas: HTMLCanvasElement, options: DrawOptions) {
   ctx.shadowColor = textColor === "white" ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.55)";
   ctx.shadowBlur = 18;
 
-  const stats: Stat[] = [
-    { value: formatDistance(record.distanceKm), caption: "Km" },
-    { value: formatPace(record.paceSecPerKm), caption: "평균 페이스" },
-    { value: formatDuration(record.durationMs), caption: "시간" },
-  ];
-
+  const stats = statValues(record);
   const statsBox = statsBoxAt(template, canvasH, textScale, statsOffset);
   if (template === "center") {
     // 가운데 배치는 거리를 크게 쓰는 구성 — 아래 두 수치와의 비는 2배 남짓으로 유지해
