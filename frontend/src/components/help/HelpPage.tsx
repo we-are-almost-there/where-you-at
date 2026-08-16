@@ -12,7 +12,6 @@ const LINKS: HelpLink[] = [
   { label: "자주 묻는 질문", to: "/faq" },
   { label: "이용약관", to: "/terms" },
   { label: "개인정보처리방침", to: "/privacy" },
-  { label: "데이터 출처", to: "/data-sources" },
   { label: "1:1 문의", to: "/contact" },
 ];
 
