@@ -12,7 +12,7 @@ function toRad(deg: number): number {
 }
 
 // 두 좌표 사이의 거리(m). 하버사인.
-function haversineMeters(a: LatLng, b: LatLng): number {
+export function haversineMeters(a: LatLng, b: LatLng): number {
   const dLat = toRad(b.lat - a.lat);
   const dLng = toRad(b.lng - a.lng);
   const h =
