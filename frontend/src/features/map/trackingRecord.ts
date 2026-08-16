@@ -19,8 +19,9 @@ export interface TrackingRecord {
 const MAX_ACCURACY_M = 30;
 // 이보다 짧은 이동은 정지 중 지터로 본다. 걸러내지 않으면 서 있어도 거리가 늘어난다.
 const MIN_STEP_M = 5;
-// 이보다 빠르면 GPS 튐으로 본다(=54km/h). 도보·자전거 모두 이 아래다.
-const MAX_SPEED_MPS = 15;
+// 이보다 빠르면 GPS 튐으로 본다(=108km/h). 실제 튐은 수백 m/s라 이 값으로도 충분히 걸러지고,
+// 자전거 내리막(최고 60km/h대)을 이상치로 오인하지 않는다.
+const MAX_SPEED_MPS = 30;
 // 이 아래 거리는 페이스를 내도 무의미해 null로 둔다.
 const MIN_PACE_DISTANCE_KM = 0.01;
 
