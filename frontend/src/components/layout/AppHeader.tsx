@@ -8,8 +8,8 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "홈", to: null },
-  { label: "코스 탐색", to: "/" },
+  { label: "홈", to: "/" },
+  { label: "코스 탐색", to: "/courses" },
   { label: "대회·이벤트", to: "/races" },
   { label: "지원금·환급", to: "/support" },
 ];
