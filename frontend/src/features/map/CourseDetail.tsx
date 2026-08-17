@@ -19,6 +19,7 @@ import { TrackingStats } from "./components/TrackingStats";
 import { RecordCard } from "./components/RecordCard";
 import type { TrackingRecord } from "./trackingRecord";
 import SidebarDrawer from "../../components/layout/SidebarDrawer";
+import AppHeader from "../../components/layout/AppHeader";
 
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
@@ -104,7 +105,7 @@ export function CourseDetail() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const courseId = Number(id);
-  
+
   const [detail, setDetail] = useState<CourseDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +136,7 @@ export function CourseDetail() {
   const [now, setNow] = useState(0); // 예상 종료 시각 계산의 기준 시각(추적 중에만 갱신)
   const [startChecked, setStartChecked] = useState(false); // 세션당 한 번만 시작 거리 판정
   const [tooFarMeters, setTooFarMeters] = useState<number | null>(null); // null이 아니면 안내 팝업
+
   const [offCourseMeters, setOffCourseMeters] = useState<number | null>(null); // null이 아니면 이탈 중(배너·유도선)
   const [offCourseGuidePoint, setOffCourseGuidePoint] = useState<LatLng | null>(null); // 유도선이 향할 코스 위 지점
   const wasOffCourseRef = useRef(false); // 이탈 진입 순간(아님→이탈)에만 음성이 나가도록 직전 상태 보관
@@ -145,7 +147,7 @@ export function CourseDetail() {
   const [nearbySpots, setNearbySpots] = useState<NearbySpot[]>([]);
   const [selectedNearbySpotId, setSelectedNearbySpotId] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  
+
   useEffect(() => {
     if (!validId) return; // 잘못된 id는 아래 렌더에서 파생 처리
     let cancelled = false;
@@ -206,6 +208,12 @@ export function CourseDetail() {
         }
       }
     }
+  }
+
+  // 추적이 멈추면(종료·주변 탭 이동·권한 거부) 이탈 상태를 정리해 배너·유도선이 남지 않게 한다.
+  if (!isTracking && (offCourseMeters != null || offCourseGuidePoint != null)) {
+    setOffCourseMeters(null);
+    setOffCourseGuidePoint(null);
   }
 
   // 추적 중에는 시계가 흘러야 예상 종료 시각이 현재 시각을 따라간다.
@@ -415,6 +423,12 @@ export function CourseDetail() {
           isTracking ? "max-h-[60%]" : sheetExpanded ? "max-h-[71%]" : "max-h-[51%]"
         }`}
       >
+        {/* 데스크톱 전용 상단바 — CourseExplore와 동일하게 패널 안에 배치해 지도까지 안 이어지게 함.
+          모바일은 지도 위 플로팅 버튼(KakaoMap)이 이 역할을 대신한다. */}
+        <div className="hidden md:block">
+          <AppHeader isSidebarOpen={isSidebarOpen} onSidebarOpenChange={setIsSidebarOpen} />
+        </div>
+
         {/* 바텀시트 핸들 (모바일 전용) — 탭하면 시트를 접어 지도(전체 코스)를 넓게 본다 */}
         <button
           type="button"
@@ -453,7 +467,8 @@ export function CourseDetail() {
                 isTracking ? "hidden md:block" : ""
               }`}
             >
-              {/* 뒤로 + 제목 + 주소 */}
+              {/* 뒤로 + 제목 + 주소.
+                이 버튼이 모바일·데스크톱 공통으로 유일한 뒤로 이동 수단이라 md:hidden 없이 항상 노출된다. */}
               <button
                 type="button"
                 onClick={() => navigate(-1)}
