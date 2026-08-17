@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...deps import get_db
 from ...crud import course as crud
+from ...crud import nearby as nearby_crud
 from ...schemas.course import (
     CourseListResponse,
     CourseDetail,
@@ -9,6 +10,7 @@ from ...schemas.course import (
     Bounds,
     GpxResponse,
 )
+from ...schemas.nearby import NearbyListResponse
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -87,3 +89,17 @@ def get_course_gpx(id: int, route_type: str = "trail", conn=Depends(get_db)):
     """코스 전체 경로 좌표 (상세 지도용). route_type으로 도보/자전거 구분."""
     waypoints = crud.get_waypoints(conn, id, route_type)
     return {"course_id": id, "route_type": route_type, "waypoints": waypoints}
+
+
+@router.get("/{id}/nearby", response_model=NearbyListResponse)
+def get_course_nearby(
+    id: int,
+    category: str = Query(..., pattern="^(attraction|restaurant|accommodation|bicycle)$"),
+    route_type: str = Query("trail", pattern="^(trail|bicycle)$"),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=50),
+    conn=Depends(get_db),
+):
+    """코스 주변 시설 조회. (구 nearby.py에서 이관)"""
+    total, spots = nearby_crud.list_nearby_spots(conn, id, category, route_type, page, size)
+    return {"total_count": total, "spots": spots}
