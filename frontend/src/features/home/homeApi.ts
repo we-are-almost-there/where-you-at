@@ -22,14 +22,6 @@ export interface CourseItem {
   landmarks?: string[];
 }
 
-/**
- * TourAPI 이미지(tong.visitkorea.or.kr)가 http로 내려와 HTTPS 배포 시
- * 혼합 콘텐츠로 차단된다. 같은 호스트가 https도 정상 응답하므로 올려서 쓴다.
- */
-function toHttps(url: string): string {
-  return url.replace(/^http:\/\//, "https://");
-}
-
 /** 브라우저 현재 위치. 거부·실패·미지원이면 null */
 function getCurrentPosition(): Promise<LatLng | null> {
   if (!("geolocation" in navigator)) return Promise.resolve(null);
@@ -73,7 +65,7 @@ function toCourseItem(course: Course, origin: LatLng | null): CourseItem {
     region: course.start_address,
     lengthKm: route?.distance ?? 0,
     level: route?.difficulty ?? null,
-    imageUrl: course.image_url ? toHttps(course.image_url) : null,
+    imageUrl: course.image_url || null,
     highlight: origin && start ? `${distanceKm(origin, start).toFixed(1)}km` : undefined,
   };
 }

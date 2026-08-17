@@ -47,6 +47,15 @@ const DIFF_FROM_API: Record<string, Difficulty> = { easy: "쉬움", medium: "보
 // 거리 버킷 → 백엔드 distance 범위 문자열 ("-10"=10 이하, "20-"=20 이상)
 const DISTANCE_TO_API: Record<string, string> = { short: "-10", mid: "10-20", long: "20-" };
 
+/**
+ * TourAPI 이미지(tong.visitkorea.or.kr)가 대부분 http로 내려온다.
+ * HTTPS로 배포하면 브라우저가 혼합 콘텐츠로 차단하므로 API 경계에서 https로 올린다.
+ * 같은 호스트가 https도 유효한 인증서로 응답한다.
+ */
+function toHttpsImage(url: string | null | undefined): string {
+  return (url ?? "").replace(/^http:\/\//, "https://");
+}
+
 /** UI 쿼리(한국어/버킷)를 백엔드가 이해하는 파라미터로 변환한다. */
 function toApiQuery(query: Record<string, string>): Record<string, string> {
   const q = { ...query };
@@ -69,7 +78,7 @@ function fromApiCourse(c: ApiCourse): Course {
     id: c.id,
     title: c.title,
     start_address: c.start_address ?? "",
-    image_url: c.image_url ?? "",
+    image_url: toHttpsImage(c.image_url),
     region_code: c.region_code ?? "",
     is_population_drop_zone: c.is_population_drop_zone ?? false,
     landmarks: c.landmarks ?? [],
@@ -139,7 +148,7 @@ export async function getCourseDetail(id: number): Promise<CourseDetail> {
     description: c.description ?? "",
     start_address: c.start_address ?? "",
     region_code: c.region_code ?? "",
-    image_url: c.image_url ?? "",
+    image_url: toHttpsImage(c.image_url),
     original_gpx_url: c.original_gpx_url ?? "",
     is_population_drop_zone: c.is_population_drop_zone ?? false,
     routes,

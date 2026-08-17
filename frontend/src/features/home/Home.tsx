@@ -143,14 +143,6 @@ function daysUntil(startDate: string) {
   return Math.round((target.getTime() - today.getTime()) / 86_400_000);
 }
 
-/** 배포 전 각 데이터셋 원본에서 공공누리 유형을 확인해 "공공누리 제N유형"까지 표기해야 한다 */
-const DATA_SOURCES = [
-  { label: "걷기여행길 코스·GPX", provider: "한국관광공사 두루누비" },
-  { label: "관광·주변 정보", provider: "한국관광공사 TourAPI" },
-  { label: "국토종주 자전거길", provider: "행정안전부" },
-  { label: "지도", provider: "카카오" },
-];
-
 const SLIDE_INTERVAL_MS = 4000;
 
 function SectionHeader({ title, caption }: { title: string; caption?: string }) {
@@ -689,23 +681,8 @@ export default function Home() {
       )}
 
       <footer className="mt-auto border-t border-divider">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-6">
-          <div className="flex flex-col gap-1.5">
-            <p className="text-sm font-bold text-ink">어디까지왔니</p>
-            <p className="text-[13px] leading-relaxed text-caption">
-              전국 걷기여행길과 자전거길을 지도에서 찾고, 실시간으로 따라가며 기록을 남기는
-              서비스입니다. 인구감소지역을 방문하면 받을 수 있는 지원금도 함께 안내합니다.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-1 border-t border-divider pt-4 text-[13px] text-caption">
-            {DATA_SOURCES.map((source) => (
-              <p key={source.label}>
-                {source.label} — {source.provider}
-              </p>
-            ))}
-            <p className="mt-2">© 2026 WHERE YOU AT</p>
-          </div>
+        <div className="mx-auto w-full max-w-6xl px-4 py-6">
+          <p className="text-[13px] text-caption">© 2026 WHERE YOU AT</p>
         </div>
       </footer>
 
