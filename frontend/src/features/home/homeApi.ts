@@ -22,15 +22,26 @@ export interface CourseItem {
   landmarks?: string[];
 }
 
-/** 브라우저 현재 위치. 거부·실패·미지원이면 null */
+const POSITION_TIMEOUT_MS = 8000;
+
+/** 브라우저 현재 위치. 거부·실패·미지원·무응답이면 null */
 function getCurrentPosition(): Promise<LatLng | null> {
   if (!("geolocation" in navigator)) return Promise.resolve(null);
 
   return new Promise((resolve) => {
+    // geolocation의 timeout 옵션은 사용자가 권한 팝업에 "응답한 뒤"에야 시작한다.
+    // 팝업을 그냥 방치하면 성공·실패 콜백이 둘 다 안 불려 영영 안 끝나므로
+    // 바깥에서 따로 시간을 재서 폴백시킨다.
+    const fallback = window.setTimeout(() => resolve(null), POSITION_TIMEOUT_MS);
+    const settle = (position: LatLng | null) => {
+      window.clearTimeout(fallback);
+      resolve(position);
+    };
+
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => resolve(null),
-      { timeout: 8000, maximumAge: 5 * 60 * 1000 },
+      (pos) => settle({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => settle(null),
+      { timeout: POSITION_TIMEOUT_MS, maximumAge: 5 * 60 * 1000 },
     );
   });
 }

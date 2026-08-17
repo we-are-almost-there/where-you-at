@@ -135,12 +135,22 @@ const MENU_ITEMS: MenuItem[] = [
   },
 ];
 
-/** 오늘 자정 기준 남은 일수. 오늘이면 0 */
+/** 오늘 자정 기준 남은 일수. 오늘이면 0, 이미 시작했으면 음수 */
 function daysUntil(startDate: string) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const target = new Date(`${startDate}T00:00:00`);
   return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
+
+/**
+ * 여러 날 열리는 대회는 시작일이 지나도 종료 전이면 목록에 남는다(end_date 기준 필터).
+ * 이때 남은 일수가 음수라 "D--7" 같은 문자열이 나오므로 따로 처리한다.
+ */
+function formatDDay(startDate: string) {
+  const remainingDays = daysUntil(startDate);
+  if (remainingDays > 0) return `D-${remainingDays}`;
+  return remainingDays === 0 ? "D-DAY" : "진행중";
 }
 
 const SLIDE_INTERVAL_MS = 4000;
@@ -389,7 +399,10 @@ function BannerCarousel({ onOpenGallery }: { onOpenGallery: () => void }) {
 
   useEffect(() => {
     if (isPaused) return;
-    const timer = setTimeout(() => scrollToIndex(current + 1), SLIDE_INTERVAL_MS);
+    // 범위를 벗어나면 scrollToIndex가 조용히 무시되고 current가 안 바뀌어
+    // 자동 전환이 영구 정지한다. 마지막 벌 끝에서는 가운데 벌로 되돌린다.
+    const nextIndex = current + 1 < LOOPED_BANNERS.length ? current + 1 : LOOP_START;
+    const timer = setTimeout(() => scrollToIndex(nextIndex), SLIDE_INTERVAL_MS);
     return () => clearTimeout(timer);
   }, [current, isPaused, scrollToIndex]);
 
@@ -637,7 +650,6 @@ export default function Home() {
         <ul className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-3">
           {races.map((race) => {
             const [, month, day] = race.startDate.split("-");
-            const remainingDays = daysUntil(race.startDate);
 
             return (
               <li key={race.id}>
@@ -656,7 +668,7 @@ export default function Home() {
                     {/* 1순위: 얼마나 남았나. 종목은 분류값이라 본문 흐름에서 빼 오른쪽 끝에 고정 */}
                     <span className="flex items-center justify-between gap-2">
                       <span className="text-base font-bold text-accent">
-                        {remainingDays === 0 ? "D-DAY" : `D-${remainingDays}`}
+                        {formatDDay(race.startDate)}
                       </span>
                       {race.type && (
                         <span className="shrink-0 rounded border border-divider px-1.5 py-0.5 text-[13px] text-caption">
