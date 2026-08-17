@@ -16,10 +16,24 @@ const NAV_ITEMS: NavItem[] = [
 
 interface Props {
   variant?: "wide" | "compact";
+  // 이 페이지가 이미 자체 SidebarDrawer를 렌더링하고 있으면(예: CourseDetail의
+  // 모바일 지도 위 플로팅 메뉴 버튼) 이 두 prop을 넘겨 상태를 공유시킨다.
+  // 넘기면 AppHeader는 자신의 <SidebarDrawer>를 렌더링하지 않고 햄버거 클릭도
+  // 이 핸들러로 위임한다(제어형). 안 넘기면 기존처럼 내부에서 알아서 연다(비제어형).
+  isSidebarOpen?: boolean;
+  onSidebarOpenChange?: (open: boolean) => void;
 }
 
-export default function AppHeader({ variant = "compact" }: Props) {
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+export default function AppHeader({
+  variant = "compact",
+  isSidebarOpen: controlledOpen,
+  onSidebarOpenChange,
+}: Props) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const isSidebarOpen = isControlled ? controlledOpen : internalOpen;
+  const setIsSidebarOpen = isControlled ? onSidebarOpenChange! : setInternalOpen;
+
   const location = useLocation();
   const navigate = useNavigate();
   const isWide = variant === "wide";
@@ -43,7 +57,7 @@ export default function AppHeader({ variant = "compact" }: Props) {
       >
         <button
           type="button"
-          onClick={() => setIsMobileSidebarOpen(true)}
+          onClick={() => setIsSidebarOpen(true)}
           aria-label="메뉴"
           className="cursor-pointer text-[20px] leading-none text-ink md:hidden"
         >
@@ -95,7 +109,9 @@ export default function AppHeader({ variant = "compact" }: Props) {
         )}
       </div>
 
-      <SidebarDrawer isOpen={isMobileSidebarOpen} onClose={() => setIsMobileSidebarOpen(false)} />
+      {!isControlled && (
+        <SidebarDrawer isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      )}
     </header>
   );
 }

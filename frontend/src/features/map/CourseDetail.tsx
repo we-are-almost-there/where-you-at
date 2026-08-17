@@ -413,7 +413,7 @@ export function CourseDetail() {
         {/* 데스크톱 전용 상단바 — CourseExplore와 동일하게 패널 안에 배치해 지도까지 안 이어지게 함.
           모바일은 지도 위 플로팅 버튼(KakaoMap)이 이 역할을 대신한다. */}
         <div className="hidden md:block">
-          <AppHeader />
+          <AppHeader isSidebarOpen={isSidebarOpen} onSidebarOpenChange={setIsSidebarOpen} />
         </div>
 
         {/* 바텀시트 핸들 (모바일 전용) — 탭하면 시트를 접어 지도(전체 코스)를 넓게 본다 */}
@@ -454,7 +454,8 @@ export function CourseDetail() {
                 isTracking ? "hidden md:block" : ""
               }`}
             >
-              {/* 뒤로(모바일 전용 — 데스크톱은 상단바의 뒤로가 이 역할을 대신함) + 제목 + 주소 */}
+              {/* 뒤로 + 제목 + 주소.
+                이 버튼이 모바일·데스크톱 공통으로 유일한 뒤로 이동 수단이라 md:hidden 없이 항상 노출된다. */}
               <button
                 type="button"
                 onClick={() => navigate(-1)}
