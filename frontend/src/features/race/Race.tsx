@@ -50,7 +50,10 @@ export default function Race() {
         {/* selectedRace가 없으면(좌측 블록만 있을 때) md:justify-center로 그 블록을
           컨테이너 가운데로. 상세가 열리면 좌+우 두 블록이 나란히 있어야 하니 기본 정렬로 되돌림. */}
         <div className={`flex flex-col gap-4 md:flex-row ${!selectedRace ? "md:justify-center" : ""}`}>
-          <div className={`w-full max-w-[662px] transition-all duration-500 ${selectedRace ? "md:w-2/3" : ""}`}>
+          {/* 662px 임의값 대신 Tailwind 표준 스케일(max-w-2xl, 672px)로 교체.
+            실측 결과 이 폭에서 카드 콘텐츠가 여유 있게 들어가 특별히 방어해야 할
+            최소값은 없었고, 표준 스케일을 쓰는 게 근거 없는 매직넘버보다 낫다고 판단. */}
+          <div className={`w-full max-w-2xl transition-all duration-500 ${selectedRace ? "md:w-2/3" : ""}`}>
             <h1 className="mb-3 text-xl font-bold text-gray-900">대회</h1>
 
             {/* 카테고리 필터 */}
