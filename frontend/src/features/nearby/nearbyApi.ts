@@ -3,7 +3,7 @@ import type { NearbySpot, SpotCategory } from "./types";
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 interface ApiNearbySpot {
-  id: number;
+  id: string;
   category: string;
   name: string;
   address: string | null;
@@ -81,7 +81,7 @@ interface ApiBicycleFacilityDetail {
   available_bikes: number | null;
 }
 
-export async function getBicycleFacilityDetail(id: number) {
+export async function getBicycleFacilityDetail(id: string) {   // 파라미터 — spot.id(string)를 그대로 받음
   return apiGet<ApiBicycleFacilityDetail>(`/api/bicycle-facilities/${id}`);
 }
 
