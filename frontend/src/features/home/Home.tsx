@@ -14,12 +14,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import AppHeader from "../../components/layout/AppHeader";
-import {
-  FEATURED_REGIONS,
-  fetchFeaturedCourses,
-  fetchNearbyCourses,
-  fetchUpcomingRaces,
-} from "./homeApi";
+import { fetchFeaturedCourses, fetchNearbyCourses, fetchUpcomingRaces } from "./homeApi";
 import type { CourseItem, UpcomingRace } from "./homeApi";
 
 /**
@@ -629,10 +624,8 @@ export default function Home() {
       {/* ② 관광지 축 */}
       {(isFeaturedLoading || featured.length > 0) && (
         <section className="mx-auto w-full max-w-6xl px-4 pb-[clamp(2rem,6vw,3rem)]">
-          <SectionHeader
-            title="유명 관광지에서 달려보자!"
-            caption={FEATURED_REGIONS.map((region) => region.label).join(" · ")}
-          />
+          {/* 지역은 카드마다 배지로 붙어 있어 소제목으로 다시 나열하지 않는다 */}
+          <SectionHeader title="유명 관광지에서 달려보자!" />
           {isFeaturedLoading ? <CourseGridSkeleton /> : <CourseGrid items={featured} />}
         </section>
       )}

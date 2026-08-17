@@ -92,7 +92,7 @@ export interface NearbyCourses {
  * 두루누비 코스가 해안 노선(해파랑길·남파랑길·서해랑길) 중심이라
  * 내륙 도시(대전·전주·가평)와 서울·제주는 코스가 없어 제외했다.
  */
-export const FEATURED_REGIONS = [
+const FEATURED_REGIONS = [
   { label: "부산", code: "26" },
   { label: "여수", code: "12130" },
   { label: "강릉", code: "51150" },
