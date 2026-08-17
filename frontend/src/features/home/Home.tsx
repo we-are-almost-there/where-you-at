@@ -14,7 +14,12 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import AppHeader from "../../components/layout/AppHeader";
-import { fetchNearbyCourses, fetchUpcomingRaces } from "./homeApi";
+import {
+  FEATURED_REGIONS,
+  fetchFeaturedCourses,
+  fetchNearbyCourses,
+  fetchUpcomingRaces,
+} from "./homeApi";
 import type { CourseItem, UpcomingRace } from "./homeApi";
 
 /**
@@ -130,42 +135,6 @@ const MENU_ITEMS: MenuItem[] = [
   },
 ];
 
-// ② 유명 관광지에서 달려보자! — 아직 목업. 다음 단계에서 지역별 실데이터로 교체
-const LANDMARK_COURSES: CourseItem[] = [
-  {
-    id: -1,
-    name: "경주 대릉원 돌담길",
-    region: "경북 경주시",
-    lengthKm: 4.2,
-    level: "쉬움",
-    landmarks: ["첨성대", "동궁과 월지", "황리단길"],
-  },
-  {
-    id: -2,
-    name: "제주 올레 7코스",
-    region: "제주 서귀포시",
-    lengthKm: 17.6,
-    level: "보통",
-    landmarks: ["외돌개", "천지연폭포", "새연교"],
-  },
-  {
-    id: -3,
-    name: "부산 갈맷길 해운대 구간",
-    region: "부산 해운대구",
-    lengthKm: 9.8,
-    level: "쉬움",
-    landmarks: ["해운대해수욕장", "동백섬", "누리마루"],
-  },
-  {
-    id: -4,
-    name: "전주 한옥마을 둘레길",
-    region: "전북 전주시",
-    lengthKm: 3.6,
-    level: "쉬움",
-    landmarks: ["경기전", "오목대", "전동성당"],
-  },
-];
-
 /** 오늘 자정 기준 남은 일수. 오늘이면 0 */
 function daysUntil(startDate: string) {
   const today = new Date();
@@ -219,12 +188,24 @@ function CourseGrid({ items }: { items: CourseItem[] }) {
     <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:grid md:grid-cols-4 md:overflow-x-visible md:px-0 [&::-webkit-scrollbar]:hidden">
       {items.map((item) => (
         <Link
-          key={item.name}
-          to="/courses"
+          key={item.id}
+          to={`/courses/${item.id}`}
           className="w-[clamp(9rem,40vw,15rem)] shrink-0 md:w-auto"
         >
-          {/* 목업용 썸네일 자리 — course.image_url(TourAPI 대표 이미지)로 교체 */}
-          <span className="relative mb-2 block aspect-[4/3] rounded-xl bg-mapbg">
+          <span className="relative mb-2 block aspect-[4/3] overflow-hidden rounded-xl bg-mapbg">
+            {/* 코스명이 바로 아래에 있어 alt는 비운다(중복 읽힘 방지).
+                로드 실패 시 img만 감춰 뒤의 회색 배경이 그대로 폴백이 된다. */}
+            {item.imageUrl && (
+              <img
+                src={item.imageUrl}
+                alt=""
+                className="size-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                }}
+              />
+            )}
+
             {/* 내 위치에서의 거리는 코스 길이와 헷갈리지 않게 썸네일 위로 올린다 */}
             {item.highlight && (
               <span className="absolute left-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-[13px] font-semibold text-white backdrop-blur-sm">
@@ -537,17 +518,36 @@ export default function Home() {
   const [nearby, setNearby] = useState<CourseItem[]>([]);
   const [isNearbyLoading, setIsNearbyLoading] = useState(true);
   const [isNearbyFallback, setIsNearbyFallback] = useState(false);
+  const [featured, setFeatured] = useState<CourseItem[]>([]);
+  const [isFeaturedLoading, setIsFeaturedLoading] = useState(true);
 
+  // 두 섹션에 같은 코스가 겹쳐 보이지 않게, 주변 코스는 여유 있게 받아 관광지 섹션에
+  // 쓰인 코스를 빼고 4개만 남긴다. 두 요청은 동시에 출발하고 합칠 때만 서로를 기다린다.
+  // 관광지는 먼저 끝나는 대로 그린다 — 주변은 위치 권한 응답까지 기다려야 해서 느리다.
   useEffect(() => {
     let alive = true;
-    fetchNearbyCourses(4)
-      .catch(() => ({ items: [] as CourseItem[], isFallback: true }))
-      .then((result) => {
-        if (!alive) return;
-        setNearby(result.items);
-        setIsNearbyFallback(result.isFallback);
-        setIsNearbyLoading(false);
-      });
+
+    const featuredPromise = fetchFeaturedCourses().catch(() => [] as CourseItem[]);
+
+    featuredPromise.then((list) => {
+      if (!alive) return;
+      setFeatured(list);
+      setIsFeaturedLoading(false);
+    });
+
+    const nearbyPromise = fetchNearbyCourses(8).catch(() => ({
+      items: [] as CourseItem[],
+      isFallback: true,
+    }));
+
+    Promise.all([featuredPromise, nearbyPromise]).then(([featuredList, nearbyResult]) => {
+      if (!alive) return;
+      const usedIds = new Set(featuredList.map((course) => course.id));
+      setNearby(nearbyResult.items.filter((course) => !usedIds.has(course.id)).slice(0, 4));
+      setIsNearbyFallback(nearbyResult.isFallback);
+      setIsNearbyLoading(false);
+    });
+
     return () => {
       alive = false;
     };
@@ -622,10 +622,15 @@ export default function Home() {
       )}
 
       {/* ② 관광지 축 */}
-      <section className="mx-auto w-full max-w-6xl px-4 pb-[clamp(2rem,6vw,3rem)]">
-        <SectionHeader title="유명 관광지에서 달려보자!" caption="대표 관광지와 인접한 코스" />
-        <CourseGrid items={LANDMARK_COURSES} />
-      </section>
+      {(isFeaturedLoading || featured.length > 0) && (
+        <section className="mx-auto w-full max-w-6xl px-4 pb-[clamp(2rem,6vw,3rem)]">
+          <SectionHeader
+            title="유명 관광지에서 달려보자!"
+            caption={FEATURED_REGIONS.map((region) => region.label).join(" · ")}
+          />
+          {isFeaturedLoading ? <CourseGridSkeleton /> : <CourseGrid items={featured} />}
+        </section>
+      )}
 
       {/* 다가오는 대회 — 대회가 하나도 없으면 섹션째 감춘다 */}
       {(isRaceLoading || races.length > 0) && (
@@ -699,7 +704,7 @@ export default function Home() {
                 {source.label} — {source.provider}
               </p>
             ))}
-            <p className="mt-2">© 2026 어디까지왔니</p>
+            <p className="mt-2">© 2026 WHERE YOU AT</p>
           </div>
         </div>
       </footer>

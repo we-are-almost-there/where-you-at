@@ -14,10 +14,20 @@ export interface CourseItem {
   lengthKm: number;
   /** 난이도. 자전거 전용 경로는 없을 수 있다 */
   level: string | null;
+  /** 카드 썸네일. 없으면 null */
+  imageUrl?: string | null;
   /** 카드 메타 앞에 강조해 붙는 값 (내 위치에서의 거리 등) */
   highlight?: string;
   /** 코스 주변 대표 관광지. 있으면 지역명 대신 노출 */
   landmarks?: string[];
+}
+
+/**
+ * TourAPI 이미지(tong.visitkorea.or.kr)가 http로 내려와 HTTPS 배포 시
+ * 혼합 콘텐츠로 차단된다. 같은 호스트가 https도 정상 응답하므로 올려서 쓴다.
+ */
+function toHttps(url: string): string {
+  return url.replace(/^http:\/\//, "https://");
 }
 
 /** 브라우저 현재 위치. 거부·실패·미지원이면 null */
@@ -63,6 +73,7 @@ function toCourseItem(course: Course, origin: LatLng | null): CourseItem {
     region: course.start_address,
     lengthKm: route?.distance ?? 0,
     level: route?.difficulty ?? null,
+    imageUrl: course.image_url ? toHttps(course.image_url) : null,
     highlight: origin && start ? `${distanceKm(origin, start).toFixed(1)}km` : undefined,
   };
 }
@@ -71,6 +82,42 @@ export interface NearbyCourses {
   items: CourseItem[];
   /** 위치를 못 얻어 '가까운 순'이 아닌 기본 목록으로 대체했는지 */
   isFallback: boolean;
+}
+
+/**
+ * 유명 여행지 4곳. region 필터는 접두 매칭이라 시도(2자리)·시군구(5자리)를 모두 받는다.
+ * 두루누비 코스가 해안 노선(해파랑길·남파랑길·서해랑길) 중심이라
+ * 내륙 도시(대전·전주·가평)와 서울·제주는 코스가 없어 제외했다.
+ */
+export const FEATURED_REGIONS = [
+  { label: "부산", code: "26" },
+  { label: "여수", code: "12130" },
+  { label: "강릉", code: "51150" },
+  { label: "경주", code: "47130" },
+];
+
+/**
+ * 지역마다 코스 1개씩. 기본 정렬(c.id)이라 매번 같은 코스가 나온다.
+ * 한 지역이 실패해도 나머지는 살리려고 요청별로 따로 잡는다.
+ */
+export async function fetchFeaturedCourses(): Promise<CourseItem[]> {
+  const picked = await Promise.all(
+    FEATURED_REGIONS.map((region) =>
+      getCourses({ region: region.code, page: "1", size: "1" })
+        .then(({ courses }) => (courses[0] ? { course: courses[0], region } : null))
+        .catch(() => null),
+    ),
+  );
+
+  return picked
+    .filter((entry) => entry !== null)
+    .map(({ course, region }) => ({
+      ...toCourseItem(course, null),
+      // 카드에 지역명이 안 드러나서 썸네일 배지 자리(주변 코스에선 거리)를 지역명으로 쓴다
+      highlight: region.label,
+      // 빈 배열이면 카드가 관광지 줄을 비운 채 그리므로 아예 넘기지 않는다
+      landmarks: course.landmarks.length > 0 ? course.landmarks : undefined,
+    }));
 }
 
 /** 현재 위치에서 가까운 코스. 위치를 못 얻으면 기본 목록으로 폴백한다 */
