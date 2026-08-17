@@ -14,15 +14,21 @@ const NAV_ITEMS: NavItem[] = [
   { label: "지원금·환급", to: "/support" },
 ];
 
-interface Props {
+interface BaseProps {
   variant?: "wide" | "compact";
-  // 이 페이지가 이미 자체 SidebarDrawer를 렌더링하고 있으면(예: CourseDetail의
-  // 모바일 지도 위 플로팅 메뉴 버튼) 이 두 prop을 넘겨 상태를 공유시킨다.
-  // 넘기면 AppHeader는 자신의 <SidebarDrawer>를 렌더링하지 않고 햄버거 클릭도
-  // 이 핸들러로 위임한다(제어형). 안 넘기면 기존처럼 내부에서 알아서 연다(비제어형).
-  isSidebarOpen?: boolean;
-  onSidebarOpenChange?: (open: boolean) => void;
 }
+
+// 이 페이지가 이미 자체 SidebarDrawer를 렌더링하고 있으면(예: CourseDetail의
+// 모바일 지도 위 플로팅 메뉴 버튼) 이 두 prop을 넘겨 상태를 공유시킨다.
+// 넘기면 AppHeader는 자신의 <SidebarDrawer>를 렌더링하지 않고 햄버거 클릭도
+// 이 핸들러로 위임한다(제어형). 안 넘기면 기존처럼 내부에서 알아서 연다(비제어형).
+// 유니온으로 묶은 이유: 하나만 넘기는 실수(예: isSidebarOpen만 넘기고
+// onSidebarOpenChange 누락)를 컴파일 타임에 막기 위함
+type ControlledSidebarProps =
+  | { isSidebarOpen?: undefined; onSidebarOpenChange?: undefined }
+  | { isSidebarOpen: boolean; onSidebarOpenChange: (open: boolean) => void };
+
+type Props = BaseProps & ControlledSidebarProps;
 
 export default function AppHeader({
   variant = "compact",
@@ -32,7 +38,7 @@ export default function AppHeader({
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = controlledOpen !== undefined;
   const isSidebarOpen = isControlled ? controlledOpen : internalOpen;
-  const setIsSidebarOpen = isControlled ? onSidebarOpenChange! : setInternalOpen;
+  const setIsSidebarOpen = isControlled ? onSidebarOpenChange : setInternalOpen;
 
   const location = useLocation();
   const navigate = useNavigate();
