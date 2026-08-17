@@ -235,7 +235,7 @@ def collect_by_content_type(conn, content_type_id: int):
 
         if total_collected >= total_count or page_no > max_pages:
             break
-        
+
         page_no += 1
         time.sleep(0.1)
 
@@ -254,11 +254,11 @@ def fill_missing_details(conn):
                 AND content_id NOT IN (SELECT content_id FROM {detail_table})
             """, (ctype_str,))
             missing = [row[0] for row in cur.fetchall()]
- 
+
         if not missing:
             print(f"[INFO] 콘텐츠타입 {ctype_str} 누락 없음")
             continue
- 
+
         print(f"\n[INFO] 콘텐츠타입 {ctype_str} 누락 {len(missing)}건 재수집 시작")
         detail_rows = []
 
@@ -269,6 +269,9 @@ def fill_missing_details(conn):
                     if intro:
                         intro["content_id"] = content_id
                         detail_rows.append(intro)
+                    else:
+                        print(f"[WARN] detailIntro 빈 응답 content_id={content_id} (상세정보 없음)")
+                        detail_rows.append({"content_id": content_id}) 
                     time.sleep(1.0)
                     break  # 성공 시 재시도 루프 탈출
                 except RuntimeError as e:
@@ -282,17 +285,18 @@ def fill_missing_details(conn):
                         print(f"[WARN] 429 — {wait:.0f}초 대기 후 재시도 ({retry+1}/5)")
                         time.sleep(wait)
                     else:
+                        print(f"[ERROR] detailIntro 실패 content_id={content_id}: {e}")
                         break
-                        
+
             # 100건마다 중간 적재
             if len(detail_rows) >= 100:
                 UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
                 print(f"[INFO] {i}/{len(missing)} 중간 적재 완료")
                 detail_rows = []
- 
+
         if detail_rows:
             UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
- 
+
         print(f"[INFO] 콘텐츠타입 {ctype_str} 재수집 완료")
 
     return True
@@ -312,7 +316,7 @@ def main():
 
 def main_fill():
     """누락된 상세 정보만 재수집.
-    
+
     기존 스크립트 실행 시 detailIntro 호출 시간 텀이 짧아
     상세 테이블(attraction/accommodation/restaurant)에 누락이 발생할 수 있다.
     이 옵션은 tour_spot에는 있으나 상세 테이블에 없는 데이터만 선별해 재수집한다.
@@ -324,12 +328,12 @@ def main_fill():
         completed = fill_missing_details(conn)
     finally:
         conn.close()
-    
+
     if completed:
         print("\n[INFO] 누락 상세 재수집 완료")
     else:
         print("\n[INFO] 오늘 재수집 세션 종료 (내일 다시 실행하세요)")
- 
+
 if __name__ == "__main__":
     args = sys.argv[1:]
     if "--fill-details" in args:
