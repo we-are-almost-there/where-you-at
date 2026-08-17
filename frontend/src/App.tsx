@@ -1,4 +1,5 @@
 import { Routes, Route } from "react-router";
+import { Home } from "./features/home";
 import { CourseExplore, CourseDetail } from "./features/map";
 import { Support } from "./features/support";
 import { Race } from "./features/race";
@@ -8,7 +9,8 @@ import PlaceholderPage from "./components/layout/PlaceholderPage";
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<CourseExplore />} />
+      <Route path="/" element={<Home />} />
+      <Route path="/courses" element={<CourseExplore />} />
       <Route path="/courses/:id" element={<CourseDetail />} />
       <Route path="/support" element={<Support />} />
       <Route path="/races" element={<Race />} />
