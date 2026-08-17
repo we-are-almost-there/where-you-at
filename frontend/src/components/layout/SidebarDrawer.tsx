@@ -176,14 +176,6 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
           </div>
         </div>
       </aside>
-
-      {/* stagger fade-up 키프레임 */}
-      <style>{`
-        @keyframes sidebarFadeUp {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </>
   );
 }
