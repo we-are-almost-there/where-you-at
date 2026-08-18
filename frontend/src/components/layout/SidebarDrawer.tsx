@@ -14,8 +14,8 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "홈", eyebrow: "HOME", description: "메인으로 돌아가기", to: null },
-  { label: "코스 탐색", eyebrow: "COURSE", description: "걷기·자전거 코스 둘러보기", to: "/" },
+  { label: "홈", eyebrow: "HOME", description: "메인으로 돌아가기", to: "/" },
+  { label: "코스 탐색", eyebrow: "COURSE", description: "걷기·자전거 코스 둘러보기", to: "/courses" },
   { label: "대회·이벤트", eyebrow: "EVENT", description: "가까운 대회 일정 확인", to: "/races" },
   { label: "지원금·환급", eyebrow: "SUPPORT", description: "지역별 여행 지원 혜택", to: "/support" },
 ];
