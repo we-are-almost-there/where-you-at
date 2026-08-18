@@ -570,7 +570,10 @@ export default function Home() {
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <AppHeader />
+      {/* variant 생략 시 기본값이 compact(코스 탐색 전용 좁은 헤더)라
+        홈에서 명시적으로 wide를 지정하면 메뉴가 화면 가장자리에 붙지 않고 본문(max-w-6xl)과 같은 여백을
+        가지며, 코스 둘러보기 CTA도 노출된다. */}
+      <AppHeader variant="wide" />
 
       <section className="w-full pt-3">
         <BannerCarousel onOpenGallery={() => setIsGalleryOpen(true)} />
