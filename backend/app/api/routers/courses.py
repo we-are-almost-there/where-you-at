@@ -87,3 +87,5 @@ def get_course_gpx(id: int, route_type: str = "trail", conn=Depends(get_db)):
     """코스 전체 경로 좌표 (상세 지도용). route_type으로 도보/자전거 구분."""
     waypoints = crud.get_waypoints(conn, id, route_type)
     return {"course_id": id, "route_type": route_type, "waypoints": waypoints}
+
+
