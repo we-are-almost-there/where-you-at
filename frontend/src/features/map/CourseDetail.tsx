@@ -8,7 +8,6 @@ import type { CourseDetail as CourseDetailData, LatLng, RouteDetail, RouteType }
 import { Nearby } from "../nearby";
 import type { NearbyHandle } from "../nearby";
 import type { NearbySpot } from "../nearby/types";
-import { parseRouteTypeParam, setRouteTypeParam } from "./courseUrlState";
 import { useCourseTracking } from "./useCourseTracking";
 import { WAKE_LOCK_FAILURE_MESSAGE } from "./useWakeLock";
 import { advanceProgress, distanceToCourse, nearestPointOnCourse, type Direction } from "./courseProgress";
@@ -20,7 +19,7 @@ import { RecordCard } from "./components/RecordCard";
 import type { TrackingRecord } from "./trackingRecord";
 import SidebarDrawer from "../../components/layout/SidebarDrawer";
 import AppHeader from "../../components/layout/AppHeader";
-import { parseInfoTabParam, setInfoTabParam, parseCategoryParam, setCategoryParam } from "./courseUrlState";
+import { parseRouteTypeParam, setRouteTypeParam, parseInfoTabParam, setInfoTabParam, parseCategoryParam, setCategoryParam } from "./courseUrlState";
 
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
