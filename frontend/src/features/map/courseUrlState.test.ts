@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCourseSearchParams,
+  parseCategoryParam,
   parseCourseUrlState,
+  parseInfoTabParam,
   parseRouteTypeParam,
+  setCategoryParam,
+  setInfoTabParam,
   setRouteTypeParam,
 } from "./courseUrlState";
 
@@ -76,5 +80,60 @@ describe("routeTypeParam", () => {
     setRouteTypeParam(params, "도보");
     expect(params.toString()).toBe("");
     expect(parseRouteTypeParam(params)).toBe("도보");
+  });
+});
+
+
+describe("infoTabParam", () => {
+  it("파라미터가 없으면 코스 정보를 기본값으로 반환한다", () => {
+    expect(parseInfoTabParam(new URLSearchParams())).toBe("course");
+  });
+
+  it("tab=nearby를 주변 정보로 읽는다", () => {
+    expect(parseInfoTabParam(new URLSearchParams("tab=nearby"))).toBe("nearby");
+  });
+
+  it("알 수 없는 값은 코스 정보로 대체한다", () => {
+    expect(parseInfoTabParam(new URLSearchParams("tab=invalid"))).toBe("course");
+  });
+
+  it("주변 정보로 전환하면 tab 파라미터를 기록한다", () => {
+    const params = new URLSearchParams();
+    setInfoTabParam(params, "nearby");
+    expect(params.toString()).toBe("tab=nearby");
+  });
+
+  it("코스 정보로 돌아가면 tab과 category 파라미터를 모두 지운다", () => {
+    const params = new URLSearchParams("tab=nearby&category=restaurant");
+    setInfoTabParam(params, "course");
+    expect(params.toString()).toBe("");
+  });
+});
+
+describe("categoryParam", () => {
+  it("파라미터가 없으면 관광지를 기본값으로 반환한다", () => {
+    expect(parseCategoryParam(new URLSearchParams())).toBe("attraction");
+  });
+
+  it("URL의 카테고리 값을 그대로 읽는다", () => {
+    expect(parseCategoryParam(new URLSearchParams("category=restaurant"))).toBe("restaurant");
+    expect(parseCategoryParam(new URLSearchParams("category=accommodation"))).toBe("accommodation");
+    expect(parseCategoryParam(new URLSearchParams("category=bicycle"))).toBe("bicycle");
+  });
+
+  it("알 수 없는 값은 관광지로 대체한다", () => {
+    expect(parseCategoryParam(new URLSearchParams("category=invalid"))).toBe("attraction");
+  });
+
+  it("기본값(관광지)으로 설정하면 파라미터를 생략한다", () => {
+    const params = new URLSearchParams("category=restaurant");
+    setCategoryParam(params, "attraction");
+    expect(params.toString()).toBe("");
+  });
+
+  it("기본값이 아닌 카테고리는 파라미터로 기록한다", () => {
+    const params = new URLSearchParams();
+    setCategoryParam(params, "bicycle");
+    expect(params.toString()).toBe("category=bicycle");
   });
 });

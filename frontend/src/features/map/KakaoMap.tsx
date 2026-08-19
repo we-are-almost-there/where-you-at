@@ -17,7 +17,7 @@ export interface LocationPoint {
 
 // nearby 스팟 마커용 최소 타입 (features/nearby의 NearbySpot과 중복 정의 대신 필요한 필드만)
 export interface NearbyMapSpot {
-  id: number;
+  id: string;
   lat: number;
   lng: number;
   category: "attraction" | "restaurant" | "accommodation" | "bicycle";
@@ -43,9 +43,9 @@ interface Props {
   /** 주변 정보 탭에서 현재 카테고리의 스팟 목록 (지도에 마커로 표시). */
   nearbySpots?: NearbyMapSpot[];
   /** 상세 시트가 열려있는 스팟의 id — 이 마커만 강조, 나머지는 흐리게. */
-  selectedSpotId?: number | null;
+  selectedSpotId?: string | null;
   /** 지도 마커 클릭 시 호출 (상세 시트 열기용). */
-  onSpotMarkerClick?: (id: number) => void;
+  onSpotMarkerClick?: (id: string) => void;
   /** 지도 좌상단에 '메뉴(사이드바 열기)' 버튼을 표시할지. 넘기지 않으면 버튼 자체가 렌더링되지 않는다. */
   onMenuClick?: () => void;
 }
@@ -364,7 +364,7 @@ export function KakaoMap({
 
   // 스팟별 마커 이미지(핀 아이콘)를 미리 계산 — id/카테고리/선택 여부가 바뀔 때만 재생성
   const markerImages = useMemo(() => {
-    const result: Record<number, { src: string; size: [number, number]; offset: [number, number] }> = {};
+    const result: Record<string, { src: string; size: [number, number]; offset: [number, number] }> = {};
     if (!sdkReady) return result;
     for (const spot of nearbySpots) {
       const isSelected = spot.id === selectedSpotId;

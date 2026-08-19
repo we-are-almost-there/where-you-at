@@ -56,7 +56,7 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
             available_bikes: d.available_bikes ?? undefined,
           });
         } else {
-          const d = await getTourSpotDetail(String(spot.id));
+          const d = await getTourSpotDetail(spot.id);
           if (cancelled) return;
           setDetail(d.detail as DetailFields);
         }
