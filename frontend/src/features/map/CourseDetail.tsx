@@ -8,7 +8,6 @@ import type { CourseDetail as CourseDetailData, LatLng, RouteDetail, RouteType }
 import { Nearby } from "../nearby";
 import type { NearbyHandle } from "../nearby";
 import type { NearbySpot } from "../nearby/types";
-import { parseRouteTypeParam, setRouteTypeParam } from "./courseUrlState";
 import { useCourseTracking } from "./useCourseTracking";
 import { WAKE_LOCK_FAILURE_MESSAGE } from "./useWakeLock";
 import { advanceProgress, distanceToCourse, nearestPointOnCourse, type Direction } from "./courseProgress";
@@ -20,6 +19,7 @@ import { RecordCard } from "./components/RecordCard";
 import type { TrackingRecord } from "./trackingRecord";
 import SidebarDrawer from "../../components/layout/SidebarDrawer";
 import AppHeader from "../../components/layout/AppHeader";
+import { parseRouteTypeParam, setRouteTypeParam, parseInfoTabParam, setInfoTabParam, parseCategoryParam, setCategoryParam } from "./courseUrlState";
 
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
@@ -58,8 +58,6 @@ function withLineBreaks(text: string) {
     </span>
   ));
 }
-
-type InfoTab = "course" | "nearby";
 
 // 도보/자전거 선택 카드 (디자인 ModeSelector)
 function ModeCard({
@@ -110,7 +108,7 @@ export function CourseDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const routeType = parseRouteTypeParam(searchParams);
-  const [infoTab, setInfoTab] = useState<InfoTab>("course");
+  const infoTab = parseInfoTabParam(searchParams);
   const [descExpanded, setDescExpanded] = useState(false);
   const descRef = useRef<HTMLParagraphElement>(null);
   const [descOverflow, setDescOverflow] = useState(false);
@@ -145,7 +143,7 @@ export function CourseDetail() {
   const nearbyRef = useRef<NearbyHandle>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [nearbySpots, setNearbySpots] = useState<NearbySpot[]>([]);
-  const [selectedNearbySpotId, setSelectedNearbySpotId] = useState<number | null>(null);
+  const [selectedNearbySpotId, setSelectedNearbySpotId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -245,6 +243,19 @@ export function CourseDetail() {
     // 그때 화면은 그대로라 추적이 살아 있는 채 코스만 바뀐다.
     setSearchParams(nextParams, { replace: true });
     setProgress(0); // 코스 자체가 달라지므로 초기화
+  };
+
+  const changeInfoTab = (next: "course" | "nearby") => {
+    if (next === "nearby") stopTracking();
+    const nextParams = new URLSearchParams(searchParams);
+    setInfoTabParam(nextParams, next);
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  const changeCategory = (next: NearbySpot["category"]) => {
+    const nextParams = new URLSearchParams(searchParams);
+    setCategoryParam(nextParams, next);
+    setSearchParams(nextParams, { replace: true });
   };
 
   // 새 추적 세션은 항상 0%에서 시작한다(이전 세션이 어떻게 끝났든).
@@ -506,10 +517,7 @@ export function CourseDetail() {
                       type="button"
                       role="tab"
                       aria-selected={active}
-                      onClick={() => {
-                        if (key === "nearby") stopTracking();
-                        setInfoTab(key);
-                      }}
+                      onClick={() => changeInfoTab(key)}
                       className={`flex-1 cursor-pointer rounded-[14px] py-2 text-[16px] font-bold transition-colors ${
                         active ? "bg-white text-ink shadow-[0px_2px_4px_0px_rgba(0,0,0,0.12)]" : "text-caption"
                       }`}
@@ -573,6 +581,8 @@ export function CourseDetail() {
                     ref={nearbyRef}
                     courseId={courseId}
                     routeType={routeType === "자전거" ? "bicycle" : "trail"}
+                    category={parseCategoryParam(searchParams)}
+                    onCategoryChange={changeCategory}
                     onSpotsChange={setNearbySpots}
                     onSelectedChange={(spot) => setSelectedNearbySpotId(spot?.id ?? null)}
                   />

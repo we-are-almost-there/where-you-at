@@ -16,7 +16,7 @@ export const CATEGORY_META: Record<SpotCategory, CategoryMeta> = {
 export const CATEGORY_ORDER: SpotCategory[] = ["attraction", "restaurant", "accommodation", "bicycle"];
 
 export interface NearbySpot {
-  id: number;
+  id: string;
   category: SpotCategory;
   name: string;
   address: string;

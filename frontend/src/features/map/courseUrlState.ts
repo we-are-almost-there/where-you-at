@@ -1,4 +1,5 @@
 import type { CourseFilterState, Difficulty, RouteType } from "./types";
+import type { SpotCategory } from "../nearby/types";
 
 export interface CourseUrlState {
   routeType: RouteType;
@@ -70,4 +71,32 @@ export function buildCourseSearchParams(state: CourseUrlState): URLSearchParams 
   if (state.filters.sort !== DEFAULT_COURSE_FILTERS.sort) params.set("sort", state.filters.sort);
   if (state.page > 1) params.set("page", String(state.page));
   return params;
+}
+
+export type InfoTab = "course" | "nearby";
+
+const INFO_TABS = new Set<InfoTab>(["course", "nearby"]);
+const SPOT_CATEGORIES = new Set<SpotCategory>(["attraction", "restaurant", "accommodation", "bicycle"]);
+
+export function parseInfoTabParam(params: URLSearchParams): InfoTab {
+  const raw = params.get("tab");
+  return INFO_TABS.has(raw as InfoTab) ? (raw as InfoTab) : "course";
+}
+
+export function setInfoTabParam(params: URLSearchParams, tab: InfoTab): void {
+  if (tab === "nearby") params.set("tab", "nearby");
+  else {
+    params.delete("tab");
+    params.delete("category"); // 코스 정보로 돌아가면 카테고리 파라미터도 함께 정리
+  }
+}
+
+export function parseCategoryParam(params: URLSearchParams): SpotCategory {
+  const raw = params.get("category");
+  return SPOT_CATEGORIES.has(raw as SpotCategory) ? (raw as SpotCategory) : "attraction";
+}
+
+export function setCategoryParam(params: URLSearchParams, category: SpotCategory): void {
+  if (category === "attraction") params.delete("category"); // 기본값은 생략
+  else params.set("category", category);
 }

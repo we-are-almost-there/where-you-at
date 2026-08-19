@@ -3,7 +3,7 @@ import type { NearbySpot, SpotCategory } from "./types";
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 interface ApiNearbySpot {
-  id: number;
+  id: string;
   category: string;
   name: string;
   address: string | null;
@@ -81,7 +81,11 @@ interface ApiBicycleFacilityDetail {
   available_bikes: number | null;
 }
 
-export async function getBicycleFacilityDetail(id: number) {
+// 파라미터(id)는 string, 응답(ApiBicycleFacilityDetail.id)은 number로 서로 다르다.
+// 이 함수를 호출하는 spot.id는 courses/{id}/nearby 목록 응답(NearbySpotOut.id: str)에서
+// 온 값이라 string이고, 그 목록 API가 관광지(content_id, 원래 string)와 자전거
+// (bicycle_id, 원래 int)를 같은 필드로 통합하며 string으로 맞춘 결과다.
+export async function getBicycleFacilityDetail(id: string) {   // 파라미터 — spot.id(string)를 그대로 받음
   return apiGet<ApiBicycleFacilityDetail>(`/api/bicycle-facilities/${id}`);
 }
 

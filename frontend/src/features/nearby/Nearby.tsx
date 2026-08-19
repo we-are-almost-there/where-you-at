@@ -8,6 +8,10 @@ import type { NearbySpot, SpotCategory } from "./types";
 interface NearbyProps {
   courseId: number;
   routeType?: "trail" | "bicycle";
+  /** 현재 보고 있는 카테고리. URL(tab/category 쿼리)에서 파생되어 상위(CourseDetail)가 내려준다. */
+  category: SpotCategory;
+  /** 카테고리 전환 시 상위에 알림 — 상위가 URL을 갱신한다. */
+  onCategoryChange: (next: SpotCategory) => void;
   /** 현재 카테고리의 스팟 목록이 바뀔 때마다 호출 (지도 마커 렌더링용). */
   onSpotsChange?: (spots: NearbySpot[]) => void;
   /** 선택된(상세 시트가 열린) 스팟이 바뀔 때마다 호출 (지도 마커 강조용). */
@@ -16,21 +20,20 @@ interface NearbyProps {
 
 export interface NearbyHandle {
   /** 지도 마커 클릭 시 부모가 호출 — 해당 스팟의 상세 시트를 연다. */
-  selectSpotById: (id: number) => void;
+  selectSpotById: (id: string) => void;
 }
 
 export const Nearby = forwardRef<NearbyHandle, NearbyProps>(function Nearby(
-  { courseId, routeType = "trail", onSpotsChange, onSelectedChange },
+  { courseId, routeType = "trail", category, onCategoryChange, onSpotsChange, onSelectedChange },
   ref
 ) {
-  const [category, setCategory] = useState<SpotCategory>("attraction");
   const [selected, setSelected] = useState<NearbySpot | null>(null);
   // SpotList가 페이지네이션으로 관리하는 스팟 목록의 로컬 미러.
   // 지도 마커 클릭(selectSpotById)에서 id로 스팟을 찾기 위해 필요하다.
   const currentSpotsRef = useRef<NearbySpot[]>([]);
 
   useImperativeHandle(ref, () => ({
-    selectSpotById: (id: number) => {
+    selectSpotById: (id: string) => {
       const spot = currentSpotsRef.current.find((s) => s.id === id);
       if (spot) {
         setSelected(spot);
@@ -57,7 +60,7 @@ export const Nearby = forwardRef<NearbyHandle, NearbyProps>(function Nearby(
   // 카테고리 전환 시 이전 카테고리의 스팟이 지도에 남아있지 않도록 비운다.
   // (SpotList가 key로 리마운트되면서 새 목록을 다시 알려줄 때까지의 공백 구간)
   const handleCategoryChange = (next: SpotCategory) => {
-    setCategory(next);
+    onCategoryChange(next);
     currentSpotsRef.current = [];
     onSpotsChange?.([]);
   };
