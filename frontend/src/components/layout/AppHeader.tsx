@@ -125,7 +125,7 @@ export default function AppHeader({
           {isWide && (
             <button
               type="button"
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/courses")}
               className="ml-auto hidden shrink-0 cursor-pointer whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:bg-accent/90 md:block"
             >
               코스 둘러보기
