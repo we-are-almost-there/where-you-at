@@ -1,0 +1,99 @@
+import type { BicycleFacility, BicycleFacilityDetail, BicycleFacilityListResponse } from "./types";
+
+interface ApiBicycleFacility {
+  id: number;
+  facility_title: string;
+  addr1: string | null;
+  map_x: number;
+  map_y: number;
+  facility_type: string;
+  rental_fee_type: string | null;
+  repair_available: boolean | null;
+  open_hours: string | null;
+  total_bikes: number | null;
+  available_bikes: number | null;
+  region_code: string | null;
+  realtime_synced_at: string | null;
+}
+
+export interface BicycleRegionOption {
+  sido: string;
+  sido_code: string;
+}
+
+export interface BicycleSigunguOption {
+  region_code: string;
+  name: string;
+}
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
+/**
+ * 공통 GET 헬퍼. coursesApi.ts와 동일하게 네트워크/HTTP 오류를
+ * 사용자용 한국어 메시지로 변환한다.
+ */
+async function apiGet<T>(path: string): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`);
+  } catch {
+    throw new Error("서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.");
+  }
+  if (!res.ok) throw new Error(`불러오지 못했어요 (${res.status})`);
+  return res.json();
+}
+
+function fromApiFacility(f: ApiBicycleFacility): BicycleFacility {
+  return {
+    id: f.id,
+    facility_title: f.facility_title,
+    addr1: f.addr1 ?? "",
+    map_x: f.map_x,
+    map_y: f.map_y,
+    facility_type: f.facility_type,
+    rental_fee_type: f.rental_fee_type ?? "",
+    repair_available: f.repair_available,
+    open_hours: f.open_hours ?? "",
+    total_bikes: f.total_bikes,
+    available_bikes: f.available_bikes,
+    region_code: f.region_code ?? "",
+    realtime_synced_at: f.realtime_synced_at,
+  };
+}
+
+interface ApiListResponse {
+  total_count: number;
+  page: number;
+  size: number;
+  facilities?: ApiBicycleFacility[];
+}
+
+/** GET /api/bicycle-facilities — 자전거 대여소/정비소 목록 조회. */
+export async function getBicycleFacilities(
+  query: Record<string, string>,
+): Promise<BicycleFacilityListResponse> {
+  const params = new URLSearchParams(query);
+  const data = await apiGet<ApiListResponse>(`/api/bicycle-facilities?${params}`);
+  return {
+    total_count: data.total_count,
+    page: data.page,
+    size: data.size,
+    facilities: (data.facilities ?? []).map(fromApiFacility),
+  };
+}
+
+/** GET /api/bicycle-facilities/{id} — 자전거 시설 상세. (목록과 동일 구조라 그대로 재사용) */
+export async function getBicycleFacilityDetail(id: number): Promise<BicycleFacilityDetail> {
+  const f = await apiGet<ApiBicycleFacility>(`/api/bicycle-facilities/${id}`);
+  return fromApiFacility(f);
+}
+
+/** GET /api/bicycle-facilities/regions — 자전거 시설 보유 시/도 목록. */
+export async function getBicycleRegions(): Promise<BicycleRegionOption[]> {
+  return apiGet<BicycleRegionOption[]>("/api/bicycle-facilities/regions");
+}
+
+/** GET /api/bicycle-facilities/regions/{sidoCode}/sigungu — 시/군/구 목록. */
+export async function getBicycleSigungu(sidoCode: string): Promise<BicycleSigunguOption[]> {
+  return apiGet<BicycleSigunguOption[]>(`/api/bicycle-facilities/regions/${sidoCode}/sigungu`);
+}

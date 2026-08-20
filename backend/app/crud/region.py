@@ -152,3 +152,7 @@ def get_region_code(conn, sigun: str | None) -> str | None:
         )
         row = cur.fetchone()
     return row[0] if row else None
+
+def code2_to_sido(code2: str) -> str | None:
+    """행정표준코드 시도 접두(2자리) → region 테이블의 정식 시도명."""
+    return _CODE2_SIDO.get(code2)
