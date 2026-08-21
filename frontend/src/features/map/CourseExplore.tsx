@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { KakaoMap } from "./KakaoMap";
+import { KakaoMap, type CourseMapItem } from "./KakaoMap";
 import { CourseFilters } from "./components/CourseFilters";
 import { DifficultyFilter } from "./components/DifficultyFilter";
 import { CourseList } from "./components/CourseList";
@@ -103,6 +103,62 @@ export function CourseExplore() {
 
   const totalPages = Math.max(1, Math.ceil(res.total_count / DEFAULT_PAGE_SIZE));
 
+  // 지금 짚고 있는 코스들과 그 출처. 카드 강조(테두리)는 지도 쪽에서 짚었을 때만 필요하므로
+  // id만으로는 부족하고 어디서 왔는지를 같이 들고 있어야 한다.
+  // ids가 복수인 경우: DMZ 본코스와 우회로처럼 시작점이 포개진 마커를 짚었을 때. 마커 하나로는
+  // 둘 중 어느 쪽인지 정할 수 없으므로 둘 다 켠다(선을 짚으면 하나로 좁혀진다).
+  const [hovered, setHovered] = useState<{ ids: number[]; from: "card" | "map" } | null>(null);
+
+  // 현재 페이지 결과를 지도용으로 변환. 좌표(path_*)는 목록 응답에 이미 담겨 오므로 추가 요청이 없다.
+  const mapCourses = useMemo<CourseMapItem[]>(
+    () =>
+      res.courses.map((c) => ({
+        id: c.id,
+        title: c.title,
+        points: routeType === "자전거" ? c.path_bicycle : c.path_trail,
+      })),
+    [res.courses, routeType],
+  );
+
+  const openCourse = (id: number) => {
+    navigate(`/courses/${id}${routeType === "자전거" ? "?type=bicycle" : ""}`);
+  };
+
+  // 목록에서 사라진 코스를 계속 짚고 있지 않도록, 현재 페이지에 있는 id만 유효로 본다.
+  // (마커에 커서를 올린 채로 목록이 갱신되면 mouseout이 오지 않아 id가 남는다)
+  const activeCourseIds = useMemo(
+    () => (hovered ? hovered.ids.filter((id) => mapCourses.some((c) => c.id === id)) : []),
+    [hovered, mapCourses],
+  );
+  // 카드 테두리는 '지도가 이 카드를 가리키는 중'이라는 신호이므로, 카드 자신을 hover할 때는 빼야 한다.
+  const mapPointedIds = hovered?.from === "map" ? activeCourseIds : [];
+  // 지도를 옮기는 건 카드에서 짚었고 대상이 하나로 정해졌을 때만.
+  const focusCourseId = hovered?.from === "card" && activeCourseIds.length === 1 ? activeCourseIds[0] : null;
+
+  const scrollCardIntoView = (id: number) => {
+    const scroller = listScrollRef.current;
+    const card = scroller?.querySelector(`[data-course-id="${id}"]`);
+    if (!scroller || !card) return;
+    // 이미 다 보이는 카드는 건드리지 않는다. 마커가 촘촘히 붙어 있어 커서가 여러 개를 스치고
+    // 지나갈 때, 매번 스크롤을 걸면 목록이 계속 덜컹거린다.
+    const view = scroller.getBoundingClientRect();
+    const box = card.getBoundingClientRect();
+    if (box.top >= view.top && box.bottom <= view.bottom) return;
+    card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+
+  // 지도 → 목록 방향 매칭. 마커는 시작점이 포개진 코스를 한꺼번에(지도가 묶어서 넘겨준다),
+  // 선은 경로가 갈라지므로 하나만 짚는다.
+  // (카드 → 지도 방향은 카드 자신의 hover가 처리하므로 여기서 스크롤하면 안 된다 — 목록이 계속 흔들린다.)
+  const handleMapHover = (ids: number[]) => {
+    if (ids.length === 0) {
+      setHovered(null);
+      return;
+    }
+    setHovered({ ids, from: "map" });
+    scrollCardIntoView(ids[0]);
+  };
+
   const updateUrlState = (next: CourseUrlState, replace = false) => {
     setSearchParams(buildCourseSearchParams(next), { replace });
   };
@@ -168,9 +224,9 @@ export function CourseExplore() {
               <CourseList
                 courses={res.courses}
                 routeType={routeType}
-                onSelect={(course) =>
-                  navigate(`/courses/${course.id}${routeType === "자전거" ? "?type=bicycle" : ""}`)
-                }
+                onSelect={(course) => openCourse(course.id)}
+                onHover={(id) => setHovered(id == null ? null : { ids: [id], from: "card" })}
+                activeIds={mapPointedIds}
               />
               <Pagination
                 page={page}
@@ -184,7 +240,14 @@ export function CourseExplore() {
 
       {/* 지도: md+ 전용, 넓게 차지 */}
       <aside className="hidden md:order-2 md:block md:h-full md:min-w-0 md:flex-1">
-        <KakaoMap />
+        <KakaoMap
+          courses={mapCourses}
+          activeCourseIds={activeCourseIds}
+          focusCourseId={focusCourseId}
+          onCourseClick={openCourse}
+          onCourseMarkerHover={handleMapHover}
+          onCourseLineHover={(id) => handleMapHover(id == null ? [] : [id])}
+        />
       </aside>
     </div>
   );
