@@ -16,78 +16,8 @@ import type { LucideIcon } from "lucide-react";
 import AppHeader from "../../components/layout/AppHeader";
 import { fetchFeaturedCourses, fetchNearbyCourses, fetchUpcomingRaces } from "./homeApi";
 import type { CourseItem, UpcomingRace } from "./homeApi";
-
-/**
- * 혜택 배너는 사진이 아니라 금액이 주인공이라 배경 이미지가 필요 없다.
- * benefit 항목은 support 테이블(support_title·max_amount·agency)과
- * support_schedule(status·apply_end)에서 그대로 뽑아 만들 수 있는 형태로 맞춰뒀다.
- */
-type Banner = {
-  to: string;
-  /** 목업용 배경 — 코스 배너만 나중에 <img src>로 교체 */
-  background: string;
-} & (
-  | {
-      kind: "benefit";
-      /** support_schedule.status + apply_end 기준 D-day. 실제로는 계산값 */
-      status: string;
-      maxAmount: number;
-      title: string;
-      agency: string;
-    }
-  | { kind: "course"; tag: string; title: string; subtitle: string }
-);
-
-const BANNERS: Banner[] = [
-  {
-    kind: "benefit",
-    status: "접수중 · D-12",
-    maxAmount: 140000,
-    title: "대한민국 반값여행",
-    agency: "한국관광공사",
-    to: "/support",
-    background: "bg-[linear-gradient(135deg,#2a2358_0%,#6c5ce7_55%,#a394f0_100%)]",
-  },
-  {
-    kind: "course",
-    tag: "해파랑길",
-    title: "동해를 따라 걷는\n770km 해파랑길",
-    subtitle: "지금 코스 탐색에서 확인하세요",
-    to: "/courses",
-    background: "bg-[linear-gradient(135deg,#1f6f5c_0%,#3fa37f_55%,#7fc9a3_100%)]",
-  },
-  {
-    kind: "benefit",
-    status: "마감임박 · D-5",
-    maxAmount: 70000,
-    title: "2026 여름맞이 숙박세일 페스타",
-    agency: "한국관광공사",
-    to: "/support",
-    background: "bg-[linear-gradient(135deg,#7a2b1d_0%,#d2542f_55%,#f0916a_100%)]",
-  },
-  {
-    kind: "benefit",
-    status: "접수중",
-    maxAmount: 30000,
-    title: "디지털 관광주민증",
-    agency: "한국관광공사",
-    to: "/support",
-    background: "bg-[linear-gradient(135deg,#0e4a52_0%,#1c8f96_55%,#6fcfd0_100%)]",
-  },
-  {
-    kind: "course",
-    tag: "국토종주",
-    title: "자전거로 국토를\n가로지르는 633km",
-    subtitle: "인증센터 코스 모아보기",
-    to: "/courses",
-    background: "bg-[linear-gradient(135deg,#123a6b_0%,#2f7fc1_55%,#7ec2e8_100%)]",
-  },
-];
-
-/** 140000 → "최대 14만원" */
-function formatMaxAmount(won: number) {
-  return `최대 ${(won / 10000).toLocaleString("ko-KR")}만원`;
-}
+import { BANNERS } from "./banners";
+import type { Banner } from "./banners";
 
 interface MenuItem {
   label: string;
@@ -182,7 +112,11 @@ function CourseGrid({ items }: { items: CourseItem[] }) {
   return (
     // -mx-4 px-4로 섹션 여백을 뚫고 화면 끝까지 스크롤되게 한다.
     // 다음 카드가 화면 가장자리에 걸쳐 보여야 "옆으로 넘길 수 있다"가 읽힌다.
-    <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:grid md:grid-cols-4 md:overflow-x-visible md:px-0 [&::-webkit-scrollbar]:hidden">
+    //
+    // 스크롤바는 스와이프가 되는 터치 기기에서만 숨긴다. 마우스뿐인 환경에서는
+    // 세로 휠로 가로 스크롤이 안 되므로 스크롤바를 없애면 넘길 방법이 사라진다.
+    // (배너 트랙은 화살표가 그 역할을 하므로 거기서는 계속 숨긴다)
+    <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:thin] md:mx-0 md:grid md:grid-cols-4 md:overflow-x-visible md:px-0 pointer-coarse:[scrollbar-width:none] pointer-coarse:[&::-webkit-scrollbar]:hidden">
       {items.map((item) => (
         <Link
           key={item.id}
@@ -241,13 +175,35 @@ function CourseGrid({ items }: { items: CourseItem[] }) {
 }
 
 /** 배너 카드 내용 — 캐러셀과 전체보기 모달이 함께 쓴다 */
-function BannerCard({ banner, reserveControls = false }: { banner: Banner; reserveControls?: boolean }) {
+function BannerCard({
+  banner,
+  reserveControls = false,
+  priority = false,
+}: {
+  banner: Banner;
+  reserveControls?: boolean;
+  priority?: boolean;
+}) {
   return (
     <>
+      {/* 로드 실패 시 img만 감춰 뒤의 그라데이션이 그대로 폴백이 된다 */}
       <div className={`size-full ${banner.background}`} />
+      <img
+        src={banner.src}
+        srcSet={banner.srcSet}
+        sizes="(min-width: 1200px) 1120px, 100vw"
+        alt=""
+        loading={priority ? "eager" : "lazy"}
+        fetchPriority={priority ? "high" : "auto"}
+        className="absolute inset-0 size-full object-cover"
+        onError={(e) => {
+          e.currentTarget.style.display = "none";
+        }}
+      />
 
-      {/* 텍스트 가독성용 하단 그라데이션 */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
+      {/* 세 배너 모두 왼쪽이 밝아서(노을·바다·민트) 흰 글씨가 그냥은 안 읽힌다.
+          하단 전체를 덮으면 사진이 탁해지므로 글씨가 놓이는 왼쪽만 눌러 대비를 만든다. */}
+      <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/20 to-transparent" />
 
       <div
         className={`absolute inset-x-0 bottom-0 flex flex-col items-start gap-2 p-[clamp(1rem,4cqw,2rem)] ${
@@ -256,30 +212,13 @@ function BannerCard({ banner, reserveControls = false }: { banner: Banner; reser
         }`}
       >
         <span className="rounded-full bg-white/90 px-2.5 py-1 text-[13px] font-semibold text-ink">
-          {banner.kind === "benefit" ? banner.status : banner.tag}
+          {banner.tag}
         </span>
 
-        {banner.kind === "benefit" ? (
-          <>
-            {/* 혜택 배너는 금액이 헤드라인 */}
-            <p className="text-[clamp(1.75rem,7cqw,3rem)] font-bold leading-none text-white">
-              {formatMaxAmount(banner.maxAmount)}
-            </p>
-            <h3 className="text-[clamp(1rem,3cqw,1.375rem)] font-semibold leading-snug text-white">
-              {banner.title}
-            </h3>
-            <p className="text-[clamp(0.8125rem,2.4cqw,0.9375rem)] text-white/70">{banner.agency}</p>
-          </>
-        ) : (
-          <>
-            <h3 className="whitespace-pre-line text-[clamp(1.125rem,4cqw,1.875rem)] font-bold leading-snug text-white">
-              {banner.title}
-            </h3>
-            <p className="text-[clamp(0.8125rem,2.4cqw,0.9375rem)] text-white/75">
-              {banner.subtitle}
-            </p>
-          </>
-        )}
+        <h3 className="whitespace-pre-line text-[clamp(1.125rem,4cqw,1.875rem)] font-bold leading-snug text-white">
+          {banner.title}
+        </h3>
+        <p className="text-[clamp(0.8125rem,2.4cqw,0.9375rem)] text-white/75">{banner.subtitle}</p>
       </div>
     </>
   );
@@ -294,9 +233,20 @@ function BannerGalleryModal({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  // 모달이 자체 스크롤을 가지므로 뒤 페이지까지 스크롤되면 스크롤바가 두 개 나란히 보인다.
+  // 모달이 화면을 꽉 덮고 있어 잠그는 동안 생기는 리플로우는 눈에 띄지 않는다.
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-white">
-      <header className="sticky top-0 flex h-14 items-center gap-3 border-b border-divider bg-white px-4">
+      {/* 카드도 relative라 z-index가 없으면 DOM 순서대로 그려져 헤더 위로 올라탄다 */}
+      <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b border-divider bg-white px-4">
         <button type="button" onClick={onClose} aria-label="닫기" className="cursor-pointer text-ink">
           <X size={22} strokeWidth={1.75} />
         </button>
@@ -417,7 +367,9 @@ function BannerCarousel({ onOpenGallery }: { onOpenGallery: () => void }) {
             to={banner.to}
             className="relative aspect-[16/10] w-full shrink-0 snap-center overflow-hidden rounded-2xl [container-type:inline-size] md:aspect-[24/9]"
           >
-            <BannerCard banner={banner} reserveControls />
+            {/* 배너는 홈 최상단이라 LCP 요소다. 처음 화면에 놓이는 가운데 벌의
+                첫 장만 먼저 받고, 나머지 8장은 스크롤·전환될 때 받는다. */}
+            <BannerCard banner={banner} reserveControls priority={index === LOOP_START} />
           </Link>
         ))}
       </div>
@@ -425,12 +377,15 @@ function BannerCarousel({ onOpenGallery }: { onOpenGallery: () => void }) {
       {/* 인덱스·재생 제어·전체보기 */}
       <div className="absolute bottom-[clamp(1rem,4vw,2rem)] right-[calc(max(1rem,calc((100%-72rem)/2+1rem))+clamp(1rem,4vw,2rem))] flex items-center gap-1.5 text-white">
         <div className="flex h-7 items-center rounded-full bg-black/40 px-1 backdrop-blur-sm">
-          {/* 화살표는 스와이프가 안 되는 포인터 환경(데스크톱)에서만 필요하다 */}
+          {/* 화살표는 스와이프가 안 되는 포인터 환경에서만 필요하다.
+              화면 폭이 아니라 입력 장치로 판별해야 한다 — 데스크톱 창을 반으로 줄이면
+              md 미만이 되지만 여전히 마우스뿐이라 넘길 방법이 사라진다.
+              트랙은 스크롤바를 숨겨놔서 휠로도 못 넘긴다. */}
           <button
             type="button"
             onClick={() => scrollToIndex(current - 1)}
             aria-label="이전 배너"
-            className="hidden size-6 cursor-pointer items-center justify-center md:flex"
+            className="hidden size-6 cursor-pointer items-center justify-center pointer-fine:flex"
           >
             <ChevronLeft size={15} />
           </button>
@@ -442,7 +397,7 @@ function BannerCarousel({ onOpenGallery }: { onOpenGallery: () => void }) {
             type="button"
             onClick={() => scrollToIndex(current + 1)}
             aria-label="다음 배너"
-            className="hidden size-6 cursor-pointer items-center justify-center md:flex"
+            className="hidden size-6 cursor-pointer items-center justify-center pointer-fine:flex"
           >
             <ChevronRight size={15} />
           </button>
