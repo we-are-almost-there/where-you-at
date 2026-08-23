@@ -71,6 +71,7 @@ select distinct
     s.support_title as title,
     s.agency,
     s.summary,
+    s.refund_type,
     s.max_amount,
     to_char(s.end_date, 'YYYY-MM-DD') as end_date
 from support s

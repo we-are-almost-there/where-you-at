@@ -2,7 +2,7 @@
 // - USE_MOCK = true 인 동안은 supportMock 데이터 반환
 // - 실제 API로 교체 시 USE_MOCK = false 로 설정하면 fetch 분기로 전환됨
 
-import type { SupportListItem, SupportDetail, SupportListQuery } from "./support.types";
+import type { SupportListItem, SupportDetail, SupportListQuery, CalculateRequest, CalculateResponse, } from "./support.types";
 import { SUPPORT_LIST_MOCK, SUPPORT_DETAIL_MOCK } from "./supportMock";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -31,5 +31,17 @@ export async function fetchSupportDetail(id: number): Promise<SupportDetail> {
 
   const res = await fetch(`${API_BASE}/api/support/${id}`);
   if (!res.ok) throw new Error(`지원금 상세 조회 실패 (${res.status})`);
+  return res.json();
+}
+
+export async function calculateRefund(
+  body: CalculateRequest,
+): Promise<CalculateResponse> {
+  const res = await fetch(`${API_BASE}/api/support/calculate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`환급 계산 실패 (${res.status})`);
   return res.json();
 }
