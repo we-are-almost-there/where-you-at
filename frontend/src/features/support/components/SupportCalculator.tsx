@@ -42,7 +42,14 @@ export function SupportCalculator({ regionCode }: Props) {
     setSpent((prev) => ({ ...prev, [key]: value.replace(/[^\d]/g, "") }));
   };
 
+  // 빈 칸은 유효한 입력이 아니다. `stayDuration || "1"`로 조용히 1을 채워 보내면
+  // 입력칸은 비어 있는데 영수증에는 1박 구간 할인이 적용되는 어긋남이 생긴다.
+  // 숙박세일은 1박/연박으로 구간이 갈리므로 이 차이가 금액에 그대로 반영된다.
+  const stayNights = stayDuration === "" ? null : parseInt(stayDuration, 10);
+
   const handleCalculate = () => {
+    if (stayNights == null) return;
+
     setLoading(true);
     setError(null);
     setResult(null);
@@ -58,7 +65,7 @@ export function SupportCalculator({ regionCode }: Props) {
     calculateRefund({
       region_code: regionCode,
       spent_by_category,
-      stay_duration: parseInt(stayDuration || "1", 10),
+      stay_duration: stayNights,
     })
       .then(setResult)
       .catch((err) => setError(err.message))
@@ -99,6 +106,8 @@ export function SupportCalculator({ regionCode }: Props) {
                 onChange={(e) =>
                   setStayDuration(e.target.value.replace(/[^\d]/g, ""))
                 }
+                // 비운 채로 칸을 벗어나면 기본값을 되돌려, 화면 값과 계산에 쓰는 값이 어긋나지 않게 한다
+                onBlur={() => stayDuration === "" && setStayDuration("1")}
                 className="w-full text-right text-sm text-indigo-950 outline-none"
               />
               <span className="ml-1 text-sm text-slate-400">박</span>
@@ -108,7 +117,7 @@ export function SupportCalculator({ regionCode }: Props) {
 
         <button
           onClick={handleCalculate}
-          disabled={loading}
+          disabled={loading || stayNights == null}
           className="mt-4 w-full rounded-xl bg-violet-600 py-2.5 text-sm font-extrabold text-white hover:bg-violet-700 disabled:opacity-50"
         >
           {loading ? "계산 중…" : "예상 환급액 계산"}

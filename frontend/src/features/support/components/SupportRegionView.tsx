@@ -92,7 +92,10 @@ export function SupportRegionView({ regionCode }: Props) {
       {items.some((it) => it.refund_type === "정률" || it.refund_type === "정액") && (
         <section>
           <h3 className="mb-2 text-sm font-extrabold text-indigo-900">예상 환급 계산</h3>
-          <SupportCalculator regionCode={regionCode} />
+          {/* 지도가 옆에 떠 있어 패널을 연 채로 다른 지역을 바로 누를 수 있다. 그때 region만
+              바뀌고 이 뷰는 언마운트되지 않아, key가 없으면 이전 지역의 입력값과 영수증이
+              그대로 남는다. */}
+          <SupportCalculator key={regionCode} regionCode={regionCode} />
         </section>
       )}
 
