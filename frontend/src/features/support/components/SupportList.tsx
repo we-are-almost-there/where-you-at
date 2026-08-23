@@ -60,7 +60,7 @@ export function SupportList() {
             key={item.id}
             type="button"
             onClick={() => navigate(`/support/${item.id}`)}
-            className="cursor-pointer rounded-[14px] bg-white p-4 text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)]"
+            className="cursor-pointer rounded-lg bg-white p-4 text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)]"
           >
             <div className="mb-2 flex items-center justify-between gap-2">
               <span

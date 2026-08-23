@@ -77,7 +77,7 @@ export function SupportCalculator({ regionCode }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {/* 입력폼 */}
-      <div className="rounded-[14px] bg-white p-4 shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)]">
+      <div className="rounded-lg bg-white/80 p-4 shadow-[0px_3px_10px_0px_rgba(31,58,95,0.10)]">
         <div className="flex flex-col gap-3">
           {CATEGORIES.map(({ key, label }) => (
             <label key={key} className="flex flex-col gap-1.5">
@@ -119,7 +119,7 @@ export function SupportCalculator({ regionCode }: Props) {
           type="button"
           onClick={handleCalculate}
           disabled={loading || stayNights == null}
-          className="mt-4 w-full cursor-pointer rounded-[14px] bg-accent py-3 text-[14px] font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-4 w-full cursor-pointer rounded-lg bg-accent py-3 text-[14px] font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "계산 중…" : "예상 환급액 계산"}
         </button>
@@ -129,7 +129,7 @@ export function SupportCalculator({ regionCode }: Props) {
 
       {/* 영수증 */}
       {result && (
-        <div className="rounded-[14px] bg-lavender p-4">
+        <div className="rounded-lg bg-lavender p-4">
           {result.expected_refund > 0 ? (
             <>
               <div className="mb-3 flex items-baseline justify-between border-b border-dashed border-divider pb-3">

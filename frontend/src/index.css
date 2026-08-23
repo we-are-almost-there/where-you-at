@@ -14,6 +14,12 @@
   --color-divider: #d9d7e1; /* 라이트 그레이: 구분선 */
 }
 
+/* 스크롤바 자리를 항상 비워둔다. 내용 길이에 따라 스크롤바가 생겼다 사라지면
+   뷰포트 폭이 바뀌어 지도·배경·제목이 좌우로 흔들린다. */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   font-family: var(--font-sans);
 }

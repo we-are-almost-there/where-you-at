@@ -60,7 +60,9 @@ export function SupportDetail({ id }: Props) {
   const checklist = detail?.checklist ?? [];
 
   return (
-    <Sheet onClose={backToList}>
+    // 오버레이가 아니라 지역 목록과 같은 자리에서 내용만 바뀐다.
+    // (모바일에서 바텀시트로 띄우면 뷰포트가 최상단으로 튀어 지도가 가려졌다)
+    <div className="flex flex-col gap-5">
       <button
         type="button"
         onClick={backToList}
@@ -143,34 +145,13 @@ export function SupportDetail({ id }: Props) {
               href={detail.apply_url}
               target="_blank"
               rel="noreferrer"
-              className="rounded-[14px] bg-accent py-3.5 text-center text-[14px] font-bold text-white transition-opacity hover:opacity-90"
+              className="rounded-lg bg-accent py-3.5 text-center text-[14px] font-bold text-white transition-opacity hover:opacity-90"
             >
               신청 페이지로 이동
             </a>
           )}
         </>
       )}
-    </Sheet>
-  );
-}
-
-/**
- * 모바일: 하단에서 올라오는 바텀시트 / 데스크톱(md+): 부모 컬럼에 인라인 패널.
- * 대회 탭 RaceDetailSheet와 동일한 규칙.
- */
-function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <>
-      {/* 배경 딤 처리 — 모바일 전용 (데스크톱은 인라인 패널이라 불필요) */}
-      <div className="fixed inset-0 z-40 bg-black/30 md:hidden" onClick={onClose} />
-
-      <div className="fixed inset-x-0 bottom-0 top-2 z-50 overflow-y-auto rounded-t-2xl bg-white shadow-xl md:static md:inset-auto md:z-auto md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none">
-        <div className="flex flex-col gap-5 p-5 md:px-1 md:py-1">
-          {/* 드래그 핸들 (모바일 전용) */}
-          <div className="mx-auto -mb-2 h-1 w-9 rounded-full bg-divider md:hidden" />
-          {children}
-        </div>
-      </div>
-    </>
+    </div>
   );
 }

@@ -13,6 +13,21 @@ function formatAmount(amount: number | null): string {
   return `최대 ${amount.toLocaleString()}원`;
 }
 
+// 지역코드 → 지역명. 지역을 바꿀 때마다 762KB짜리 GeoJSON을 다시 받으면
+// 이름이 늦게 채워지며 헤더가 코드→이름으로 깜빡인다. 한 번만 받아 재사용한다.
+let regionNamesPromise: Promise<Map<string, string>> | null = null;
+function loadRegionNames(): Promise<Map<string, string>> {
+  regionNamesPromise ??= fetch("/support-regions-geo.json")
+    .then((r) => r.json())
+    .then(
+      (geo) =>
+        new Map<string, string>(
+          geo.features.map((f: any) => [String(f.properties.region_code), f.properties.name]),
+        ),
+    );
+  return regionNamesPromise;
+}
+
 export function SupportRegionView({ regionCode }: Props) {
   const [items, setItems] = useState<SupportListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,57 +35,66 @@ export function SupportRegionView({ regionCode }: Props) {
 
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // 지역명: 지도 GeoJSON에서 넘어올 때 state로 받거나, 제도 목록에서 유추.
-  // 지금은 제도 응답에 지역명이 없으니 일단 코드로 표시 (뒤에서 개선).
   const [regionName, setRegionName] = useState<string>("");
 
   useEffect(() => {
-    fetch("/support-regions-geo.json")
-      .then((r) => r.json())
-      .then((geo) => {
-        const f = geo.features.find(
-          (f: any) => String(f.properties.region_code) === regionCode
-        );
-        if (f) setRegionName(f.properties.name);
-      });
+    let cancelled = false;
+    loadRegionNames().then((names) => {
+      if (!cancelled) setRegionName(names.get(regionCode) ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [regionCode]);
 
+  // stale-while-revalidate: 새 지역을 부르는 동안 이전 목록을 그대로 둔다.
+  // 목록을 비우면 패널 높이가 한 줄짜리 로딩 문구로 줄었다가 다시 늘어나며 요동친다.
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
     fetchSupportList({ region_code: regionCode })
-      .then(setItems)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .then((next) => !cancelled && setItems(next))
+      .catch((err) => !cancelled && setError(err.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
   }, [regionCode]);
 
   return (
     <div className="flex flex-col gap-5 md:px-1 md:py-1">
-      {/* 뒤로 = 지도로 */}
-      <button
-        type="button"
-        onClick={() => {
-          searchParams.delete("region");
-          setSearchParams(searchParams);
-        }}
-        className="cursor-pointer self-start text-[13px] text-caption transition-colors hover:text-ink"
-      >
-        ← 지도로
-      </button>
-
-      {/* 지역 헤더 */}
-      <header>
-        <h2 className="font-bold text-ink text-[18px]">{regionName || regionCode}</h2>
-        <p className="mt-1 text-[13px] text-caption">
-          이 지역에서 받을 수 있는 지원 혜택이에요.
-        </p>
+      {/* 지역 헤더 — 닫기는 '뒤로'가 아니라 패널을 없애는 동작이라 우측 X로 둔다
+          (주변 정보 상세 시트와 같은 규칙) */}
+      <header className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="font-bold text-ink text-[18px]">{regionName || regionCode}</h2>
+          <p className="mt-1 text-[13px] text-caption">
+            이 지역에서 받을 수 있는 지원 혜택이에요.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            searchParams.delete("region");
+            setSearchParams(searchParams);
+          }}
+          aria-label="닫기"
+          className="-mr-1 -mt-1 shrink-0 cursor-pointer p-1 text-[20px] leading-none text-caption transition-colors hover:text-ink"
+        >
+          ✕
+        </button>
       </header>
 
       {/* ① 지원 제도 안내 */}
       <section>
         <h3 className="mb-2.5 font-bold text-ink text-[15px]">받을 수 있는 지원 제도</h3>
 
-        {loading && <p className="py-6 text-center text-[13px] text-caption">불러오는 중…</p>}
+        {/* 첫 로드에만 문구를 띄운다. 이후에는 이전 목록을 흐리게 둔 채 갱신해서
+            패널 높이가 튀지 않게 한다. */}
+        {loading && items.length === 0 && (
+          <p className="py-6 text-center text-[13px] text-caption">불러오는 중…</p>
+        )}
         {error && <p className="py-6 text-center text-[13px] text-caption">{error}</p>}
         {!loading && !error && items.length === 0 && (
           <p className="py-6 text-center text-[13px] text-caption">
@@ -78,7 +102,9 @@ export function SupportRegionView({ regionCode }: Props) {
           </p>
         )}
 
-        <ul className="flex flex-col gap-3">
+        <ul
+          className={`flex flex-col gap-3 transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}
+        >
           {items.map((item) => (
             <li key={item.id}>
               <button
@@ -87,7 +113,7 @@ export function SupportRegionView({ regionCode }: Props) {
                   searchParams.set("support", String(item.id));
                   setSearchParams(searchParams);
                 }}
-                className="w-full cursor-pointer rounded-[14px] bg-white p-4 text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)]"
+                className="w-full cursor-pointer rounded-lg bg-white/80 p-4 text-left shadow-[0px_3px_10px_0px_rgba(31,58,95,0.10)] transition-shadow hover:bg-white hover:shadow-[0px_5px_16px_0px_rgba(31,58,95,0.16)]"
               >
                 <span className="mb-2 flex items-center justify-between gap-2">
                   <span
@@ -138,7 +164,7 @@ export function SupportRegionView({ regionCode }: Props) {
       {/* ④ 코스 링크 */}
       <Link
         to={`/?region=${regionCode}`}
-        className="rounded-[14px] bg-accent py-3.5 text-center text-[14px] font-bold text-white transition-opacity hover:opacity-90"
+        className="rounded-lg bg-accent py-3.5 text-center text-[14px] font-bold text-white transition-opacity hover:opacity-90"
       >
         이 지역 코스 보러가기 →
       </Link>
