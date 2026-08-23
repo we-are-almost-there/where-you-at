@@ -97,7 +97,7 @@ export default function AppHeader({
 
           {/* 로고-nav 간격·아이템 간격 모두 고정값 대신 반응형으로. wide는 화면 폭 기준 clamp로
             같이 부드럽게 줄어들게 하고, compact(코스 탐색/코스 상세 좌측 패널)는 패널 폭이 화면의
-            절반 이하라 vw 기준 clamp를 쓰면 여유가 과하게 잡혀 nav가 잘렸다 — 작은 고정값(ml-2,
+            절반 이하라 vw 기준 clamp를 쓰면 여유가 과하게 잡혀 nav가 잘렸다 — 작은 고정값(ml-4,
             gap도 더 좁은 clamp)으로 별도 처리. nav↔햄버거 전환 시점도 위 이유로 wide/compact가
             다르다(md vs min-[950px], 실측 기준) */}
           <nav
