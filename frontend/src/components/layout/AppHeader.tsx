@@ -42,10 +42,10 @@ type Props = BaseProps & ControlledSidebarProps;
 // 쓰지만, compact(코스 탐색/코스 상세)는 헤더가 좌측 패널(전체 화면의 약 44~46%)
 // 안에서만 렌더된다. 그래서 둘 다 같은 md(768px) "화면" 기준을 쓰면, compact는
 // 실제 사용 가능한 폭이 그 절반도 안 되는데 화면은 768px를 넘었다고 판단해 nav를
-// 보여주려다 잘린다(고객지원·CTA와 자전거 대여 항목이 겹침). 실측 결과 화면 폭
-// 925px 근처가 경계였고, 여유를 둬 950px로 잡았다.
-// (Tailwind JIT가 클래스를 정적으로 스캔하므로 두 브레이크포인트를 변수로 조합하지
-// 않고 완전한 클래스 문자열을 그대로 삼항연산자에 넣는다)
+// 보여주려다 잘린다(고객지원·CTA와 자전거 대여 항목이 겹침). 실측 결과 925px 근처가
+// 경계였으나 여유가 0에 가까워(자전거 대여 라벨이 950px에서도 박스 밖 4px 초과)
+// 항목 추가·라벨 변경에 취약했다. Tailwind 표준 브레이크포인트 lg(1024px)로 올려
+// 여유를 확보했다.
 export default function AppHeader({
   variant = "compact",
   isSidebarOpen: controlledOpen,
@@ -82,7 +82,7 @@ export default function AppHeader({
             onClick={() => setIsSidebarOpen(true)}
             aria-label="메뉴"
             className={`cursor-pointer text-[20px] leading-none text-ink ${
-              isWide ? "md:hidden" : "min-[950px]:hidden"
+              isWide ? "md:hidden" : "lg:hidden"
             }`}
           >
             ☰
@@ -99,12 +99,12 @@ export default function AppHeader({
             같이 부드럽게 줄어들게 하고, compact(코스 탐색/코스 상세 좌측 패널)는 패널 폭이 화면의
             절반 이하라 vw 기준 clamp를 쓰면 여유가 과하게 잡혀 nav가 잘렸다 — 작은 고정값(ml-4,
             gap도 더 좁은 clamp)으로 별도 처리. nav↔햄버거 전환 시점도 위 이유로 wide/compact가
-            다르다(md vs min-[950px], 실측 기준) */}
+            다르다(md vs lg, Tailwind 표준 브레이크포인트) */}
           <nav
             className={`hidden min-w-0 flex-1 items-center gap-[clamp(0.5rem,1.5vw,1.5rem)] ${
               isWide
                 ? "md:flex ml-[clamp(1rem,4vw,4rem)]"
-                : "min-[950px]:flex ml-4"
+                : "lg:flex ml-4"
             }`}
           >
             {NAV_ITEMS.map((item) => {
