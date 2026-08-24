@@ -63,8 +63,11 @@ def get_policies_for_calc(conn, region_code: str) -> list[dict]:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(_POLICIES_FOR_CALC_SQL, {"region_code": region_code})
         return cur.fetchall()
-    
-    # ── 목록 (GET /api/support) ──────────────────────────
+
+
+# ── 목록 (GET /api/support) ──────────────────────────
+# 아래 '진행 중' 판정 블록은 _ACTIVE_REGIONS_SQL과 같은 조건을 쓴다.
+# 조건을 바꾸면 그쪽도 함께 고쳐야 지도와 목록이 어긋나지 않는다.
 _SUPPORT_LIST_SQL = """
 select distinct
     s.id,
@@ -102,6 +105,49 @@ def get_support_list(conn, region_code: str) -> list[dict]:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(_SUPPORT_LIST_SQL, {"region_code": region_code})
         return cur.fetchall()
+
+
+# ── 활성 지역 (GET /api/support/regions) ──────────────
+# 지도에서 어느 지역을 색칠할지 정하는 데 쓴다.
+#
+# _SUPPORT_LIST_SQL과 사실상 같은 쿼리이고, 두 곳만 다르다.
+#   - select : 제도 정보 대신 지역 코드를 뽑는다
+#   - where  : region_code 필터가 없다 (한 지역이 아니라 전국을 대상으로 하므로)
+# 즉 "이 지역에 제도가 뭐가 있나"를 "제도가 있는 지역이 어디인가"로 뒤집은 것이다.
+#
+# 아래 '진행 중' 판정 블록은 _SUPPORT_LIST_SQL에 있는 것과 글자 그대로 같아야 한다.
+# 한쪽만 고치면 지도와 목록이 서로 다른 답을 낸다. 예를 들어 목록 쪽에만
+# 조건을 추가하면, 지도는 색칠했는데 눌러보면 "제도가 없어요"가 뜬다.
+# 조건을 바꿀 일이 생기면 반드시 두 쿼리를 함께 수정할 것.
+_ACTIVE_REGIONS_SQL = """
+select distinct r.region_code
+from support s
+join support_region sr on sr.support_id = s.id
+join region r on r.id = sr.region_id
+where (
+        exists (
+            select 1 from support_schedule ss
+            where ss.support_id = s.id and ss.region_id = r.id
+              and ss.status = '접수중'
+        )
+        or (
+            not exists (
+                select 1 from support_schedule ss
+                where ss.support_id = s.id and ss.region_id = r.id
+            )
+            and (s.end_date is null or s.end_date >= current_date)
+            and (s.start_date is null or s.start_date <= current_date)
+        )
+  )
+order by r.region_code
+"""
+
+
+def get_active_region_codes(conn) -> list[str]:
+    """지금 신청 가능한 제도가 하나라도 있는 지역 코드"""
+    with conn.cursor() as cur:
+        cur.execute(_ACTIVE_REGIONS_SQL)
+        return [row[0] for row in cur.fetchall()]
 
 
 # ── 상세 (GET /api/support/{id}) ─────────────────────

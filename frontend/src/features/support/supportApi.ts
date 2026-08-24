@@ -36,6 +36,17 @@ export async function fetchSupportDetail(id: number): Promise<SupportDetail> {
   return res.json();
 }
 
+/**
+ * 지금 신청 가능한 제도가 있는 지역 코드.
+ * 지도 색칠 판정을 정적 파일이 아니라 이 목록으로 하면, 제도 기간이 끝나거나
+ * 차수 상태가 바뀔 때 배포 없이 회색으로 반영된다.
+ */
+export async function fetchActiveRegionCodes(): Promise<string[]> {
+  const res = await fetch(`${API_BASE}/api/support/regions`);
+  if (!res.ok) throw new Error(`활성 지역 조회 실패 (${res.status})`);
+  return res.json();
+}
+
 export async function calculateRefund(
   body: CalculateRequest,
 ): Promise<CalculateResponse> {

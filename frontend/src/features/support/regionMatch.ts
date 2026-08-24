@@ -112,6 +112,13 @@ export function buildRegionIndex(
   allRegions: FeatureCollection,
   sido: FeatureCollection,
   support: FeatureCollection,
+  /**
+   * 지금 신청 가능한 제도가 있는 지역 코드. 넘기면 이 목록에 있는 지역만 활성으로 본다.
+   * 정적 파일은 "지원 대상으로 등록된 지역"일 뿐 기간·차수 상태를 모르므로,
+   * 이것 없이는 제도가 끝난 지역도 색칠된 채로 남는다.
+   * 조회에 실패해 undefined면 정적 파일 기준으로 폴백한다(지도가 비어 보이는 것보다 낫다).
+   */
+  activeCodes?: ReadonlySet<string>,
 ): RegionEntry[] {
   const regionBoxes = allRegions.features.map((f) => bboxOf(f.geometry));
   const regionPoints = allRegions.features.map((f) => interiorPoint(f.geometry));
@@ -145,11 +152,13 @@ export function buildRegionIndex(
   // 2) 지원지역 → 시군구 (지원지역 쪽 내부점이 어느 도형에 들어가는지)
   const supportCodes: (string | null)[] = new Array(allRegions.features.length).fill(null);
   for (const f of support.features) {
+    const code = String(f.properties?.region_code);
+    if (activeCodes && !activeCodes.has(code)) continue; // 진행 중인 제도가 없는 지역
     const p = interiorPoint(f.geometry);
     for (let i = 0; i < allRegions.features.length; i++) {
       if (!inBBox(p, regionBoxes[i])) continue;
       if (inGeometry(p, allRegions.features[i].geometry)) {
-        supportCodes[i] = String(f.properties?.region_code);
+        supportCodes[i] = code;
         break;
       }
     }

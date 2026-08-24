@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import type { FeatureCollection, Geometry, Position } from "geojson";
 import { useSearchParams } from "react-router";
 import { buildRegionIndex, polygonsOf, type RegionEntry } from "../regionMatch";
+import { fetchActiveRegionCodes } from "../supportApi";
 import { toUserError, type UserError } from "../supportError";
 import { SupportErrorText } from "./SupportErrorText";
 
@@ -10,11 +11,6 @@ import { SupportErrorText } from "./SupportErrorText";
 // VIEW_BASE는 긴 변의 크기(패딩 제외) — 좌표 정밀도 기준일 뿐 화면 크기와는 무관하다.
 const VIEW_BASE = 780;
 const PAD = 10;
-
-// 지원 지역이 있는 시도코드 (앞 2자리) — 이 시도만 전국뷰에서 활성
-const ACTIVE_SIDO = new Set([
-  "12", "26", "27", "28", "41", "43", "44", "47", "48", "51", "52",
-]);
 
 const COLOR_HOVER = "#6C5CE7"; // --color-accent (SVG fill이라 토큰 클래스 대신 값으로)
 const COLOR_INACTIVE = "#F1EFFC"; // --color-lavender (전국뷰의 미해당 시도)
@@ -130,11 +126,13 @@ export function SupportRegionMap() {
       load("/korea-sido.json"),
       load("/support-regions-geo.json"),
       load("/korea-all-regions.json"),
+      // 실패해도 지도는 떠야 하므로 null로 흘려보내고 정적 파일 기준으로 폴백한다
+      fetchActiveRegionCodes().catch(() => null),
     ])
-      .then(([sd, sp, all]) => {
+      .then(([sd, sp, all, active]) => {
         setSido(sd);
         // 코드 체계가 서로 달라 도형 포함 판정으로 잇는다. 데이터가 고정이라 한 번만 계산.
-        setRegions(buildRegionIndex(all, sd, sp));
+        setRegions(buildRegionIndex(all, sd, sp, active ? new Set(active) : undefined));
       })
       .catch((err) => setError(toUserError(err, "지도를 불러오지 못했어요")));
   }, []);
@@ -172,6 +170,15 @@ export function SupportRegionMap() {
 
   // 현재 뷰에서 그릴 항목들. 전국뷰는 시도, 시도뷰는 그 도의 시군구 전체를 그린다
   // (지원 대상이 아닌 시군구도 회색으로 깔아야 도의 윤곽이 살아난다).
+  // 지원 지역을 가진 시도. 하드코딩하면 제도가 끝나 빈 도가 돼도 계속 색칠된다.
+  const activeSidoCodes = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of regions ?? []) {
+      if (r.supportCode != null && r.sidoCode) set.add(r.sidoCode);
+    }
+    return set;
+  }, [regions]);
+
   const viewItems = useMemo((): MapItem[] => {
     if (selectedSido == null) {
       return (sido?.features ?? []).map((f) => {
@@ -180,7 +187,7 @@ export function SupportRegionMap() {
           key: code,
           geometry: f.geometry,
           name: String(f.properties?.sido_name),
-          active: ACTIVE_SIDO.has(code),
+          active: activeSidoCodes.has(code),
           target: code,
         };
       });
@@ -194,7 +201,7 @@ export function SupportRegionMap() {
         active: r.supportCode != null,
         target: r.supportCode,
       }));
-  }, [selectedSido, sido, regions]);
+  }, [selectedSido, sido, regions, activeSidoCodes]);
 
   // 현재 뷰 대상의 경위도 범위에 맞춰 projection 계산 (전국이든 시도든).
   // 인셋을 적용한 좌표 기준으로 bbox를 잡으므로, project에 넘기는 좌표도
