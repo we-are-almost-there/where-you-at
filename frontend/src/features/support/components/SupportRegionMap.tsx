@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import type { FeatureCollection, Feature } from "geojson";
+import type { FeatureCollection } from "geojson";
 import { useSearchParams } from "react-router";
+import { buildRegionIndex, type RegionEntry } from "../regionMatch";
 
 // viewBox는 고정하지 않고 그리는 대상의 비율에 맞춰 뷰마다 계산한다.
 // 고정하면 가로로 긴 도(강원 등)에서 위아래에 큰 죽은 여백이 생긴다.
@@ -14,8 +15,10 @@ const ACTIVE_SIDO = new Set([
 ]);
 
 const COLOR_HOVER = "#6C5CE7"; // --color-accent (SVG fill이라 토큰 클래스 대신 값으로)
-const COLOR_INACTIVE = "#F1EFFC"; // --color-lavender
+const COLOR_INACTIVE = "#F1EFFC"; // --color-lavender (전국뷰의 미해당 시도)
 const COLOR_SIGUNGU = "#C9B8F0"; // 시도 색을 못 찾았을 때의 폴백 채움
+const COLOR_OFF = "#DFE3E8"; // 시도뷰의 미해당 시군구 (회색)
+const COLOR_OFF_STROKE = "#CFD5DC"; // 회색 지역끼리의 경계선
 
 // 본토를 크게 그리기 위한 인셋. 전국뷰 bbox가 울릉도(130.9°E)·백령도(124.6°E)·
 // 제주(33.1°N) 때문에 부풀어서, 본토가 실제로 쓸 수 있는 폭의 3분의 2로 그려지고 있었다.
@@ -84,12 +87,26 @@ const SIDO_COLOR: Record<string, string> = {
 // 배지의 화면상 글자 크기(CSS px). viewBox가 축소돼도 이 크기를 유지한다.
 const BADGE_FONT_PX = 12;
 // 충돌 간격 박스 높이 (글자 크기 배수 — 폰트만 바꾸면 같이 따라온다).
-// 배지 높이(약 2em)보다 넉넉히 잡아야 대구처럼 다른 도 안에 들어앉은 시가
-// 모도(경북) 라벨과 붙어 보이지 않는다.
-const BADGE_H_EM = 5.5;
+// 전국뷰는 대구처럼 다른 도 안에 들어앉은 시가 모도(경북) 라벨과 붙지 않도록 넉넉히 잡는다.
+// 시도뷰는 라벨이 20개 넘게 들어와서 같은 값을 쓰면 세로로 3~4줄밖에 못 들어가 겹친다.
+// 알약 높이가 약 1.5em이므로 2.4em이면 서로 닿지 않으면서 촘촘히 앉을 수 있다.
+const BADGE_H_EM_NATION = 5.5;
+const BADGE_H_EM_SIDO = 2.4;
 // 배지 폭은 이름 길이로 각자 계산한다. 전부 같은 폭으로 잡으면 '고성군' 같은 짧은 이름이
 // '전남광주통합특별시' 기준으로 밀려나 필요 이상으로 흩어진다.
-const badgeWidthEm = (name: string) => name.length + 1.8;
+// 미해당 지역은 알약 없이 글자만 그리므로 좌우 패딩(약 1.3em)만큼 폭이 준다.
+const badgeWidthEm = (name: string, active: boolean) => name.length + (active ? 1.8 : 0.4);
+
+/** 지도에 그릴 한 조각. 전국뷰는 시도, 시도뷰는 시군구가 들어온다. */
+type MapItem = {
+  key: string;
+  geometry: any;
+  name: string;
+  /** 클릭 가능 여부 (전국뷰=지원지역 보유 시도, 시도뷰=지원 대상 시군구) */
+  active: boolean;
+  /** 클릭 시 넘길 코드. 비활성이면 null */
+  target: string | null;
+};
 
 export function SupportRegionMap() {
   const [, setSearchParams] = useSearchParams();
@@ -97,22 +114,27 @@ export function SupportRegionMap() {
   const boxRef = useRef<HTMLDivElement>(null);
   const [svgPxWidth, setSvgPxWidth] = useState(VIEW_BASE);
   const [sido, setSido] = useState<FeatureCollection | null>(null);
-  const [support, setSupport] = useState<FeatureCollection | null>(null);
+  const [regions, setRegions] = useState<RegionEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [selectedSido, setSelectedSido] = useState<string | null>(null); // null=전국
 
   useEffect(() => {
-    Promise.all([
-      fetch("/korea-sido.json").then((r) => r.json()),
-      fetch("/support-regions-geo.json").then((r) => {
+    const load = (url: string) =>
+      fetch(url).then((r) => {
         if (!r.ok) throw new Error(`지도 로드 실패 (${r.status})`);
         return r.json();
-      }),
+      });
+
+    Promise.all([
+      load("/korea-sido.json"),
+      load("/support-regions-geo.json"),
+      load("/korea-all-regions.json"),
     ])
-      .then(([sd, sp]) => {
+      .then(([sd, sp, all]) => {
         setSido(sd);
-        setSupport(sp);
+        // 코드 체계가 서로 달라 도형 포함 판정으로 잇는다. 데이터가 고정이라 한 번만 계산.
+        setRegions(buildRegionIndex(all, sd, sp));
       })
       .catch((err) => setError(err.message));
   }, []);
@@ -140,28 +162,42 @@ export function SupportRegionMap() {
     };
   });
 
-  // 현재 뷰에서 그릴 feature들
-  const { viewFeatures, badgeFeatures } = useMemo(() => {
+  // 현재 뷰에서 그릴 항목들. 전국뷰는 시도, 시도뷰는 그 도의 시군구 전체를 그린다
+  // (지원 대상이 아닌 시군구도 회색으로 깔아야 도의 윤곽이 살아난다).
+  const viewItems = useMemo((): MapItem[] => {
     if (selectedSido == null) {
-      // 전국 뷰: 시도 경계, 배지 없음
-      return { viewFeatures: sido?.features ?? [], badgeFeatures: [] as Feature[] };
+      return (sido?.features ?? []).map((f) => {
+        const p = f.properties as any;
+        const code = String(p.sido_code);
+        return {
+          key: code,
+          geometry: f.geometry,
+          name: String(p.sido_name),
+          active: ACTIVE_SIDO.has(code),
+          target: code,
+        };
+      });
     }
-    // 시도 뷰: 그 도의 지원 지역만
-    const inSido = (support?.features ?? []).filter(
-      (f) => String((f.properties as any).region_code).slice(0, 2) === selectedSido,
-    );
-    return { viewFeatures: inSido, badgeFeatures: inSido };
-  }, [selectedSido, sido, support]);
+    return (regions ?? [])
+      .filter((r) => r.sidoCode === selectedSido)
+      .map((r) => ({
+        key: `${selectedSido}-${(r.feature.properties as any)?.sgg_code ?? r.name}`,
+        geometry: r.feature.geometry,
+        name: r.name,
+        active: r.supportCode != null,
+        target: r.supportCode,
+      }));
+  }, [selectedSido, sido, regions]);
 
   // 현재 뷰 대상의 경위도 범위에 맞춰 projection 계산 (전국이든 시도든).
   // 인셋을 적용한 좌표 기준으로 bbox를 잡으므로, project에 넘기는 좌표도
   // 반드시 insetRings를 통과한 값이어야 한다.
   const { project, viewW, viewH } = useMemo(() => {
-    if (!viewFeatures.length) {
+    if (!viewItems.length) {
       return { project: null, viewW: VIEW_BASE, viewH: VIEW_BASE };
     }
     let minX = Infinity, maxX = -Infinity, minLat = Infinity, maxLat = -Infinity;
-    viewFeatures.forEach((f) => {
+    viewItems.forEach((f) => {
       insetRings(f.geometry).forEach((ring) =>
         ring.forEach(([lng, lat]) => {
           const x = lng * COS_LAT0;
@@ -185,7 +221,7 @@ export function SupportRegionMap() {
       viewW: dX * scale + PAD * 2,
       viewH: dY * scale + PAD * 2,
     };
-  }, [viewFeatures]);
+  }, [viewItems]);
 
   // viewBox 단위 / CSS px. 모바일처럼 지도가 작게 그려질수록 1보다 커진다.
   const unitPerPx = viewW / svgPxWidth;
@@ -202,15 +238,15 @@ export function SupportRegionMap() {
       )
       .join("");
 
-  // 시도 뷰 배지 위치 (중심 좌표)
+  // 배지 위치 (중심 좌표).
+  // 전국뷰는 지원지역이 있는 시도만, 시도뷰는 미해당 시군구까지 라벨을 단다.
+  // 다만 좁은 화면에서는 전남처럼 시군구가 많은 도에서 27개가 겹치므로 회색 라벨은 접는다
+  // — 회색 도형은 그대로 남아 도의 윤곽은 유지된다.
   const badges = useMemo(() => {
     if (!project) return [];
-    // 전국 뷰: 활성 시도 배지 / 시도 뷰: 시군구 배지
-    const src = selectedSido == null
-      ? (sido?.features ?? []).filter((f) => ACTIVE_SIDO.has((f.properties as any).sido_code))
-      : badgeFeatures;
-    return src.map((f) => {
-      const rings = insetRings(f.geometry);
+    const src = selectedSido == null ? viewItems.filter((it) => it.active) : viewItems;
+    return src.map((it) => {
+      const rings = insetRings(it.geometry);
       // 가장 큰 링의 중심 (작은 섬 말고 본체에 배지)
       let best = rings[0];
       for (const ring of rings) if (ring.length > best.length) best = ring;
@@ -219,25 +255,20 @@ export function SupportRegionMap() {
         const [x, y] = project(pt);
         sx += x; sy += y; n++;
       });
-      const props = f.properties as any;
-      return {
-        code: selectedSido == null ? props.sido_code : String(props.region_code),
-        name: selectedSido == null ? props.sido_name : props.name,
-        cx: sx / n,
-        cy: sy / n,
-      };
+      return { key: it.key, name: it.name, active: it.active, target: it.target, cx: sx / n, cy: sy / n };
     });
-  }, [selectedSido, sido, badgeFeatures, project]);
+  }, [selectedSido, viewItems, project]);
 
   // 배지 충돌 해소 (전국·시도 공통).
   // 배지가 화면상 고정 크기라 viewBox 단위 크기는 축소 배율만큼 커진다 — 간격도 같이 키운다.
   const badgePositions = useMemo(() => {
     if (!badges.length) return [];
-    const BADGE_H = BADGE_H_EM * badgeFont;
+    const BADGE_H =
+      (selectedSido == null ? BADGE_H_EM_NATION : BADGE_H_EM_SIDO) * badgeFont;
     const nodes = badges.map((b) => ({
       ...b,
       x: b.cx, y: b.cy, ox: b.cx, oy: b.cy,
-      halfW: (badgeWidthEm(b.name) * badgeFont) / 2,
+      halfW: (badgeWidthEm(b.name, b.active) * badgeFont) / 2,
     }));
 
     for (let iter = 0; iter < 300; iter++) {
@@ -271,10 +302,10 @@ export function SupportRegionMap() {
       if (!moved) break;
     }
     return nodes;
-  }, [badges, badgeFont, viewW, viewH]);
+  }, [badges, badgeFont, viewW, viewH, selectedSido]);
 
   if (error) return <p className="py-16 text-center text-[14px] text-caption">{error}</p>;
-  if (!sido || !support)
+  if (!sido || !regions)
     return <p className="py-16 text-center text-[14px] text-caption">지도를 불러오는 중…</p>;
 
   const selectedSidoName =
@@ -322,46 +353,35 @@ export function SupportRegionMap() {
         className="h-auto w-full"
       >
         {project &&
-          viewFeatures.map((f) => {
-            const props = f.properties as any;
-            if (selectedSido == null) {
-              // 전국 뷰: 시도 폴리곤
-              const code = props.sido_code;
-              const active = ACTIVE_SIDO.has(code);
-              return (
-                <path
-                  key={code}
-                  d={toPath(f.geometry, project)}
-                  fill={
-                    hovered === code
-                      ? COLOR_HOVER
-                      : active
-                        ? SIDO_COLOR[code] ?? COLOR_SIGUNGU
-                        : COLOR_INACTIVE
-                  }
-                  stroke="#fff"
-                  strokeWidth={0.8}
-                  className={active ? "cursor-pointer transition-colors" : ""}
-                  onMouseEnter={() => active && setHovered(code)}
-                  onMouseLeave={() => setHovered(null)}
-                  onClick={() => active && setSelectedSido(code)}
-                />
-              );
-            }
-            // 시도 뷰: 시군구 폴리곤 — 전국뷰에서 그 시도가 갖고 있던 색을 그대로 이어받아,
-            // 어느 도를 파고든 건지 색으로 알 수 있게 한다.
-            const code = String(props.region_code);
+          viewItems.map((it) => {
+            const nation = selectedSido == null;
+            // 활성: 전국뷰는 시도색, 시도뷰는 그 도의 색을 그대로 이어받아
+            //       어느 도를 파고든 건지 색으로 알 수 있게 한다.
+            // 비활성: 전국뷰는 옅은 라벤더, 시도뷰는 회색(지원 대상이 아님)
+            const fill = it.active
+              ? hovered === it.key
+                ? COLOR_HOVER
+                : nation
+                  ? SIDO_COLOR[it.target ?? ""] ?? COLOR_SIGUNGU
+                  : sidoColor
+              : nation
+                ? COLOR_INACTIVE
+                : COLOR_OFF;
             return (
               <path
-                key={code}
-                d={toPath(f.geometry, project)}
-                fill={hovered === code ? COLOR_HOVER : sidoColor}
-                stroke="#fff"
-                strokeWidth={0.6}
-                className="cursor-pointer transition-colors"
-                onMouseEnter={() => setHovered(code)}
+                key={it.key}
+                d={toPath(it.geometry, project)}
+                fill={fill}
+                stroke={it.active ? "#fff" : COLOR_OFF_STROKE}
+                strokeWidth={nation ? 0.8 : 0.6}
+                className={it.active ? "cursor-pointer transition-colors" : ""}
+                onMouseEnter={() => it.active && setHovered(it.key)}
                 onMouseLeave={() => setHovered(null)}
-                onClick={() => setSearchParams({ region: code })}
+                onClick={() => {
+                  if (!it.active || !it.target) return;
+                  if (nation) setSelectedSido(it.target);
+                  else setSearchParams({ region: it.target });
+                }}
               />
             );
           })}
@@ -371,12 +391,12 @@ export function SupportRegionMap() {
           const dist = Math.hypot(b.x - b.ox, b.y - b.oy);
           return dist > 10 ? (
             <line
-              key={`line-${b.code}`}
+              key={`line-${b.key}`}
               x1={b.x}
               y1={b.y}
               x2={b.ox}
               y2={b.oy}
-              stroke={sidoColor}
+              stroke={b.active ? sidoColor : COLOR_OFF_STROKE}
               strokeWidth={0.8 * unitPerPx}
             />
           ) : null;
@@ -385,7 +405,7 @@ export function SupportRegionMap() {
         {/* 배지 (전국뷰=시도, 시도뷰=시군구) — 크기는 viewBox가 아니라 화면 기준으로 고정 */}
         {badgePositions.map((b) => (
           <foreignObject
-            key={`badge-${b.code}`}
+            key={`badge-${b.key}`}
             x={b.x - b.halfW}
             y={b.y - 0.75 * badgeFont}
             width={b.halfW * 2}
@@ -397,21 +417,37 @@ export function SupportRegionMap() {
             <div className="flex h-full w-full items-center justify-center">
               <button
                 type="button"
-                onClick={() =>
-                  selectedSido == null
-                    ? setSelectedSido(b.code)
-                    : setSearchParams({ region: b.code })
-                }
-                onMouseEnter={() => setHovered(b.code)}
+                disabled={!b.active}
+                aria-label={b.active ? undefined : `${b.name} (지원 대상 아님)`}
+                onClick={() => {
+                  if (!b.active || !b.target) return;
+                  if (selectedSido == null) setSelectedSido(b.target);
+                  else setSearchParams({ region: b.target });
+                }}
+                onMouseEnter={() => b.active && setHovered(b.key)}
                 onMouseLeave={() => setHovered(null)}
                 // 패딩·모서리를 em으로 두어 글자 크기 한 곳만 바꾸면 통째로 따라 커진다
-                style={{ fontSize: `${badgeFont}px` }}
-                className={`inline-flex cursor-pointer items-center gap-[0.15em] whitespace-nowrap rounded-full px-[0.65em] py-[0.2em] font-bold shadow-[0px_1px_4px_0px_rgba(0,0,0,0.18)] transition-colors ${
-                  hovered === b.code ? "bg-accent text-white" : "bg-white text-ink"
+                style={
+                  b.active
+                    ? { fontSize: `${badgeFont}px` }
+                    : {
+                        fontSize: `${badgeFont}px`,
+                        // 알약 대신 흰 테두리로 지도 색 위에서 글자를 읽히게 한다
+                        textShadow: "0 0 0.25em #fff, 0 0 0.25em #fff, 0 0 0.25em #fff",
+                      }
+                }
+                className={`inline-flex items-center gap-[0.15em] whitespace-nowrap font-bold transition-colors ${
+                  b.active
+                    ? `cursor-pointer rounded-full px-[0.65em] py-[0.2em] shadow-[0px_1px_4px_0px_rgba(0,0,0,0.18)] ${
+                        hovered === b.key ? "bg-accent text-white" : "bg-white text-ink"
+                      }`
+                    : "cursor-default text-caption"
                 }`}
               >
                 {b.name}
-                <span className={hovered === b.code ? "text-white/70" : "text-caption"}>›</span>
+                {b.active && (
+                  <span className={hovered === b.key ? "text-white/70" : "text-caption"}>›</span>
+                )}
               </button>
             </div>
           </foreignObject>

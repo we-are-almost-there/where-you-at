@@ -21,8 +21,9 @@ export function Support() {
           <SeaBackdrop />
         </div>
 
-        {/* max-w-[1200px] → 헤더(wide variant)와 좌우 리듬을 맞춘다 */}
-        <div className="relative z-10 mx-auto w-full max-w-[1200px] px-4 py-3">
+        {/* 폭·패딩은 대회 탭(Race)과 동일하게 — 같은 wide 헤더 아래의 목록/상세 분할 화면이라
+            둘이 다르면 탭을 오갈 때 콘텐츠가 좌우로 흔들린다 */}
+        <div className="relative z-10 mx-auto w-full max-w-[1200px] px-6 pb-4 pt-4">
           {/* 모바일은 패널이 지도 아래로 쌓이므로 간격을 조금 더 준다 (md+는 좌우 배치라 그대로) */}
           <div className="flex flex-col gap-8 md:flex-row md:gap-4">
             {/* 지도 (제도 상세가 열리면 좁아짐) — 대회 탭의 목록/상세 분할과 동일한 비율 */}
