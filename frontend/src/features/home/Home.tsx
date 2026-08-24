@@ -570,7 +570,14 @@ export default function Home() {
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <AppHeader />
+      {/* variant 생략 시 기본값이 compact(코스 탐색 전용 좁은 헤더)라
+        wide 페이지인 홈에서는 명시적으로 지정해야 메뉴가 화면 가장자리에 붙지 않고
+        코스 둘러보기 CTA도 노출된다. 헤더 좌우 여백은 clamp(1rem,6vw,8rem)이라 최대
+        8rem(128px)에서 멈추는 반면, 본문은 max-w-6xl(1152px) 가운데 정렬이라 화면이
+        넓어질수록 여백이 계속 커진다(상한 없음) — 두 계산식이 달라 1280px 부근에서만
+        비슷하게 맞고, 화면이 더 넓어지면 본문이 헤더보다 안쪽으로 들어가 보인다.
+        헤더가 화면 폭을 최대한 쓰는 게 의도라 이대로 둠 */}
+      <AppHeader variant="wide" />
 
       <section className="w-full pt-3">
         <BannerCarousel onOpenGallery={() => setIsGalleryOpen(true)} />
