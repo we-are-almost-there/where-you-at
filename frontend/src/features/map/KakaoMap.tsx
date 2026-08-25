@@ -374,11 +374,11 @@ export function KakaoMap({
     const el = mapContainerRef.current;
     if (!map || !el || !isCourseList) return;
     const take = () => setUserMovedMap(true);
-    const onDragStart = kakao.maps.event.addListener(map, "dragstart", take);
+    kakao.maps.event.addListener(map, "dragstart", take);
     el.addEventListener("wheel", take, { passive: true });
     el.addEventListener("dblclick", take);
     return () => {
-      kakao.maps.event.removeListener(onDragStart as unknown as kakao.maps.event.EventHandle);
+      kakao.maps.event.removeListener(map, "dragstart", take);
       el.removeEventListener("wheel", take);
       el.removeEventListener("dblclick", take);
     };
