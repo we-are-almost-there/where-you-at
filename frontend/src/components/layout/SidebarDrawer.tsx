@@ -14,10 +14,11 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "홈", eyebrow: "HOME", description: "메인으로 돌아가기", to: "/" },
+  { label: "홈", eyebrow: "HOME", description: "홈으로 이동", to: "/" },
   { label: "코스 탐색", eyebrow: "COURSE", description: "걷기·자전거 코스 둘러보기", to: "/courses" },
-  { label: "대회·이벤트", eyebrow: "EVENT", description: "가까운 대회 일정 확인", to: "/races" },
-  { label: "지원금·환급", eyebrow: "SUPPORT", description: "지역별 여행 지원 혜택", to: "/support" },
+  { label: "대회 행사", eyebrow: "EVENT", description: "가까운 대회 일정 확인", to: "/races" },
+  { label: "방문 혜택", eyebrow: "SUPPORT", description: "지역별 방문 혜택 확인", to: "/support" },
+  { label: "자전거 대여", eyebrow: "RENTAL", description: "인근 자전거 대여소 찾기", to: null },
 ];
 
 export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {

@@ -9,6 +9,7 @@ class SupportSummary(BaseModel):
     summary: str | None
     max_amount: int | None
     end_date: str | None
+    refund_type: str
 
 
 # 상세 (GET /api/support/{id}) ────────────────────────
