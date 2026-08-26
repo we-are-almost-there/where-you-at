@@ -18,7 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "코스 탐색", eyebrow: "COURSE", description: "걷기·자전거 코스 둘러보기", to: "/courses" },
   { label: "대회 행사", eyebrow: "EVENT", description: "가까운 대회 일정 확인", to: "/races" },
   { label: "방문 혜택", eyebrow: "SUPPORT", description: "지역별 방문 혜택 확인", to: "/support" },
-  { label: "자전거 대여", eyebrow: "RENTAL", description: "인근 자전거 대여소 찾기", to: null },
+  { label: "자전거 대여", eyebrow: "RENTAL", description: "인근 자전거 대여소 찾기", to: "/bicycle-facilities" },
 ];
 
 export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
