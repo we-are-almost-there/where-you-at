@@ -31,6 +31,7 @@ LEFT JOIN region r ON c.region_code = r.region_code
 WHERE c.id = %s
 """
 
+
 _DETAIL_ROUTES_SQL = """
 SELECT route_type, distance, estimated_time, difficulty,
         start_lat, start_lng, min_lat, max_lat, min_lng, max_lng
@@ -62,6 +63,16 @@ def get_waypoints(conn, course_id: int, route_type: str = "trail") -> list[dict]
             (course_id, route_type),
         )
         return cur.fetchall()
+
+
+_COURSE_EXISTS_SQL = "SELECT 1 FROM course WHERE id = %s"
+
+
+def course_exists(conn, course_id: int) -> bool:
+    """코스 존재 여부만 가볍게 확인한다 (nearby 등에서 404 판별용)"""
+    with conn.cursor() as cur:
+        cur.execute(_COURSE_EXISTS_SQL, (course_id,))
+        return cur.fetchone() is not None
 
 
 def list_courses(
