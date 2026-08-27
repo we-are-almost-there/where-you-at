@@ -116,6 +116,8 @@ export function CourseExplore() {
         id: c.id,
         title: c.title,
         points: routeType === "자전거" ? c.path_bicycle : c.path_trail,
+        // 카드와 같은 기준으로 고른다 — 지금 탭의 주행 방식, 없으면 가진 것 중 첫 번째.
+        distanceKm: (c.routes.find((r) => r.route_type === routeType) ?? c.routes[0]).distance,
       })),
     [res.courses, routeType],
   );
@@ -131,7 +133,11 @@ export function CourseExplore() {
     [hovered, mapCourses],
   );
   // 카드 테두리는 '지도가 이 카드를 가리키는 중'이라는 신호이므로, 카드 자신을 hover할 때는 빼야 한다.
-  const mapPointedIds = hovered?.from === "map" ? activeCourseIds : [];
+  // 코스가 하나로 정해질 때만 켠다. 시작점이 포개져 여럿이 잡혔을 땐 카드가 한 장씩만 화면에
+  // 들어와(패널 525px에 카드 250px) 그중 하나만 테두리가 보이는데, 그러면 라벨은 여러 개라고
+  // 하는데 목록은 하나를 가리키는 꼴이 된다. 그때는 목록을 건드리지 않고 지도가 답한다.
+  const mapPointedIds =
+    hovered?.from === "map" && activeCourseIds.length === 1 ? activeCourseIds : [];
   // 지도를 옮기는 건 카드에서 짚었고 대상이 하나로 정해졌을 때만.
   const focusCourseId = hovered?.from === "card" && activeCourseIds.length === 1 ? activeCourseIds[0] : null;
 
@@ -156,7 +162,10 @@ export function CourseExplore() {
       return;
     }
     setHovered({ ids, from: "map" });
-    scrollCardIntoView(ids[0]);
+    // 코스가 하나로 정해질 때만 목록을 옮긴다. 시작점이 포개져 여럿이 잡혔을 땐 첫 번째로만
+    // 스크롤하게 되는데, 나머지가 화면 밖이면 어디 있는지 알 수 없어 오히려 헷갈린다.
+    // 그때는 목록에 답을 미루지 않고 지도가 답한다 — 잡힌 코스의 경로선이 함께 진해진다.
+    if (ids.length === 1) scrollCardIntoView(ids[0]);
   };
 
   const updateUrlState = (next: CourseUrlState, replace = false) => {
