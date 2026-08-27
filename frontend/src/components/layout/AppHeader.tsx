@@ -12,6 +12,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "코스 탐색", to: "/courses" },
   { label: "대회 행사", to: "/races" },
   { label: "방문 혜택", to: "/support" },
+  // 아직 라우트 없음(자전거 대여소 기능 미구현) — to: null이면 비활성 처리됨
   { label: "자전거 대여", to: null },
 ];
 
