@@ -83,7 +83,7 @@ export default function AppHeader({
             onClick={() => setIsSidebarOpen(true)}
             aria-label="메뉴"
             className={`cursor-pointer text-[20px] leading-none text-ink ${
-              isWide ? "md:hidden" : "lg:hidden"
+              isWide ? "md:hidden" : "xl:hidden"
             }`}
           >
             ☰
@@ -102,8 +102,10 @@ export default function AppHeader({
             gap도 더 좁은 clamp)으로 별도 처리. nav↔햄버거 전환 시점도 위 이유로 wide/compact가
             다르다(md vs lg, Tailwind 표준 브레이크포인트) */}
           <nav
-            className={`hidden min-w-0 flex-1 items-center justify-center gap-[clamp(1rem,4vw,7rem)] ${
-              isWide ? "md:flex px-[clamp(1rem,4vw,2rem)]" : "lg:flex px-4"
+            className={`hidden min-w-0 flex-1 items-center justify-center ${
+              isWide
+                ? "md:flex gap-[clamp(1rem,4vw,7rem)] px-[clamp(1rem,4vw,2rem)]"
+                : "xl:flex gap-[clamp(0.75rem,3vw,2.25rem)] pl-4 pr-12"
             }`}
           >
             {NAV_ITEMS.map((item) => {
