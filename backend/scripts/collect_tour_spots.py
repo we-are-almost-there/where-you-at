@@ -271,9 +271,9 @@ def fill_missing_details(conn):
                         detail_rows.append(intro)
                     else:
                         print(f"[WARN] detailIntro 빈 응답 content_id={content_id} (상세정보 없음)")
-                        detail_rows.append({"content_id": content_id}) 
+                        detail_rows.append({"content_id": content_id})
                     time.sleep(1.0)
-                    break  # 성공 시 재시도 루프 탈출
+                    break
                 except RuntimeError as e:
                     if "API_QUOTA_EXCEEDED" in str(e):
                         print("[ERROR] API 할당량 초과 — 종료합니다.")
@@ -284,6 +284,13 @@ def fill_missing_details(conn):
                         wait = 10.0 * (retry + 1)
                         print(f"[WARN] 429 — {wait:.0f}초 대기 후 재시도 ({retry+1}/5)")
                         time.sleep(wait)
+                    elif "TIMEOUT" in str(e):
+                        wait = 3.0 * (retry + 1)
+                        print(f"[WARN] 타임아웃 — {wait:.0f}초 대기 후 재시도 content_id={content_id} ({retry+1}/5)")
+                        time.sleep(wait)
+                        if retry == 4:
+                            print(f"[ERROR] 타임아웃 5회 소진 content_id={content_id} — 이번 세션 보류, 다음 재수집 때 다시 시도")
+                            # break만 하고 detail_rows에 넣지 않음 → 다음 실행 시 여전히 "누락"으로 잡혀 자동 재시도됨
                     else:
                         print(f"[ERROR] detailIntro 실패 content_id={content_id}: {e}")
                         break

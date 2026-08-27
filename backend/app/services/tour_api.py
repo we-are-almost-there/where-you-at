@@ -252,11 +252,9 @@ def fetch_detail_intro(
             timeout=15,
         )
 
-        # 할당량 초과 체크 (200 응답이지만 에러 메시지)
         if _is_quota_exceeded(response.text):
             raise RuntimeError("API_QUOTA_EXCEEDED")
 
-        # 429 체크
         if response.status_code == 429:
             raise httpx.HTTPStatusError(
                 "429 Too Many Requests",
@@ -277,7 +275,11 @@ def fetch_detail_intro(
         return results[0] if results else None
 
     except RuntimeError:
-        raise  # API_QUOTA_EXCEEDED는 그대로 올려보냄
+        raise
+    except httpx.TimeoutException as e:
+        # 진짜 빈 응답이 아니라 네트워크 지연 — 재시도 가능한 것으로 구분해 올려보낸다
+        print(f"[WARN] detailIntro 타임아웃 content_id={content_id}: {e}")
+        raise RuntimeError("TIMEOUT")
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429:
             raise RuntimeError("RATE_LIMITED")
