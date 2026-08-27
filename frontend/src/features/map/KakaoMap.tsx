@@ -23,6 +23,40 @@ export interface NearbyMapSpot {
   category: "attraction" | "restaurant" | "accommodation" | "bicycle";
 }
 
+/**
+ * 시작점 마커(거리 라벨)의 대략적인 폭(px). `19.0km` 정도를 기준으로 잡은 근사값이다.
+ * 라벨은 글자 수에 따라 폭이 조금씩 다르지만, 겹침 판정에는 이 정도 근사로 충분하다.
+ */
+const COURSE_LABEL_WIDTH = 56;
+
+/**
+ * 시작점 마커가 화면에서 이만큼 안쪽으로 붙으면 사실상 포개져 하나로만 보인다(라벨 폭의 절반).
+ * (DMZ 본코스 ↔ 우회로는 들머리가 같아 어느 줌에서도 겹친다) 그런 마커는 어느 코스인지
+ * 특정할 수 없으므로 hover하면 그 지점의 코스를 모두 짚고, 클릭해도 상세로 보내지 않는다.
+ *
+ * 지리적 거리가 아니라 화면 픽셀로 재는 이유: 겹침은 줌에 따라 달라지기 때문이다.
+ * 이전 기준(50m)은 넓게 축소했을 때 화면에서 0~1px이라, 정작 마커가 뭉개지는 구간에서
+ * 한 번도 걸리지 않았다 — 171m 떨어진 제주 두 코스가 레벨 10에서 1px 간격인데 따로 취급돼,
+ * 하나로 보이는 핀을 눌러도 위에 깔린 코스로 그냥 넘어갔다.
+ * 반대로 바짝 확대하면 50m가 수십 px이라, 눈에 뻔히 떨어져 보이는 마커의 클릭까지 막았다.
+ */
+const COINCIDENT_START_PX = Math.round(COURSE_LABEL_WIDTH / 2);
+
+/** 겹친 마커를 눌러 갈라놓을 때 목표로 삼는 간격. 판정 기준의 3배면 확실히 둘로 보인다. */
+const SEPARATED_TARGET_PX = COINCIDENT_START_PX * 3;
+/** 한 번 누를 때 파고들 최대 줌 단계. 한 번에 골목까지 내려가면 주변 맥락을 잃는다.
+ *  여기서 다 갈라지지 않으면 한 번 더 누르면 된다(누를 때마다 지금 간격 기준으로 다시 잰다). */
+const SEPARATE_MAX_STEPS = 5;
+
+// 목록 화면에서 지도에 뿌릴 코스 (목록 응답의 썸네일용 간략 좌표를 그대로 쓴다)
+export interface CourseMapItem {
+  id: number;
+  title: string;
+  points: LatLng[];
+  /** 마커 라벨에 적을 거리(km). 지금 보고 있는 주행 방식 기준. */
+  distanceKm: number;
+}
+
 interface Props {
   /** 렌더할 코스 GPX 좌표. 비어 있으면 개요 지도만 표시(목록 뷰). */
   waypoints?: LatLng[];
@@ -48,16 +82,94 @@ interface Props {
   onSpotMarkerClick?: (id: string) => void;
   /** 지도 좌상단에 '메뉴(사이드바 열기)' 버튼을 표시할지. 넘기지 않으면 버튼 자체가 렌더링되지 않는다. */
   onMenuClick?: () => void;
+  /** 목록 화면에서 표시할 코스들 — 각 코스의 시작점에 마커를 찍는다. */
+  courses?: CourseMapItem[];
+  /**
+   * 지금 짚고 있는 코스 id들 — 굵게 하고 나머지는 흐리게 죽인다.
+   * 보통 0~1개지만, 시작점이 포개진 마커를 짚으면(본코스 ↔ 우회로) 2개 이상이 된다.
+   */
+  activeCourseIds?: number[];
+  /** 코스를 하나로 특정해 클릭했을 때 (상세 이동용). 시작점이 포개진 마커에서는 부르지 않는다. */
+  onCourseClick?: (id: number) => void;
+  /**
+   * 코스 마커에 커서가 올라가고 내려갈 때. 시작점이 포개진 마커는 어느 코스인지 특정할 수 없어
+   * 그 지점에서 출발하는 코스 id를 모두 넘긴다(벗어나면 빈 배열).
+   */
+  onCourseMarkerHover?: (ids: number[]) => void;
+  /** 코스 경로선에 커서가 올라가고 내려갈 때 — 마커가 포개져도 선은 갈라지므로 하나를 정확히 짚는다. */
+  onCourseLineHover?: (id: number | null) => void;
+  /**
+   * 지도를 맞출 코스 id — 목록 카드 쪽에서 짚었을 때만 넘긴다. 벗어나면 결과 전체로 되돌아간다.
+   * 마커 hover에는 넘기지 않는다. 확대하면 마커가 커서 밑에서 빠져나가 mouseout → 축소 →
+   * 다시 mouseover가 되풀이되기 때문. 지도는 카드가, 목록은 마커가 움직이게 나눠 둔다.
+   */
+  focusCourseId?: number | null;
 }
 
+// prop 미전달 시 매 렌더 새 배열이 생겨 fit 의존성이 흔들리는 걸 막는 공용 빈 배열.
+const NO_COURSES: CourseMapItem[] = [];
+const NO_IDS: number[] = [];
+
 const NEARBY_MARKER_COLOR = "#6C5CE7";
-const NEARBY_MARKER_COLOR_DIMMED = "#C4BAFA"; // 연보라 — 선택된 게 있을 때 나머지 마커용
+const DIMMED_ACCENT = "#C4BAFA"; // 연보라 — 선택된 게 있을 때 나머지를 죽이는 색 (주변 스팟 마커 · 목록 코스 공용)
 
 // 원형(동그라미) 마커 SVG — 기본 상태(선택 안 됨)용
 function circleImageSrc(color: string, size: number): string {
   const r = size / 2 - 1.5; // 흰 테두리(3px) 감안해서 살짝 안쪽으로
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="${color}" stroke="white" stroke-width="3"/></svg>`;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * 목록 코스 시작점 마커 — 거리를 적은 흰 알약 라벨.
+ *
+ * 텍스트 없는 점만 찍으면 뭐가 뭔지 읽히지 않아 경로선을 늘 함께 그려야 했고, 그 선들이 겹쳐
+ * 지도가 뭉개졌다. 라벨이 스스로 말을 하면 선은 짚었을 때만 그려도 된다.
+ * (예전에 거리·시간·난이도를 한꺼번에 넣으려다 접었는데, 그건 라벨로 카드를 찾으려 했기 때문이다.
+ *  카드 매칭은 hover가 맡고, 라벨은 '이 점이 뭔지'만 알려주면 되므로 값이 겹쳐도 상관없다)
+ *
+ * MarkerImage(SVG)가 아니라 CustomOverlayMap을 쓴다 — 글자 폭을 직접 계산할 필요가 없고
+ * React 이벤트를 그대로 받는다. 아래 EndpointMarker가 같은 방식이다.
+ */
+function CourseLabelMarker({
+  position,
+  text,
+  title,
+  state,
+  onClick,
+  onMouseOver,
+  onMouseOut,
+}: {
+  position: LatLng;
+  text: string;
+  /** 라벨에는 거리만 적으므로, 어느 코스인지는 이 값이 알려준다(툴팁 + 스크린리더). */
+  title: string;
+  state: "normal" | "dimmed" | "active";
+  onClick: () => void;
+  onMouseOver: () => void;
+  onMouseOut: () => void;
+}) {
+  return (
+    <CustomOverlayMap position={position} xAnchor={0.5} yAnchor={0.5} zIndex={state === "active" ? 10 : 1}>
+      <button
+        type="button"
+        title={title}
+        aria-label={title}
+        onClick={onClick}
+        onMouseOver={onMouseOver}
+        onMouseOut={onMouseOut}
+        className={`cursor-pointer whitespace-nowrap rounded-full px-2.5 py-1 text-[12px] font-bold shadow-[0px_1px_4px_0px_rgba(0,0,0,0.28)] ${
+          state === "active"
+            ? "bg-accent text-white"
+            : state === "dimmed"
+              ? "bg-white/85 text-caption"
+              : "bg-white text-ink"
+        }`}
+      >
+        {text}
+      </button>
+    </CustomOverlayMap>
+  );
 }
 
 // 핀(물방울) SVG를 data URI로 만든다 — kakao.maps.MarkerImage는 실제 이미지 URL이 필요해서
@@ -207,6 +319,12 @@ export function KakaoMap({
   selectedSpotId = null,
   onSpotMarkerClick,
   onMenuClick,
+  courses = NO_COURSES,
+  activeCourseIds = NO_IDS,
+  onCourseClick,
+  onCourseMarkerHover,
+  onCourseLineHover,
+  focusCourseId = null,
 }: Props) {
   const [sdkReady, setSdkReady] = useState(false);
   const [map, setMap] = useState<kakao.maps.Map | null>(null);
@@ -260,21 +378,144 @@ export function KakaoMap({
     kakao.maps.load(() => setSdkReady(true));
   }, []);
 
-  // 코스 전체가 보이도록 지도 경계를 맞춘다.
+  // 확대는 살짝 지연시킨다. 카드 사이를 스쳐 지나가는 마우스에는 반응하지 않고,
+  // 한 카드에 머무를 때만 그 코스로 맞춘다. 벗어날 때는 지연 없이 즉시 전체로 돌아간다.
+  const [zoomedCourseId, setZoomedCourseId] = useState<number | null>(null);
+  // (렌더 중 조정 — 아래 previewLocation과 같은 방식)
+  if (focusCourseId == null && zoomedCourseId !== null) setZoomedCourseId(null);
+  useEffect(() => {
+    if (focusCourseId == null) return;
+    const timer = setTimeout(() => setZoomedCourseId(focusCourseId), 300);
+    return () => clearTimeout(timer);
+  }, [focusCourseId]);
+
+  // 지도 경계를 맞출 대상 좌표.
+  // 상세 화면(waypoints)이면 그 코스 하나, 목록에서 카드를 짚고 있으면 그 코스, 아니면 결과 전체.
+  // 확대는 애니메이션 없이 한 번에 맞춘다 — kakao의 setLevel({animate}) 옵션은 한 번 쓰고 나면
+  // 이후 모든 확대/축소가 무시되는 버그가 있고, 레벨을 한 단계씩 끊어 옮기면 더 덜컹거린다.
+  // waypoints가 있을 땐 그 배열을 그대로 돌려주므로, 참조가 바뀌지 않아 불필요한 재fit이 없다.
+  const fitTargets = useMemo(() => {
+    if (waypoints.length > 0) return waypoints;
+    const zoomed = zoomedCourseId != null ? courses.find((c) => c.id === zoomedCourseId) : null;
+    if (zoomed && zoomed.points.length > 0) return zoomed.points;
+    return courses.flatMap((c) => c.points);
+  }, [waypoints, courses, zoomedCourseId]);
+
+  // 대상 전체가 보이도록 지도 경계를 맞춘다.
   // 추적 중에는 현위치 추적(panTo)이 우선이라 코스 fit을 건너뛴다.
   // 추적이 꺼지는 순간(따라가기 종료·'알겠어요') 이 콜백이 새로 만들어지며 코스 전체로 복귀한다.
   // (데스크톱은 bottomInset이 0 고정이라, 이 의존성이 없으면 종료 후 재fit이 안 됐다)
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+
   const fitToCourse = useCallback(() => {
-    if (!map || waypoints.length === 0 || followCurrentLocation) return;
+    if (!map || fitTargets.length === 0 || followCurrentLocation) return;
     const bounds = new kakao.maps.LatLngBounds();
-    waypoints.forEach(({ lat, lng }) => bounds.extend(new kakao.maps.LatLng(lat, lng)));
+    fitTargets.forEach(({ lat, lng }) => bounds.extend(new kakao.maps.LatLng(lat, lng)));
     const pad = 24;
     map.setBounds(bounds, pad, pad, pad + bottomInset, pad);
-  }, [map, waypoints, bottomInset, followCurrentLocation]);
+  }, [map, fitTargets, bottomInset, followCurrentLocation]);
+
+  // 목록 화면에서 사용자가 지도를 직접 끌거나 확대했는지.
+  // 그랬다면 '전체 뷰'가 아니라 '사용자가 보던 화면'이 돌아갈 자리가 된다.
+  // drag·wheel은 사용자만 일으키는 이벤트라, 프로그램이 부른 setBounds와 헷갈릴 일이 없다.
+  const [userMovedMap, setUserMovedMap] = useState(false);
+  // hover 확대 직전에 담아두는 사용자의 화면. 확대가 끝나면 여기로 되돌린다.
+  const userViewRef = useRef<{ center: kakao.maps.LatLng; level: number } | null>(null);
+  const isCourseList = waypoints.length === 0 && courses.length > 0;
+
+  // 결과 목록이 바뀌면(필터·페이지·탭) 사용자가 잡고 있던 화면을 놓아주고 다시 자동 맞춤한다.
+  const [coursesBaseline, setCoursesBaseline] = useState(courses);
+  if (coursesBaseline !== courses) {
+    setCoursesBaseline(courses);
+    if (userMovedMap) setUserMovedMap(false);
+  }
 
   useEffect(() => {
+    const el = mapContainerRef.current;
+    if (!map || !el || !isCourseList) return;
+    const take = () => setUserMovedMap(true);
+    kakao.maps.event.addListener(map, "dragstart", take);
+    el.addEventListener("wheel", take, { passive: true });
+    el.addEventListener("dblclick", take);
+    return () => {
+      kakao.maps.event.removeListener(map, "dragstart", take);
+      el.removeEventListener("wheel", take);
+      el.removeEventListener("dblclick", take);
+    };
+  }, [map, isCourseList]);
+
+  useEffect(() => {
+    if (!map) return;
+    // 자동 맞춤 상태면 되돌아갈 '사용자 화면'이란 게 없다.
+    if (!userMovedMap) userViewRef.current = null;
+
+    if (zoomedCourseId != null) {
+      // 확대하기 전에 사용자가 보던 화면을 담아둔다. 카드를 옮겨 다녀도 처음 것만 유지해,
+      // 마지막에 마우스를 떼면 확대를 시작하기 전 화면으로 정확히 돌아간다.
+      if (userMovedMap && !userViewRef.current) {
+        userViewRef.current = { center: map.getCenter(), level: map.getLevel() };
+      }
+      fitToCourse();
+      return;
+    }
+
+    // 확대 종료 — 사용자가 만들어둔 화면이 있으면 전체 뷰가 아니라 그리로 돌아간다.
+    const saved = userViewRef.current;
+    if (saved) {
+      userViewRef.current = null;
+      map.setLevel(saved.level);
+      map.setCenter(saved.center);
+      return;
+    }
+    // 사용자가 지도를 옮겨만 두고 확대를 쓴 적이 없다면 그 화면을 그대로 존중한다.
+    if (userMovedMap) return;
     fitToCourse();
-  }, [fitToCourse]);
+  }, [fitToCourse, map, zoomedCourseId, userMovedMap]);
+
+  // '결과 전체 보기' — 사용자가 만든 화면을 버리고 자동 맞춤으로 돌아간다.
+  // 켜고 끄는 모드가 아니라 누르면 끝나는 일회성 동작이라, 사용자가 기억할 상태가 없다.
+  const resetMapView = () => {
+    userViewRef.current = null;
+    setUserMovedMap(false);
+  };
+
+  // 겹친 마커를 눌렀을 때 — 어느 코스인지 특정할 수 없으니 상세로 보내는 대신,
+  // 그 시작점들이 갈라져 보일 만큼 지도를 확대한다. 갈라지고 나면 평소처럼 하나씩 누를 수 있다.
+  // 되돌아가는 길은 '결과 전체 보기' 버튼이 이미 맡고 있다.
+  const separateGroup = (ids: number[]) => {
+    if (!map) return;
+    const starts = ids.flatMap((id) => {
+      const start = courses.find((c) => c.id === id)?.points[0];
+      return start ? [start] : [];
+    });
+    if (starts.length < 2) return;
+    // 들머리가 완전히 같으면(본코스 ↔ 우회로) 아무리 확대해도 갈라지지 않는다. 그대로 둔다.
+    const spread = starts.some((p) => p.lat !== starts[0].lat || p.lng !== starts[0].lng);
+    if (!spread) return;
+
+    // 지금 화면에서 가장 먼 두 시작점 간격을 재서, 목표 간격이 될 만큼만 확대한다.
+    // 줌 한 단계마다 화면 간격이 두 배가 되므로 필요한 단계 수는 log2로 나온다.
+    // setBounds로 맞추면 좌표가 붙어 있을수록 골목 단위까지 파고들어 맥락을 잃는다.
+    const projection = map.getProjection();
+    const points = starts.map((p) => projection.pointFromCoords(new kakao.maps.LatLng(p.lat, p.lng)));
+    let gap = 0;
+    for (let i = 0; i < points.length; i++) {
+      for (let j = i + 1; j < points.length; j++) {
+        gap = Math.max(gap, Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y));
+      }
+    }
+    // gap이 0이면 화면상 1픽셀도 안 되게 붙어 있다는 뜻(좌표는 다르다) — 최대치로 파고든다.
+    const steps = gap > 0 ? Math.ceil(Math.log2(SEPARATED_TARGET_PX / gap)) : SEPARATE_MAX_STEPS;
+
+    // 사용자가 만든 화면으로 표시해 둬야 자동 맞춤이 곧바로 되돌리지 않는다.
+    setUserMovedMap(true);
+    const mid = {
+      lat: starts.reduce((sum, p) => sum + p.lat, 0) / starts.length,
+      lng: starts.reduce((sum, p) => sum + p.lng, 0) / starts.length,
+    };
+    map.setCenter(new kakao.maps.LatLng(mid.lat, mid.lng));
+    map.setLevel(Math.max(1, map.getLevel() - Math.min(steps, SEPARATE_MAX_STEPS)));
+  };
 
   // 리사이즈 옵저버가 매번 최신 fit을 부르되 옵저버 자체는 재생성되지 않게 참조로 들고 있는다.
   // (시트 펼침/접힘 애니메이션 동안 bottomInset이 연속으로 바뀌므로 의존성으로 걸면 옵저버가 계속 재생성된다)
@@ -339,8 +580,6 @@ export function KakaoMap({
     panToVisibleCenter(spot.lat, spot.lng);
   }, [map, selectedSpotId, nearbySpots, panToVisibleCenter]);
 
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-
   // 카카오맵 SDK는 컨테이너 크기를 마운트 시점 기준으로 캐싱한다.
   // flex/grid 레이아웃에서는 마운트 직후엔 아직 최종 크기가 확정 안 된 경우가 있어서,
   // 이때 마커의 클릭 판정 좌표가 실제 보이는 위치와 어긋난다(시각적으로는 멀쩡해 보임).
@@ -381,7 +620,7 @@ export function KakaoMap({
       } else {
         const size = 22;
         result[spot.id] = {
-          src: circleImageSrc(isDimmed ? NEARBY_MARKER_COLOR_DIMMED : NEARBY_MARKER_COLOR, size),
+          src: circleImageSrc(isDimmed ? DIMMED_ACCENT : NEARBY_MARKER_COLOR, size),
           size: [size, size],
           offset: [size / 2, size / 2], // 원의 중심이 좌표를 가리키게
         };
@@ -389,6 +628,70 @@ export function KakaoMap({
     }
     return result;
   }, [nearbySpots, selectedSpotId, sdkReady]);
+
+  const activeIdSet = useMemo(() => new Set(activeCourseIds), [activeCourseIds]);
+  const hasActiveCourse = courses.some((c) => activeIdSet.has(c.id));
+
+  // 겹침 판정이 줌에 좌우되므로 레벨을 상태로 들고 있는다(아래 markerGroups 재계산용).
+  const [zoomLevel, setZoomLevel] = useState<number | null>(null);
+  useEffect(() => {
+    if (!map) return;
+    const sync = () => setZoomLevel(map.getLevel());
+    sync();
+    kakao.maps.event.addListener(map, "zoom_changed", sync);
+    return () => kakao.maps.event.removeListener(map, "zoom_changed", sync);
+  }, [map]);
+
+  // 시작점이 화면에서 포개지는 코스들을 라벨 하나로 묶는다(혼자면 1개짜리 그룹).
+  // 겹친 자리에 라벨을 그대로 쌓으면 맨 위 하나만 보여서 몇 개가 있는지 알 수 없다.
+  // 하나만 그리고 개수를 적으면 지도만 봐도 드러난다.
+  //
+  // 판정은 지금 줌에서의 화면 픽셀로 한다(COINCIDENT_START_PX). pointFromCoords는 현재 줌의
+  // 픽셀 평면 좌표라 지도를 끌어도 값이 변하지 않고, 줌이 바뀔 때만 다시 계산하면 된다.
+  const markerGroups = useMemo(() => {
+    // 줌이 정해져야(=지도가 준비돼야) 픽셀 간격을 잴 수 있다.
+    // 그 전에는 각자 혼자인 것으로 둬 클릭을 막지 않는다.
+    // getProjection()은 매번 같은 객체를 돌려주므로 재계산 트리거는 zoomLevel이 맡는다.
+    const projection = map && zoomLevel != null ? map.getProjection() : null;
+    const placed: { course: CourseMapItem; start: LatLng; at: kakao.maps.Point | null }[] = [];
+    for (const course of courses) {
+      const start = course.points[0];
+      if (!start) continue; // 좌표가 없는 코스는 찍을 자리가 없다
+      placed.push({
+        course,
+        start,
+        at: projection
+          ? projection.pointFromCoords(new kakao.maps.LatLng(start.lat, start.lng))
+          : null,
+      });
+    }
+
+    // 앞선 코스가 이미 데려간 코스는 건너뛴다 — 한 코스가 두 마커에 중복으로 세어지지 않게.
+    const taken = new Set<number>();
+    const groups: { lead: CourseMapItem; start: LatLng; ids: number[] }[] = [];
+    for (const p of placed) {
+      if (taken.has(p.course.id)) continue;
+      const ids = p.at
+        ? placed
+            .filter(
+              (o) =>
+                o.at &&
+                !taken.has(o.course.id) &&
+                Math.hypot(p.at!.x - o.at.x, p.at!.y - o.at.y) <= COINCIDENT_START_PX,
+            )
+            .map((o) => o.course.id)
+        : [p.course.id];
+      ids.forEach((id) => taken.add(id));
+      groups.push({ lead: p.course, start: p.start, ids });
+    }
+    return groups;
+  }, [courses, map, zoomLevel]);
+
+  // 목록 코스의 경로를 미리 세그먼트로 쪼개 둔다 (상세 지도와 같은 방식으로 gap에서 끊는다).
+  const courseSegments = useMemo(
+    () => courses.map((c) => ({ id: c.id, segments: splitIntoSegments(c.points) })),
+    [courses],
+  );
 
   if (!sdkReady) return null;
 
@@ -418,6 +721,109 @@ export function KakaoMap({
             />
           </>
         )}
+        {/* 목록 화면: 시작점 라벨 + 코스 경로.
+            선은 두 단계로 나눈다 — 짚지 않은 코스는 옅게 깔아 지형만 짐작하게 두고, 짚은 코스만
+            테두리를 둘러 앞으로 꺼낸다. 예전처럼 6개를 다 진하게 그리면 이어지는 코스(남파랑길
+            2~7코스처럼)에서 해안선이 선 덩어리로 뭉쳐 뭐가 뭔지 안 읽힌다.
+            쌓임 순서는 zIndex로 못박는다(옅은 선 1·테두리 2·짚은 선 4). 카카오는 오버레이를 만든
+            순서대로 쌓는데, 활성 코스가 바뀌면 React가 폴리라인을 지웠다 다시 만들면서 순서가 뒤바뀐다. */}
+        {courses.length > 0 && (
+          <>
+            {/* 짚지 않은 코스는 어디에 뭐가 있는지만 어렴풋이 보이게 깔아둔다.
+                흰 테두리(casing)는 일부러 빼고 옅은 선만 쓴다 — 테두리는 선을 배경에서 띄우려고
+                넣은 것이라, 물러나 있어야 할 선에 두르면 오히려 존재감이 살아난다. */}
+            {courseSegments
+              .filter(({ id }) => !activeIdSet.has(id))
+              .flatMap(({ id, segments }) =>
+                segments.map((seg, i) => (
+                  <Polyline
+                    key={`idle-${id}-${i}`}
+                    path={seg}
+                    // 가늘게(2.5) 깔고 투명도로 눌러 둔다. 굵기를 유지한 채 투명도만 낮추면
+                    // 흐릿하고 지저분해 보이고, 반대로 진하게 두면 선끼리 뭉친다.
+                    strokeWeight={2.5}
+                    strokeColor={ACCENT}
+                    strokeOpacity={0.65}
+                    zIndex={1}
+                    // 옅은 선도 짚을 수 있다 — 시작점이 포개져 라벨로는 못 고르는 코스를
+                    // 선으로는 하나씩 짚어 고를 수 있다.
+                    onMouseover={() => onCourseLineHover?.(id)}
+                    onMouseout={() => {
+                      if (activeIdSet.has(id)) onCourseLineHover?.(null);
+                    }}
+                    onClick={() => onCourseClick?.(id)}
+                  />
+                )),
+              )}
+
+            {/* 짚은 코스는 흰 테두리를 깔고 그 위에 보라선을 얹는다. 카카오 기본 지도는 주황 도로·
+                파란 물길이 촘촘해서, 테두리 없는 보라선은 배경에 묻혀 안 보인다. */}
+            {courseSegments
+              .filter(({ id }) => activeIdSet.has(id))
+              .flatMap(({ id, segments }) =>
+                segments.map((seg, i) => (
+                  <Polyline
+                    key={`case-${id}-${i}`}
+                    path={seg}
+                    strokeWeight={11}
+                    strokeColor="#ffffff"
+                    strokeOpacity={1}
+                    zIndex={2}
+                  />
+                )),
+              )}
+            {courseSegments
+              .filter(({ id }) => activeIdSet.has(id))
+              .flatMap(({ id, segments }) =>
+                segments.map((seg, i) => (
+                  <Polyline
+                    key={`on-${id}-${i}`}
+                    path={seg}
+                    strokeWeight={6}
+                    strokeColor={ACCENT}
+                    strokeOpacity={1}
+                    zIndex={4}
+                    // 시작점이 포개진 라벨을 짚으면 그 자리의 코스 선이 함께 뜬다.
+                    // 선은 갈라지므로 그중 하나를 짚으면 코스가 하나로 좁혀진다.
+                    onMouseover={() => onCourseLineHover?.(id)}
+                    onMouseout={() => {
+                      if (activeIdSet.has(id)) onCourseLineHover?.(null);
+                    }}
+                    onClick={() => onCourseClick?.(id)}
+                  />
+                )),
+              )}
+
+            {markerGroups.map(({ lead, start, ids }) => {
+              const isActive = ids.some((id) => activeIdSet.has(id));
+              // 카드를 짚어 코스가 하나로 정해지고 지도가 그리로 확대된 동안에는 개수 대신 거리를 적는다.
+              // 그 순간 이 라벨이 할 말은 '여기 여러 개 있다'가 아니라 '짚은 그 코스가 여기'다.
+              // (라벨 자신을 짚었을 땐 개수를 그대로 둔다 — 그때야말로 몇 개인지 알아야 하고,
+              //  눌렀을 때 갈라지는 동작과도 맞아야 한다)
+              const pinned = zoomedCourseId != null && ids.includes(zoomedCourseId);
+              const grouped = ids.length > 1 && !pinned;
+              return (
+                <CourseLabelMarker
+                  // 줌이 바뀌어 묶음이 달라지면 새로 그린다.
+                  key={ids.join(",")}
+                  position={start}
+                  text={grouped ? `코스 ${ids.length}개` : `${lead.distanceKm.toFixed(1)}km`}
+                  title={ids.length > 1 ? `${lead.title} 외 ${ids.length - 1}개` : lead.title}
+                  state={isActive ? "active" : hasActiveCourse ? "dimmed" : "normal"}
+                  // 하나로 정해질 때만 상세로 보낸다. 묶여 있으면 갈라져 보이게 확대해 준다.
+                  onClick={() => (ids.length === 1 ? onCourseClick?.(ids[0]) : separateGroup(ids))}
+                  onMouseOver={() => onCourseMarkerHover?.(ids)}
+                  // 라벨이 붙어 있으면 다음 라벨의 mouseover가 먼저 오고 이 라벨의 mouseout이
+                  // 뒤따를 수 있다. 그때 무조건 지우면 방금 켠 강조가 꺼진다.
+                  onMouseOut={() => {
+                    if (isActive) onCourseMarkerHover?.([]);
+                  }}
+                />
+              );
+            })}
+          </>
+        )}
+
         {nearbySpots.length > 0 && (
           <MarkerClusterer
             key={nearbySpots.map((s) => s.id).join(",")}
@@ -487,6 +893,20 @@ export function KakaoMap({
         {currentLocation && <CurrentLocationMarker point={currentLocation} />}
         {!currentLocation && previewLocation && <CurrentLocationMarker point={previewLocation} />}
       </Map>
+
+      {/* 지도를 직접 움직여 자동 맞춤에서 벗어났을 때만 나타난다.
+          이게 없으면 필터를 바꾸기 전엔 목록의 코스들을 한눈에 다시 볼 방법이 없다.
+          맞추는 대상은 검색 결과 전체(수백 개)가 아니라 지금 목록에 있는 코스들이므로,
+          오해가 없게 개수를 그대로 적는다. */}
+      {isCourseList && userMovedMap && (
+        <button
+          type="button"
+          onClick={resetMapView}
+          className="absolute bottom-4 right-4 z-10 rounded-full bg-white px-4 py-2.5 text-[13px] font-bold text-ink shadow-[0_2px_8px_rgba(0,0,0,0.25)] transition-transform active:scale-95"
+        >
+          {courses.length}개 코스 모두 보기
+        </button>
+      )}
 
       {/* 현재 위치 버튼 — 바텀시트에 가리지 않게 bottomInset(모바일 시트 높이)만큼 위로 띄운다.
           데스크톱은 bottomInset=0이라 지도 우하단에 붙는다. */}

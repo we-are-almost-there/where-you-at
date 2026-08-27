@@ -5,9 +5,13 @@ interface Props {
   courses: Course[];
   routeType: RouteType;
   onSelect?: (course: Course) => void;
+  /** hover/포커스된 코스 id (벗어나면 null) — 지도 강조용. */
+  onHover?: (id: number | null) => void;
+  /** 지도에서 짚고 있는 코스 id들 — 카드 쪽을 되짚어 준다. 시작점이 포개진 마커면 2개 이상이다. */
+  activeIds?: number[];
 }
 
-export function CourseList({ courses, routeType, onSelect }: Props) {
+export function CourseList({ courses, routeType, onSelect, onHover, activeIds }: Props) {
   if (courses.length === 0) {
     return (
       <p className="py-16 text-center text-[14px] text-caption">
@@ -25,6 +29,8 @@ export function CourseList({ courses, routeType, onSelect }: Props) {
           course={course}
           routeType={routeType}
           onSelect={onSelect}
+          onHoverChange={(hovered) => onHover?.(hovered ? course.id : null)}
+          active={activeIds?.includes(course.id) ?? false}
         />
       ))}
     </div>

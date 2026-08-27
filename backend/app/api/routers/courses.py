@@ -91,6 +91,7 @@ def get_course_gpx(id: int, route_type: str = "trail", conn=Depends(get_db)):
     return {"course_id": id, "route_type": route_type, "waypoints": waypoints}
 
 
+
 @router.get("/{id}/nearby", response_model=NearbyListResponse)
 def get_course_nearby(
     id: int,
@@ -101,5 +102,9 @@ def get_course_nearby(
     conn=Depends(get_db),
 ):
     """코스 주변 시설 조회. (구 nearby.py에서 이관)"""
+    if not crud.course_exists(conn, id):
+        raise HTTPException(status_code=404, detail="Course not found")
+
     total, spots = nearby_crud.list_nearby_spots(conn, id, category, route_type, page, size)
     return {"total_count": total, "spots": spots}
+

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams} from "react-router";
 import type { SupportListItem } from "../support.types";
 import { fetchSupportList } from "../supportApi";
+import { SupportCalculator } from "./SupportCalculator";
 
 type Props = {
   regionCode: string;
@@ -87,13 +88,16 @@ export function SupportRegionView({ regionCode }: Props) {
         </ul>
       </section>
 
-      {/* ② 지출 입력 + ③ 영수증 — 다음 단계에서 계산기 컴포넌트로 */}
-      <section>
-        <h3 className="mb-2 text-sm font-extrabold text-indigo-900">예상 환급 계산</h3>
-        <div className="rounded-xl border border-dashed border-violet-200 p-4 text-center text-sm text-slate-400">
-          환급 계산기 자리 (다음 단계)
-        </div>
-      </section>
+      {/* ② 지출 입력 + ③ 영수증 — 환급형 제도가 있을 때만 */}
+      {items.some((it) => it.refund_type === "정률" || it.refund_type === "정액") && (
+        <section>
+          <h3 className="mb-2 text-sm font-extrabold text-indigo-900">예상 환급 계산</h3>
+          {/* 지도가 옆에 떠 있어 패널을 연 채로 다른 지역을 바로 누를 수 있다. 그때 region만
+              바뀌고 이 뷰는 언마운트되지 않아, key가 없으면 이전 지역의 입력값과 영수증이
+              그대로 남는다. */}
+          <SupportCalculator key={regionCode} regionCode={regionCode} />
+        </section>
+      )}
 
       {/* ④ 코스 링크 */}
       <Link
