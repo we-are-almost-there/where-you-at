@@ -4,7 +4,7 @@ import SidebarDrawer from "./SidebarDrawer";
 
 interface NavItem {
   label: string;
-  to: string | null;
+  to: string | null; // null이면 비활성화(준비중)
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -12,7 +12,6 @@ const NAV_ITEMS: NavItem[] = [
   { label: "코스 탐색", to: "/courses" },
   { label: "대회 행사", to: "/races" },
   { label: "방문 혜택", to: "/support" },
-  // 아직 라우트 없음(자전거 대여소 기능 미구현) — to: null이면 비활성 처리됨
   { label: "자전거 대여", to: null },
 ];
 
@@ -60,11 +59,12 @@ export default function AppHeader({
   const navigate = useNavigate();
   const isWide = variant === "wide";
 
-  // 좌우 패딩: wide는 캐러셀과 같은 clamp 공식, compact(코스 탐색/코스 상세 좌측 패널)는
-  // 화면 폭이 아니라 패널 폭(예: md:basis-[46%])만큼만 실제로 쓸 수 있어서 vw 기반 clamp가
-  // 잘 안 맞는다(패널이 좁아도 vw는 전체 화면 기준이라 여유가 과하게 잡힘) — 그냥 작은 고정값
+  // 좌우 패딩: wide는 본문(max-w-6xl = 72rem)이 가운데 정렬됐을 때의 여백과 정확히
+  // 같은 수식(BannerCarousel과 동일)을 써서, 로고 시작·CTA 끝이 배너·본문 섹션들의
+  // 좌우 끝과 한 줄에 맞게 한다. compact(코스 탐색/코스 상세 좌측 패널)는 화면 폭이
+  // 아니라 패널 폭만큼만 쓸 수 있어서 이 수식이 안 맞는다 — 계속 작은 고정값 유지.
   const sidePadding = isWide
-    ? "px-[clamp(1rem,6vw,8rem)]"
+    ? "px-[max(1rem,calc((100%-72rem)/2+1rem))]"
     : "px-3";
 
   return (
@@ -101,10 +101,8 @@ export default function AppHeader({
             gap도 더 좁은 clamp)으로 별도 처리. nav↔햄버거 전환 시점도 위 이유로 wide/compact가
             다르다(md vs lg, Tailwind 표준 브레이크포인트) */}
           <nav
-            className={`hidden min-w-0 flex-1 items-center gap-[clamp(0.5rem,1.5vw,1.5rem)] ${
-              isWide
-                ? "md:flex ml-[clamp(1rem,4vw,4rem)]"
-                : "lg:flex ml-4"
+            className={`hidden min-w-0 flex-1 items-center justify-center gap-[clamp(1rem,4vw,7rem)] ${
+              isWide ? "md:flex px-[clamp(1rem,4vw,2rem)]" : "lg:flex px-4"
             }`}
           >
             {NAV_ITEMS.map((item) => {

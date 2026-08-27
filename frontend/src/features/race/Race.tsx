@@ -43,10 +43,13 @@ export default function Race() {
   return (
     <>
       <AppHeader variant="wide" />
-      {/* 예전엔 "가운데 정렬 컨테이너 제거 → 전체 폭 사용"으로 갔었지만,
-        넓은 화면에서 콘텐츠가 왼쪽에만 쏠려 보이는 문제로 다시 max-w 컨테이너를 추가함.
-        헤더(AppHeader wide variant)의 md:px-24와 리듬을 맞춤. */}
-      <div className="mx-auto w-full max-w-[1200px] px-6 pt-4 pb-4">
+      {/* 콘텐츠가 화면 전체 폭을 그대로 쓰면 넓은 화면에서 왼쪽에만 쏠려 보여 max-w로 가운데 정렬한다.
+        폭은 max-w-6xl(72rem)로 — AppHeader.tsx(wide variant)의 좌우 padding 계산식과
+        Home.tsx의 BannerCarousel(banners.tsx)이 쓰는 max-w-6xl 기준을 그대로 따른 것.
+        기준이 다르면 페이지를 옮길 때마다 헤더·본문 좌우 끝이 미묘하게 어긋나 보인다
+        (page navigation 시 스크롤바 유무로 인한 오차는 index.css의
+        scrollbar-gutter: stable로 별도 처리). */}
+      <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-4">
         {/* selectedRace가 없으면(좌측 블록만 있을 때) md:justify-center로 그 블록을
           컨테이너 가운데로. 상세가 열리면 좌+우 두 블록이 나란히 있어야 하니 기본 정렬로 되돌림. */}
         <div className={`flex flex-col gap-4 md:flex-row ${!selectedRace ? "md:justify-center" : ""}`}>
