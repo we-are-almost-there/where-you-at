@@ -146,6 +146,13 @@ export function CourseDetail() {
   const [selectedNearbySpotId, setSelectedNearbySpotId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // CourseExplore와 동일한 이유(풀스크린 지도 레이아웃) — html의 전역
+  // scrollbar-gutter: stable을 이 페이지에서만 끈다.
+  useEffect(() => {
+    document.documentElement.classList.add("no-scrollbar-gutter");
+    return () => document.documentElement.classList.remove("no-scrollbar-gutter");
+  }, []);
+
   useEffect(() => {
     if (!validId) return; // 잘못된 id는 아래 렌더에서 파생 처리
     let cancelled = false;

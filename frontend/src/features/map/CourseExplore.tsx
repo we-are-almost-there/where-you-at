@@ -30,6 +30,14 @@ export function CourseExplore() {
   const [regionOptions, setRegionOptions] = useState<RegionSelectItem[]>([]);
   const listScrollRef = useRef<HTMLDivElement>(null);
 
+  // 이 페이지는 문서 스크롤 없는 풀스크린 지도 레이아웃(overflow-hidden + h-dvh)이라
+  // html의 전역 scrollbar-gutter: stable이 불필요한 빈 공간을 만든다. 진입 시 껐다가
+  // 나갈 때 되돌린다.
+  useEffect(() => {
+    document.documentElement.classList.add("no-scrollbar-gutter");
+    return () => document.documentElement.classList.remove("no-scrollbar-gutter");
+  }, []);
+  
   // 지역 필터 옵션 로드. 코스와 달리 재조회 트리거가 없으므로, 마운트 시점에
   // 백엔드가 아직 안 떠 있으면 영구히 빈 필터가 된다. 실패 시 짧게 재시도해 자가 복구한다.
   useEffect(() => {
