@@ -167,7 +167,8 @@ DETAIL_TABLE_QUERY = {
 
 # ── 수집 ─────────────────────────────────────────────────────────────────────
 
-def collect_by_content_type(conn, content_type_id: int):
+def collect_by_content_type(conn, content_type_id: int) -> bool:
+    """콘텐츠타입 하나를 수집한다. 할당량 초과로 중단되면 False, 정상 완료면 True."""
     ctype_str = str(content_type_id)
     detail_table = DETAIL_TABLE_MAP[ctype_str]
     print(f"\n[INFO] 콘텐츠타입 {content_type_id} 수집 시작 → {detail_table}")
@@ -180,6 +181,11 @@ def collect_by_content_type(conn, content_type_id: int):
     while True:
         try:
             items, total_count = fetch_area_based_list(content_type_id, page_no, num_of_rows)
+        except RuntimeError as e:
+            if "API_QUOTA_EXCEEDED" in str(e):
+                print(f"[ERROR] API 할당량 초과 — 콘텐츠타입 {content_type_id} page {page_no}에서 중단")
+                return False
+            raise
         except Exception as e:
             print(f"[ERROR] areaBasedList 실패 (page {page_no}): {e}")
             break
@@ -240,6 +246,7 @@ def collect_by_content_type(conn, content_type_id: int):
         time.sleep(0.1)
 
     print(f"[INFO] 콘텐츠타입 {content_type_id} 완료 — {total_collected}건")
+    return True
 
 
 def fill_missing_details(conn):
@@ -281,6 +288,9 @@ def fill_missing_details(conn):
                             UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
                         return False
                     elif "RATE_LIMITED" in str(e):
+                        if retry == 4:
+                            print(f"[ERROR] 429 5회 소진 content_id={content_id} — 이번 세션 보류, 다음 재수집 때 다시 시도")
+                            break
                         wait = 10.0 * (retry + 1)
                         print(f"[WARN] 429 — {wait:.0f}초 대기 후 재시도 ({retry+1}/5)")
                         time.sleep(wait)
@@ -315,7 +325,9 @@ def main():
         return
     try:
         for ct in CONTENT_TYPES:
-            collect_by_content_type(conn, ct)
+            if not collect_by_content_type(conn, ct):
+                print("[ERROR] API 할당량 초과 — 남은 콘텐츠타입 수집을 중단합니다.")
+                break
     finally:
         conn.close()
     print("\n[INFO] 전체 수집 완료")
