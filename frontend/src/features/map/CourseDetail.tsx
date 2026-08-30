@@ -121,12 +121,17 @@ export function CourseDetail() {
   const validId = Number.isFinite(courseId);
   const {
     currentLocation,
-    isTracking,
+    status: trackingStatus,
     error: trackingError,
     wakeLockFailed,
     startTracking,
+    pause,
+    resume,
     stopTracking,
   } = useCourseTracking();
+  // 진행률·이탈 감지·화면 안내는 "실제로 따라가는 중"에만 돌아야 한다.
+  // 일시정지는 이 조건에서 빠지므로 아래 분기들은 그대로 두면 된다.
+  const isTracking = trackingStatus === "tracking";
   const [waypoints, setWaypoints] = useState<LatLng[]>([]);
   const [startAddress, endAddress] = useEndpointAddresses(waypoints);
   const [direction, setDirection] = useState<Direction>("forward"); // 기본 정방향, 토글로 역방향
@@ -208,7 +213,8 @@ export function CourseDetail() {
     }
   }
 
-  // 추적이 멈추면(종료·주변 탭 이동·권한 거부) 이탈 상태를 정리해 배너·유도선이 남지 않게 한다.
+  // 추적이 멈추면(종료·일시정지·권한 거부) 이탈 상태를 정리해 배너·유도선이 남지 않게 한다.
+  // 일시정지도 포함하는 이유: 위치가 더 안 들어오므로 남겨두면 낡은 거리를 계속 띄우게 된다.
   if (!isTracking && (offCourseMeters != null || offCourseGuidePoint != null)) {
     setOffCourseMeters(null);
     setOffCourseGuidePoint(null);
@@ -246,7 +252,8 @@ export function CourseDetail() {
   };
 
   const changeInfoTab = (next: "course" | "nearby") => {
-    if (next === "nearby") stopTracking();
+    // 주변 정보를 보는 동안은 끝낸 게 아니라 잠시 멈춘 것이다. 돌아와서 재개할 수 있게 기록을 남긴다.
+    if (next === "nearby") pause();
     const nextParams = new URLSearchParams(searchParams);
     setInfoTabParam(nextParams, next);
     setSearchParams(nextParams, { replace: true });
@@ -273,8 +280,8 @@ export function CourseDetail() {
     startTracking();
   };
 
-  // 종료 버튼으로 끝냈을 때만 기록 카드를 띄운다.
-  // 주변 탭 이동·"너무 멂" 안내로도 추적이 멈추지만, 그건 따라가기를 마친 게 아니다.
+  // 종료 버튼으로 끝냈을 때만 기록 카드를 띄운다(일시정지 상태에서 종료해도 마찬가지).
+  // "너무 멂" 안내로도 추적이 멈추지만, 그건 따라가기를 마친 게 아니다.
   const handleStopTracking = () => {
     const summary = stopTracking();
     if (summary && summary.distanceKm >= MIN_RECORD_KM) setRecord(summary);
@@ -347,9 +354,11 @@ export function CourseDetail() {
   // GPX 총합을 쓰면 0%일 때 "18.7km 남음"으로 떠서 코스 카드의 "19.0km"와 어긋나 보인다.
   // 공식 거리에 비율을 곱하면 0%=19.0km, 100%=0km로 눈에 보이는 값끼리 항상 맞는다.
   // 코스에서 너무 멀어 안내가 뜬 상태면 진행률(0%)을 띄우지 않는다 — 시작하지 못한 것이라서.
+  // 일시정지 중에도 통계는 남긴다 — 어디까지 왔는지가 사라지면 재개할지 종료할지 판단할 수 없다.
   const showStats =
-    isTracking && currentLocation != null && waypoints.length > 0 && tooFarMeters == null;
-  // 이탈 배너·유도선은 실제 따라가는 중이고 이탈 판정이 선 경우에만.
+    trackingStatus !== "idle" && currentLocation != null && waypoints.length > 0 && tooFarMeters == null;
+  // 이탈 배너·유도선은 실제 따라가는 중이고 이탈 판정이 선 경우에만
+  // (일시정지 진입 시 위쪽에서 offCourseMeters를 비우므로 여기서 따로 막지 않는다).
   const showOffCourse = showStats && offCourseMeters != null;
   const remainingRatio = 1 - progress / 100;
   const remainingKm = (activeRoute?.distance ?? 0) * remainingRatio;
@@ -366,7 +375,7 @@ export function CourseDetail() {
     // 모바일: 지도 풀블리드 + 하단 바텀시트 / md+: 좌 패널 + 우 지도
     <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-white md:flex-row">
       {/* 코스에서 너무 멀 때 안내 (지도·시트 위에 뜨는 팝업) */}
-      {/* isTracking을 함께 보는 이유: 종료 버튼·주변 탭 이동으로 추적이 멈추면 안내도 닫혀야 한다 */}
+      {/* isTracking을 함께 보는 이유: 종료 버튼·일시정지로 추적이 멈추면 안내도 닫혀야 한다 */}
       {tooFarMeters != null && isTracking && (
         <div
           role="alertdialog"
@@ -629,6 +638,25 @@ export function CourseDetail() {
                 <TrackingStats progress={progress} remainingKm={remainingKm} eta={eta} />
               )}
 
+              {/* 일시정지 중에는 재개와 종료를 함께 내놓는다 — 둘 다 여기서만 고를 수 있다 */}
+              {trackingStatus === "paused" ? (
+                <div className={`flex gap-2 ${showStats ? "mt-3" : ""}`}>
+                  <button
+                    type="button"
+                    onClick={handleStopTracking}
+                    className="flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] border border-accent bg-white text-[15px] font-bold text-accent"
+                  >
+                    ■ 종료
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resume}
+                    className="flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] bg-accent text-[15px] font-bold text-lavender"
+                  >
+                    ▶ 다시 따라가기
+                  </button>
+                </div>
+              ) : (
               <button
                 type="button"
                 onClick={isTracking ? handleStopTracking : handleStartTracking}
@@ -655,6 +683,7 @@ export function CourseDetail() {
                     : "현재 위치 찾는 중…"
                   : `${activeRoute ? MODE_ICON[activeRoute.route_type] : "🚶"} 따라가기`}
               </button>
+              )}
             </div>
            )}
           </>
