@@ -5,6 +5,8 @@ import type { LatLng } from "./types";
 export interface RecordPoint extends LatLng {
   accuracy: number;
   timestamp: number;
+  /** 일시정지 후 재개해 새로 시작한 구간의 첫 표본. 앞 표본과 이어 붙이지 않는다. */
+  segmentStart?: boolean;
 }
 
 /** 따라가기 한 세션의 기록. 서버에 저장하지 않고 종료 화면에서만 쓴다. */
@@ -35,6 +37,12 @@ export function accumulateDistanceMeters(points: RecordPoint[]): number {
 
   for (const point of points) {
     if (point.accuracy > MAX_ACCURACY_M) continue;
+    // 재개 직후 첫 표본은 기준점만 새로 잡고 거리를 더하지 않는다.
+    // 정지가 길면 그사이 이동한 거리가 낮은 속도로 계산돼 아래 MAX_SPEED_MPS 필터를 그대로 통과한다.
+    if (point.segmentStart) {
+      prev = point;
+      continue;
+    }
     if (!prev) {
       prev = point;
       continue;
@@ -55,9 +63,13 @@ export function accumulateDistanceMeters(points: RecordPoint[]): number {
   return total;
 }
 
-export function summarize(points: RecordPoint[], startedAt: number, endedAt: number): TrackingRecord {
+/**
+ * 세션을 요약한다. durationMs는 벽시계가 아니라 "일시정지를 뺀 활동 시간"이라
+ * 호출자가 구간별로 누적해 넘긴다 — 여기서 시작/종료 시각을 빼면 정지 시간이 섞인다.
+ */
+export function summarize(points: RecordPoint[], activeMs: number): TrackingRecord {
   const distanceKm = accumulateDistanceMeters(points) / 1000;
-  const durationMs = Math.max(0, endedAt - startedAt);
+  const durationMs = Math.max(0, activeMs);
   return {
     distanceKm,
     durationMs,
