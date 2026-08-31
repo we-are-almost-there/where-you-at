@@ -162,8 +162,9 @@ export function SupportRegionView({ regionCode }: Props) {
       )}
 
       {/* ④ 코스 링크 */}
+      {/* "/"는 홈이라 region을 읽지 않는다. 지역 필터를 받는 쪽은 /courses다. */}
       <Link
-        to={`/?region=${regionCode}`}
+        to={`/courses?region=${regionCode}`}
         className="rounded-lg bg-accent py-3.5 text-center text-[14px] font-bold text-white transition-opacity hover:opacity-90"
       >
         이 지역 코스 보러가기 →
