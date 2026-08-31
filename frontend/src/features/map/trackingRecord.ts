@@ -36,13 +36,16 @@ export function accumulateDistanceMeters(points: RecordPoint[]): number {
   let prev: RecordPoint | null = null;
 
   for (const point of points) {
-    if (point.accuracy > MAX_ACCURACY_M) continue;
     // 재개 직후 첫 표본은 기준점만 새로 잡고 거리를 더하지 않는다.
     // 정지가 길면 그사이 이동한 거리가 낮은 속도로 계산돼 아래 MAX_SPEED_MPS 필터를 그대로 통과한다.
+    // 정확도 검사보다 먼저 본다 — 이 표본을 버리더라도 구간 경계는 남겨야 한다.
+    // 재개 직후 첫 표본은 대개 기지국 기반이라 정확도가 나쁜데, 여기서 통째로 버리면
+    // 기준점이 정지 이전 지점에 남아 정지 중 이동이 다시 거리에 섞인다.
     if (point.segmentStart) {
-      prev = point;
+      prev = point.accuracy > MAX_ACCURACY_M ? null : point;
       continue;
     }
+    if (point.accuracy > MAX_ACCURACY_M) continue;
     if (!prev) {
       prev = point;
       continue;
