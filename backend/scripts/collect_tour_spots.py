@@ -230,7 +230,8 @@ def collect_by_content_type(conn, content_type_id: int) -> bool:
             except Exception as e:
                 # 429(레이트 리밋)·기타 에러는 스킵하고 계속 진행
                 # collect_by_content_type은 tour_spot 공통 데이터 수집이 주목적이므로
-                # 상세 테이블 누락분은 --fill-details(fill_missing_details)로 재수집
+                # 상세 테이블 누락분은 --fill-details(fill_missing_details)로 재시도/quota
+                # 구분까지 포함해 재수집하도록 의도한다.
                 print(f"[WARN] detailIntro 실패 content_id={content_id}: {e}")
 
         upsert_tour_spots(conn, spot_rows)
@@ -295,12 +296,12 @@ def fill_missing_details(conn):
                         print(f"[WARN] 429 — {wait:.0f}초 대기 후 재시도 ({retry+1}/5)")
                         time.sleep(wait)
                     elif "TIMEOUT" in str(e):
+                        if retry == 4:
+                            print(f"[ERROR] 타임아웃 5회 소진 content_id={content_id} — 이번 세션 보류, 다음 재수집 때 다시 시도")
+                            break  # detail_rows에 넣지 않음 → 다음 실행 시 여전히 "누락"으로 잡혀 자동 재시도됨
                         wait = 3.0 * (retry + 1)
                         print(f"[WARN] 타임아웃 — {wait:.0f}초 대기 후 재시도 content_id={content_id} ({retry+1}/5)")
                         time.sleep(wait)
-                        if retry == 4:
-                            print(f"[ERROR] 타임아웃 5회 소진 content_id={content_id} — 이번 세션 보류, 다음 재수집 때 다시 시도")
-                            # break만 하고 detail_rows에 넣지 않음 → 다음 실행 시 여전히 "누락"으로 잡혀 자동 재시도됨
                     else:
                         print(f"[ERROR] detailIntro 실패 content_id={content_id}: {e}")
                         break
@@ -323,14 +324,20 @@ def main():
     conn = get_db_connection()
     if not conn:
         return
+    completed = True
     try:
         for ct in CONTENT_TYPES:
             if not collect_by_content_type(conn, ct):
                 print("[ERROR] API 할당량 초과 — 남은 콘텐츠타입 수집을 중단합니다.")
+                completed = False
                 break
     finally:
         conn.close()
-    print("\n[INFO] 전체 수집 완료")
+
+    if completed:
+        print("\n[INFO] 전체 수집 완료")
+    else:
+        print("\n[INFO] 오늘 수집 세션 종료 (내일 다시 실행하세요)")
 
 
 def main_fill():
