@@ -70,6 +70,18 @@ describe("accumulateDistanceMeters", () => {
     expect(accumulateDistanceMeters([beforePause, afterResume])).toBe(0);
   });
 
+  it("재개 표본의 정확도가 나빠도 일시정지 구간은 끊는다", () => {
+    // 재개 직후 첫 표본은 대개 기지국 기반이라 정확도가 나쁘게 온다.
+    // 이 표본을 정확도만 보고 버리면 구간 경계까지 사라져, 정지 이전 지점과
+    // 재개 이후 표본이 이어지면서 정지 중 이동한 555m가 그대로 더해진다(약 667m).
+    // 표본이 2개뿐이면 나쁜 표본을 버린 뒤 비교 대상이 없어 그냥 0이 나오므로,
+    // 재개 이후 표본을 하나 더 둬야 경계가 유지되는지 드러난다.
+    const beforePause = point(0);
+    const badResume = { ...point(5), timestamp: 1_600_000, segmentStart: true, accuracy: 45 };
+    const next = { ...point(6), timestamp: 1_660_000 };
+    expect(accumulateDistanceMeters([beforePause, badResume, next])).toBe(0);
+  });
+
   it("재개 이후의 이동은 정상적으로 누적한다", () => {
     const resumed = { ...point(5), timestamp: 1_600_000, segmentStart: true };
     const next = { ...point(6), timestamp: 1_660_000 };
