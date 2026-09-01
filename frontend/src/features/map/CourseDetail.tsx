@@ -9,7 +9,7 @@ import { Nearby } from "../nearby";
 import type { NearbyHandle } from "../nearby";
 import type { NearbySpot } from "../nearby/types";
 import { useCourseTracking } from "./useCourseTracking";
-import { WAKE_LOCK_FAILURE_MESSAGE } from "./useWakeLock";
+import { WAKE_LOCK_FAILURE_LINES } from "./useWakeLock";
 import { advanceProgress, distanceToCourse, nearestPointOnCourse, type Direction } from "./courseProgress";
 import { announce, primeSpeech } from "./speech";
 import { useEndpointAddresses } from "./endpointAddress";
@@ -295,11 +295,19 @@ export function CourseDetail() {
     setSearchParams(nextParams, { replace: true });
   };
 
+  // 재개하는 순간 예상 종료 시각의 기준 시각을 다시 잡는다. 멈춘 동안 시계는 흘렀는데
+  // 30초 tick을 기다리면 그때까지 멈추기 직전의 낡은 시각이 남는다.
+  // (남은 거리와 평균 페이스는 정지 중 변한 게 없어 그대로 맞다)
+  const handleResume = () => {
+    resume();
+    setNow(Date.now());
+  };
+
   // 주변 정보 탭에서 재개하면 코스 정보 탭으로 돌아간다.
   // 그 자리에 머물면 모바일에서 추적 중 스크롤 영역이 숨겨져(주변 목록과 탭이 통째로 그 안에 있다)
   // 방금 보던 목록이 사라진다. 재개를 눌렀다는 건 다시 걷겠다는 뜻이기도 하다.
   const resumeFromNearby = () => {
-    resume();
+    handleResume();
     changeInfoTab("course");
   };
 
@@ -691,7 +699,11 @@ export function CourseDetail() {
                 {/* 화면 유지 실패는 추적 자체는 되는 경고라 role="alert" 없이 조용히 알린다 */}
                 {wakeLockFailed && (
                   <p className="mb-2 break-keep text-center text-[13px] leading-relaxed text-caption">
-                    {WAKE_LOCK_FAILURE_MESSAGE}
+                    {WAKE_LOCK_FAILURE_LINES.map((line) => (
+                      <span key={line} className="block">
+                        {line}
+                      </span>
+                    ))}
                   </p>
                 )}
 
@@ -706,7 +718,7 @@ export function CourseDetail() {
 
                 {trackingStatus === "paused" ? (
                   <div className={showStats ? "mt-3" : ""}>
-                    <PausedControls onStop={handleStopTracking} onResume={resume} />
+                    <PausedControls onStop={handleStopTracking} onResume={handleResume} />
                   </div>
                 ) : isTracking && currentLocation ? (
                   // 따라가는 중에는 종료 옆에 일시정지를 함께 둔다. 잠깐 쉬려고 종료를 누르면
