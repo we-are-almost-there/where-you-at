@@ -4,7 +4,7 @@ import SidebarDrawer from "./SidebarDrawer";
 
 interface NavItem {
   label: string;
-  to: string | null;
+  to: string | null; // null이면 비활성화(준비중)
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -42,10 +42,10 @@ type Props = BaseProps & ControlledSidebarProps;
 // 쓰지만, compact(코스 탐색/코스 상세)는 헤더가 좌측 패널(전체 화면의 약 44~46%)
 // 안에서만 렌더된다. 그래서 둘 다 같은 md(768px) "화면" 기준을 쓰면, compact는
 // 실제 사용 가능한 폭이 그 절반도 안 되는데 화면은 768px를 넘었다고 판단해 nav를
-// 보여주려다 잘린다(고객지원·CTA와 자전거 대여 항목이 겹침). 실측 결과 925px 근처가
-// 경계였으나 여유가 0에 가까워(자전거 대여 라벨이 950px에서도 박스 밖 4px 초과)
-// 항목 추가·라벨 변경에 취약했다. Tailwind 표준 브레이크포인트 lg(1024px)로 올려
-// 여유를 확보했다.
+// 보여주려다 잘린다(고객지원·CTA와 자전거 대여 항목이 겹침). Tailwind 표준
+// 브레이크포인트 lg(1024px)로 한 차례 올렸으나, 이후 nav 간격(gap)을 넓히면서
+// 1024~1280px 구간에서 다시 로고와 nav가 겹치는 문제가 재발해 xl(1280px)로 재조정했다.
+// gap·px 값이 앞으로 또 바뀌면 이 브레이크포인트도 재측정이 필요하다.
 export default function AppHeader({
   variant = "compact",
   isSidebarOpen: controlledOpen,
@@ -60,11 +60,12 @@ export default function AppHeader({
   const navigate = useNavigate();
   const isWide = variant === "wide";
 
-  // 좌우 패딩: wide는 캐러셀과 같은 clamp 공식, compact(코스 탐색/코스 상세 좌측 패널)는
-  // 화면 폭이 아니라 패널 폭(예: md:basis-[46%])만큼만 실제로 쓸 수 있어서 vw 기반 clamp가
-  // 잘 안 맞는다(패널이 좁아도 vw는 전체 화면 기준이라 여유가 과하게 잡힘) — 그냥 작은 고정값
+  // 좌우 패딩: wide는 본문(max-w-6xl = 72rem)이 가운데 정렬됐을 때의 여백과 정확히
+  // 같은 수식(BannerCarousel과 동일)을 써서, 로고 시작·CTA 끝이 배너·본문 섹션들의
+  // 좌우 끝과 한 줄에 맞게 한다. compact(코스 탐색/코스 상세 좌측 패널)는 화면 폭이
+  // 아니라 패널 폭만큼만 쓸 수 있어서 이 수식이 안 맞는다 — 계속 작은 고정값 유지.
   const sidePadding = isWide
-    ? "px-[clamp(1rem,6vw,8rem)]"
+    ? "px-[max(1rem,calc((100%-72rem)/2+1rem))]"
     : "px-3";
 
   return (
@@ -82,7 +83,7 @@ export default function AppHeader({
             onClick={() => setIsSidebarOpen(true)}
             aria-label="메뉴"
             className={`cursor-pointer text-[20px] leading-none text-ink ${
-              isWide ? "md:hidden" : "lg:hidden"
+              isWide ? "md:hidden" : "xl:hidden"
             }`}
           >
             ☰
@@ -97,14 +98,15 @@ export default function AppHeader({
 
           {/* 로고-nav 간격·아이템 간격 모두 고정값 대신 반응형으로. wide는 화면 폭 기준 clamp로
             같이 부드럽게 줄어들게 하고, compact(코스 탐색/코스 상세 좌측 패널)는 패널 폭이 화면의
-            절반 이하라 vw 기준 clamp를 쓰면 여유가 과하게 잡혀 nav가 잘렸다 — 작은 고정값(ml-4,
-            gap도 더 좁은 clamp)으로 별도 처리. nav↔햄버거 전환 시점도 위 이유로 wide/compact가
-            다르다(md vs lg, Tailwind 표준 브레이크포인트) */}
+            절반 이하라 vw 기준 clamp를 쓰면 여유가 과하게 잡혀 nav가 잘렸다 — 좌우 padding은
+            작은 고정값(pl-4 pr-12, nav 그룹을 로고 쪽으로 당기기 위해 비대칭)으로, gap도 더 좁은
+            범위의 clamp로 별도 처리. nav↔햄버거 전환 시점도 위 이유로 wide/compact가
+            다르다(md vs xl, Tailwind 표준 브레이크포인트) */}
           <nav
-            className={`hidden min-w-0 flex-1 items-center gap-[clamp(0.5rem,1.5vw,1.5rem)] ${
+            className={`hidden min-w-0 flex-1 items-center justify-center ${
               isWide
-                ? "md:flex ml-[clamp(1rem,4vw,4rem)]"
-                : "lg:flex ml-4"
+                ? "md:flex gap-[clamp(1rem,4vw,7rem)] px-[clamp(1rem,4vw,2rem)]"
+                : "xl:flex gap-[clamp(0.75rem,3vw,2.25rem)] pl-4 pr-12"
             }`}
           >
             {NAV_ITEMS.map((item) => {
