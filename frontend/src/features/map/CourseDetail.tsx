@@ -772,23 +772,24 @@ export function CourseDetail() {
                   </p>
                 )}
 
-                {/* 어디까지 왔는지는 주변을 둘러보는 동안에도 알아야 재개할지 끝낼지 정할 수 있다.
-                  md 이상은 패널이 화면 높이만큼 길어 그대로 두고, 모바일 시트에서는 그만큼
-                  주변 목록이 밀려나므로 뺀다. */}
-                {showStats && (
-                  <div className="mb-3 hidden md:block">
-                    <TrackingStats
-                      progress={progress}
-                      remainingKm={remainingKm}
-                      eta={eta}
-                      pace={formatPace(livePace)}
-                    />
-                  </div>
-                )}
-
                 <p className="mb-2 text-center text-[13px] font-bold text-caption">
                   따라가기를 잠시 멈췄어요
                 </p>
+
+                {/* 어디까지 왔는지는 주변을 둘러보는 동안에도 알아야 재개할지 끝낼지 정할 수 있다.
+                  멈췄다는 말 바로 아래에 두어 '상태 → 근거 → 조작' 순으로 읽히게 한다.
+                  여기서는 주변 목록이 주인공이라 카드 대신 한 줄만 두고,
+                  모바일 시트는 그 한 줄도 목록을 밀어내므로 md 이상에서만 띄운다. */}
+                {showStats && (
+                  <div className="mb-2 hidden items-baseline justify-between rounded-[10px] bg-lavender px-3 py-2 md:flex">
+                    <span className="text-[13px] font-bold text-caption">
+                      진행률 <span className="text-accent">{Math.round(progress)}%</span>
+                    </span>
+                    <span className="text-[13px] font-bold text-caption">
+                      {remainingKm.toFixed(1)}km 남음
+                    </span>
+                  </div>
+                )}
                 <PausedControls onStop={handleStopTracking} onResume={resumeFromNearby} />
               </div>
             )}
