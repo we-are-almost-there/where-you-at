@@ -116,6 +116,7 @@ export function CourseDetail() {
   // 다 보여주는 기본 화면이고, 펼침(71%)은 코스 설명을 읽으러 갈 때 쓴다.
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const [sheetHeight, setSheetHeight] = useState(0); // 바텀시트 실측 높이(지도 하단이 가려지는 양)
+  const [panelInset, setPanelInset] = useState(0); // md+ 플로팅 카드가 지도 왼쪽을 덮는 폭
   const [isNarrow, setIsNarrow] = useState(false); // md 미만 — 시트가 지도를 덮는 구간
   const [retryTick, setRetryTick] = useState(0); // '다시 시도' 트리거
   const validId = Number.isFinite(courseId);
@@ -147,6 +148,7 @@ export function CourseDetail() {
 
   const nearbyRef = useRef<NearbyHandle>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const layoutRef = useRef<HTMLElement>(null); // 패널이 가리는 폭을 재는 기준(본문 영역)
   const [nearbySpots, setNearbySpots] = useState<NearbySpot[]>([]);
   const [selectedNearbySpotId, setSelectedNearbySpotId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -328,15 +330,23 @@ export function CourseDetail() {
     return () => mq.removeEventListener("change", update);
   }, []);
 
-  // 지도 하단이 가려지는 양 = 바텀시트의 실측 높이. 접힘/펼침·추적 전환에 따라 높이가 바뀌므로
-  // 비율 추정 대신 ResizeObserver로 실제 높이를 추적해 코스 fit·현위치 이동을 정확히 맞춘다.
+  // 패널이 지도를 가리는 양을 실측한다. 모바일은 아래를(시트 높이), md+는 왼쪽을(카드 오른쪽 끝) 가린다.
+  // 접힘/펼침·추적 전환에 따라 높이가, 창 크기에 따라 카드 폭(clamp)이 바뀌므로 비율·CSS 수치 추정 대신
+  // ResizeObserver로 실제 값을 추적해 코스 fit·현위치 이동을 정확히 맞춘다.
   useEffect(() => {
     const el = panelRef.current;
-    if (!el) return;
-    const measure = () => setSheetHeight(el.getBoundingClientRect().height);
+    const layout = layoutRef.current;
+    if (!el || !layout) return;
+    const measure = () => {
+      const box = el.getBoundingClientRect();
+      setSheetHeight(box.height);
+      // +16 = 카드가 붙어 있는 md:left-4 여백. 코스가 카드에 딱 붙지 않게 같은 만큼 더 띄운다.
+      setPanelInset(Math.max(0, Math.ceil(box.right - layout.getBoundingClientRect().left + 16)));
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
+    ro.observe(layout); // 창 폭이 바뀌면 카드 폭도 clamp를 따라 바뀐다
     return () => ro.disconnect();
   }, []);
 
@@ -367,9 +377,11 @@ export function CourseDetail() {
     // 좁은 폭(폴드)에서 "오후 04:12"가 두 줄로 깨지므로 24시간 표기로 고정
   ).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false });
 
-  // 모바일에선 바텀시트가 지도 하단을 가리므로, 실측한 시트 높이만큼 코스를 위로 올려 fit.
-  // 데스크톱은 지도가 시트와 겹치지 않아 0.
+  // 모바일에선 바텀시트가 지도 하단을, md+에선 플로팅 카드가 지도 왼쪽을 가린다.
+  // 둘은 동시에 성립하지 않으므로 폭에 따라 한쪽만 넘긴다 —
+  // 모바일 패널도 absolute라 위치만 보고는 구분할 수 없어 isNarrow를 유일한 기준으로 쓴다.
   const mapBottomInset = isNarrow ? Math.round(sheetHeight) : 0;
+  const mapLeftInset = isNarrow ? 0 : panelInset;
 
   return (
     // 모바일: 지도 풀블리드 + 하단 바텀시트 / md+: 상단바 + 지도 풀블리드 위 좌측 플로팅 패널
@@ -410,7 +422,7 @@ export function CourseDetail() {
 
       {/* 상단바 아래 본문. 지도와 패널이 여기를 기준으로 자리를 잡으므로,
         모바일(상단바 없음)에서는 이 영역이 곧 화면 전체가 된다. */}
-      <main className="relative flex min-h-0 flex-1">
+      <main ref={layoutRef} className="relative flex min-h-0 flex-1">
         {/* 지도 (z-0으로 stacking context를 가둬 Kakao 내부 레이어가 시트를 덮지 않게 함)
           폭에 상관없이 본문 전체를 채운다 — 패널은 어느 폭에서든 지도 위에 뜬다. */}
         <div className="absolute inset-0 z-0">
@@ -431,6 +443,7 @@ export function CourseDetail() {
             waypoints={waypoints}
             direction={direction}
             bottomInset={mapBottomInset}
+            leftInset={mapLeftInset}
             currentLocation={currentLocation}
             followCurrentLocation={isTracking}
             offCourseGuidePoint={showOffCourse ? offCourseGuidePoint : null}
