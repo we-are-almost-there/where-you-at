@@ -99,9 +99,18 @@ export function useCourseTracking() {
           setError(getGeolocationErrorMessage(code));
           if (!isTerminalGeolocationError(code)) return;
           clearActiveWatch();
+          // 모아 둔 표본이 있으면 세션을 지키고 일시정지로 되돌린다.
+          // 여기서 초기화하면 재개하다 거부당한 사람의 기록이 통째로 사라지고,
+          // idle이 되면서 종료 버튼까지 없어져 남길 방법 자체가 사라진다.
+          // 마지막 위치도 남긴다 — 일시정지는 원래 마커를 지우지 않는다.
+          if (pointsRef.current.length > 0) {
+            closeSegment(); // 안 닫으면 구간이 열린 채 남아 정지 시간이 활동 시간에 더해진다
+            setStatus("paused");
+            return;
+          }
+          // 표본이 하나도 없으면 남길 기록이 없다(시작하자마자 거부당한 경우).
           setStatus("idle");
           setCurrentLocation(null);
-          // 권한 거부로 시작조차 못 했으므로 기록도 남기지 않는다.
           resetSession();
         },
         GEOLOCATION_OPTIONS,
@@ -112,7 +121,7 @@ export function useCourseTracking() {
       setError("현재 위치를 불러오지 못했어요. 다시 시도해 주세요.");
       return false;
     }
-  }, [clearActiveWatch, resetSession]);
+  }, [clearActiveWatch, closeSegment, resetSession]);
 
   /** 추적을 멈추고 이번 세션의 기록을 돌려준다. 시작한 적이 없으면 null. */
   const stopTracking = useCallback((): TrackingRecord | null => {
