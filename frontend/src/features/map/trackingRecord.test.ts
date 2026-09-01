@@ -82,6 +82,19 @@ describe("accumulateDistanceMeters", () => {
     expect(accumulateDistanceMeters([beforePause, badResume, next])).toBe(0);
   });
 
+  it("정확도가 나쁜 재개 표본 다음의 이동은 새 기준점부터 누적한다", () => {
+    // 위 테스트의 0은 경계를 끊었을 때도 나오지만 재개 이후를 통째로 버렸을 때도 나온다.
+    // 표본을 하나 더 둬서 "다음 정상 표본이 새 기준점이 된다"까지 못 박는다 —
+    // 0이면 재개 이후가 버려진 것이고, 한 구간을 넘으면 경계가 안 끊긴 것이다.
+    const beforePause = point(0);
+    const badResume = { ...point(5), timestamp: 1_600_000, segmentStart: true, accuracy: 45 };
+    const next = { ...point(6), timestamp: 1_660_000 };
+    const after = { ...point(7), timestamp: 1_720_000 };
+    const meters = accumulateDistanceMeters([beforePause, badResume, next, after]);
+    expect(meters).toBeGreaterThan(100);
+    expect(meters).toBeLessThan(120);
+  });
+
   it("재개 이후의 이동은 정상적으로 누적한다", () => {
     const resumed = { ...point(5), timestamp: 1_600_000, segmentStart: true };
     const next = { ...point(6), timestamp: 1_660_000 };
