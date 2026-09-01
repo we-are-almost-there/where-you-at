@@ -16,7 +16,7 @@ import { useEndpointAddresses } from "./endpointAddress";
 import { DirectionSelector } from "./components/DirectionSelector";
 import { TrackingStats } from "./components/TrackingStats";
 import { RecordCard } from "./components/RecordCard";
-import type { TrackingRecord } from "./trackingRecord";
+import { formatPace, type TrackingRecord } from "./trackingRecord";
 import SidebarDrawer from "../../components/layout/SidebarDrawer";
 import AppHeader from "../../components/layout/AppHeader";
 import { parseRouteTypeParam, setRouteTypeParam, parseInfoTabParam, setInfoTabParam, parseCategoryParam, setCategoryParam } from "./courseUrlState";
@@ -42,6 +42,10 @@ const OFF_COURSE_EXIT_M = 15; // 이보다 가까워지면 복귀
 
 // 잘못 눌러 바로 끝낸 세션까지 기록 카드를 띄우면 방해만 된다.
 const MIN_RECORD_KM = 0.05;
+
+// 출발 직후에는 표본 몇 개로 낸 페이스가 터무니없는 값으로 튄다. 이만큼은 걸어야 값이 자리를 잡는다.
+// trackingRecord의 10m 하한은 다 끝난 기록을 요약하는 기준이라 주행 중에 쓰기엔 너무 헐겁다.
+const MIN_LIVE_PACE_KM = 0.3;
 
 
 function formatDistance(m: number): string {
@@ -152,6 +156,7 @@ export function CourseDetail() {
     pause,
     resume,
     stopTracking,
+    sampleRecord,
   } = useCourseTracking();
   // 진행률·이탈 감지·화면 안내는 "실제로 따라가는 중"에만 돌아야 한다.
   // 일시정지는 이 조건에서 빠지므로 아래 분기들은 그대로 두면 된다.
@@ -161,6 +166,7 @@ export function CourseDetail() {
   const [direction, setDirection] = useState<Direction>("forward"); // 기본 정방향, 토글로 역방향
   const [progress, setProgress] = useState(0); // 0~100, 최고 진행률 유지
   const [now, setNow] = useState(0); // 예상 종료 시각 계산의 기준 시각(추적 중에만 갱신)
+  const [livePace, setLivePace] = useState<number | null>(null); // 실측 평균 페이스(초/km). 아직 못 낼 값이면 null
   const [startChecked, setStartChecked] = useState(false); // 세션당 한 번만 시작 거리 판정
   const [tooFarMeters, setTooFarMeters] = useState<number | null>(null); // null이 아니면 안내 팝업
 
@@ -246,11 +252,17 @@ export function CourseDetail() {
   }
 
   // 추적 중에는 시계가 흘러야 예상 종료 시각이 현재 시각을 따라간다.
+  // 평균 페이스도 같은 박자로 갱신한다 — 표본마다 고치면 숫자가 계속 흔들려 읽을 수가 없다.
+  // 일시정지하면 이 타이머가 멈추므로 마지막 값이 그대로 남는다(활동 시간도 그때 멈춰 있다).
   useEffect(() => {
     if (!isTracking) return;
-    const id = setInterval(() => setNow(Date.now()), 30_000);
+    const id = setInterval(() => {
+      setNow(Date.now());
+      const sample = sampleRecord();
+      setLivePace(sample && sample.distanceKm >= MIN_LIVE_PACE_KM ? sample.paceSecPerKm : null);
+    }, 30_000);
     return () => clearInterval(id);
-  }, [isTracking]);
+  }, [isTracking, sampleRecord]);
 
   // 이탈 진입(아님→이탈)의 순간에만 1회 음성 안내. 계속 이탈 중이면 반복하지 않는다.
   const isOffCourse = offCourseMeters != null;
@@ -304,6 +316,7 @@ export function CourseDetail() {
   const handleStartTracking = () => {
     setProgress(0);
     setNow(Date.now());
+    setLivePace(null); // 지난 세션의 페이스가 새 세션 첫 30초 동안 남아 있으면 안 된다
     setStartChecked(false);
     setTooFarMeters(null);
     setOffCourseMeters(null);
@@ -684,7 +697,12 @@ export function CourseDetail() {
                 )}
 
                 {showStats && (
-                  <TrackingStats progress={progress} remainingKm={remainingKm} eta={eta} />
+                  <TrackingStats
+                    progress={progress}
+                    remainingKm={remainingKm}
+                    eta={eta}
+                    pace={formatPace(livePace)}
+                  />
                 )}
 
                 {trackingStatus === "paused" ? (
