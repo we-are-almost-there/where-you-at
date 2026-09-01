@@ -372,9 +372,16 @@ export function CourseDetail() {
   const mapBottomInset = isNarrow ? Math.round(sheetHeight) : 0;
 
   return (
-    // 모바일: 지도 풀블리드 + 하단 바텀시트 / md+: 좌 패널 + 우 지도
-    <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-white md:flex-row">
-      {/* 코스에서 너무 멀 때 안내 (지도·시트 위에 뜨는 팝업) */}
+    // 모바일: 지도 풀블리드 + 하단 바텀시트 / md+: 상단바 + (좌 패널 + 우 지도)
+    <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-white">
+      {/* 데스크톱 전용 상단바 — CourseExplore와 같이 레이아웃 최상단에 전체 폭으로 둔다.
+        모바일은 지도 위 플로팅 버튼(KakaoMap)이 이 역할을 대신하므로 md 미만에서는 렌더되지 않는다. */}
+      <div className="hidden md:block">
+        <AppHeader isSidebarOpen={isSidebarOpen} onSidebarOpenChange={setIsSidebarOpen} />
+      </div>
+
+      {/* 코스에서 너무 멀 때 안내 (지도·시트 위에 뜨는 팝업)
+        본문(main) 밖에 두는 이유: 상단바까지 덮어야 aria-modal이 말하는 대로 화면 전체가 잠긴다. */}
       {/* isTracking을 함께 보는 이유: 종료 버튼·일시정지로 추적이 멈추면 안내도 닫혀야 한다 */}
       {tooFarMeters != null && isTracking && (
         <div
@@ -401,294 +408,292 @@ export function CourseDetail() {
         </div>
       )}
 
-      {/* 지도 (z-0으로 stacking context를 가둬 Kakao 내부 레이어가 시트를 덮지 않게 함) */}
-      <div className="absolute inset-0 z-0 md:relative md:order-2 md:h-full md:min-w-0 md:flex-1">
-        {/* 코스 이탈 배너 — 메뉴 버튼(top 16 + 높이 44) 아래, 가로 중앙. 조작 UI를 가리지 않는 비모달 안내. */}
-        {showOffCourse && (
-          <div
-            role="status"
-            className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2"
-            style={{ top: "calc(env(safe-area-inset-top) + 68px)" }}
-          >
-            <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-[13px] font-bold text-[#FF4D4F] shadow-[0_2px_10px_rgba(0,0,0,0.22)]">
-              <CircleAlert size={16} aria-hidden className="shrink-0" />
-              코스에서 약 {formatDistance(offCourseMeters!)} 벗어났어요
+      {/* 상단바 아래 본문. 지도와 패널이 여기를 기준으로 자리를 잡으므로,
+        모바일(상단바 없음)에서는 이 영역이 곧 화면 전체가 된다. */}
+      <main className="relative flex min-h-0 flex-1 md:flex-row">
+        {/* 지도 (z-0으로 stacking context를 가둬 Kakao 내부 레이어가 시트를 덮지 않게 함) */}
+        <div className="absolute inset-0 z-0 md:relative md:order-2 md:h-full md:min-w-0 md:flex-1">
+          {/* 코스 이탈 배너 — 메뉴 버튼(top 16 + 높이 44) 아래, 가로 중앙. 조작 UI를 가리지 않는 비모달 안내. */}
+          {showOffCourse && (
+            <div
+              role="status"
+              className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2"
+              style={{ top: "calc(env(safe-area-inset-top) + 68px)" }}
+            >
+              <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-[13px] font-bold text-[#FF4D4F] shadow-[0_2px_10px_rgba(0,0,0,0.22)]">
+                <CircleAlert size={16} aria-hidden className="shrink-0" />
+                코스에서 약 {formatDistance(offCourseMeters!)} 벗어났어요
+              </div>
             </div>
-          </div>
-        )}
-        <KakaoMap
-          waypoints={waypoints}
-          direction={direction}
-          bottomInset={mapBottomInset}
-          currentLocation={currentLocation}
-          followCurrentLocation={isTracking}
-          offCourseGuidePoint={showOffCourse ? offCourseGuidePoint : null}
-          showLocateButton={infoTab === "course"}
-          nearbySpots={infoTab === "nearby" ? nearbySpots : []}
-          selectedSpotId={infoTab === "nearby" ? selectedNearbySpotId : null}
-          onSpotMarkerClick={(id) => {
-            nearbyRef.current?.selectSpotById(id);
-          }}
-          onMenuClick={() => setIsSidebarOpen(true)}
-        />
-      </div>
-
-      {/* 패널 (모바일=바텀시트, md+=좌측 컬럼)
-        md:relative 유지 필요: 주변 정보 탭 안의 SpotDetailSheet(상세 시트)가 absolute로 위치를 잡는데,
-        이 section이 relative여야 시트가 이 패널 안에서만 뜸.
-        static으로 바꾸면 시트가 기준을 잃고 지도까지 덮는 전체화면으로 퍼져버림. */}
-      <section
-        ref={panelRef}
-        className={`absolute inset-x-0 bottom-0 z-10 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] transition-[max-height] duration-300 md:relative md:order-1 md:h-full md:max-h-none md:basis-[46%] md:rounded-none md:shadow-none lg:basis-[44%] ${
-          isTracking ? "max-h-[60%]" : sheetExpanded ? "max-h-[71%]" : "max-h-[51%]"
-        }`}
-      >
-        {/* 데스크톱 전용 상단바 — CourseExplore와 동일하게 패널 안에 배치해 지도까지 안 이어지게 함.
-          모바일은 지도 위 플로팅 버튼(KakaoMap)이 이 역할을 대신한다. */}
-        <div className="hidden md:block">
-          <AppHeader isSidebarOpen={isSidebarOpen} onSidebarOpenChange={setIsSidebarOpen} />
+          )}
+          <KakaoMap
+            waypoints={waypoints}
+            direction={direction}
+            bottomInset={mapBottomInset}
+            currentLocation={currentLocation}
+            followCurrentLocation={isTracking}
+            offCourseGuidePoint={showOffCourse ? offCourseGuidePoint : null}
+            showLocateButton={infoTab === "course"}
+            nearbySpots={infoTab === "nearby" ? nearbySpots : []}
+            selectedSpotId={infoTab === "nearby" ? selectedNearbySpotId : null}
+            onSpotMarkerClick={(id) => {
+              nearbyRef.current?.selectSpotById(id);
+            }}
+            onMenuClick={() => setIsSidebarOpen(true)}
+          />
         </div>
 
-        {/* 바텀시트 핸들 (모바일 전용) — 탭하면 시트를 접어 지도(전체 코스)를 넓게 본다 */}
-        <button
-          type="button"
-          onClick={() => setSheetExpanded((v) => !v)}
-          aria-label={sheetExpanded ? "코스 정보 접기" : "코스 정보 펼치기"}
-          className={`shrink-0 cursor-pointer pt-2.5 pb-1 md:hidden ${isTracking ? "hidden" : ""}`}
+        {/* 패널 (모바일=바텀시트, md+=좌측 컬럼)
+          md:relative 유지 필요: 주변 정보 탭 안의 SpotDetailSheet(상세 시트)가 absolute로 위치를 잡는데,
+          이 section이 relative여야 시트가 이 패널 안에서만 뜸.
+          static으로 바꾸면 시트가 기준을 잃고 지도까지 덮는 전체화면으로 퍼져버림. */}
+        <section
+          ref={panelRef}
+          className={`absolute inset-x-0 bottom-0 z-10 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] transition-[max-height] duration-300 md:relative md:order-1 md:h-full md:max-h-none md:basis-[46%] md:rounded-none md:shadow-none lg:basis-[44%] ${
+            isTracking ? "max-h-[60%]" : sheetExpanded ? "max-h-[71%]" : "max-h-[51%]"
+          }`}
         >
-          <span className="mx-auto block h-[5px] w-11 rounded-full bg-divider" />
-        </button>
+          {/* 바텀시트 핸들 (모바일 전용) — 탭하면 시트를 접어 지도(전체 코스)를 넓게 본다 */}
+          <button
+            type="button"
+            onClick={() => setSheetExpanded((v) => !v)}
+            aria-label={sheetExpanded ? "코스 정보 접기" : "코스 정보 펼치기"}
+            className={`shrink-0 cursor-pointer pt-2.5 pb-1 md:hidden ${isTracking ? "hidden" : ""}`}
+          >
+            <span className="mx-auto block h-[5px] w-11 rounded-full bg-divider" />
+          </button>
 
-        {loading && validId ? (
-          <p className="py-16 text-center text-[14px] text-caption">코스를 불러오는 중…</p>
-        ) : !validId ? (
-          <ErrorNotice
-            title="잘못된 코스예요"
-            description="존재하지 않는 코스 주소예요."
-            onBack={() => navigate(-1)}
-          />
-        ) : error ? (
-          // 조회 실패(연결/서버) — 재시도 + 목록으로
-          <ErrorNotice
-            title={CONNECTION_ERROR_TITLE}
-            description={CONNECTION_ERROR_DESC}
-            onRetry={retry}
-            onBack={() => navigate(-1)}
-          />
-        ) : !detail ? (
-          <ErrorNotice title="코스를 찾을 수 없어요" onBack={() => navigate(-1)} />
-        ) : (
-          <>
-            {/* 스크롤 영역 (모바일은 콘텐츠 높이에 맞춰 시트가 줄어 따라가기 버튼과 붙는다)
-              추적 중에는 모바일에서만 숨겨 지도를 넓게 쓴다. 데스크톱은 지도와 나란히 놓여
-              가릴 일이 없고, 숨기면 좌측 컬럼이 텅 비므로 그대로 둔다. */}
-            <div
-              className={`min-h-0 overflow-y-auto px-5 pb-6 pt-3 md:flex-1 ${
-                isTracking ? "hidden md:block" : ""
-              }`}
-            >
-              {/* 뒤로 + 제목 + 주소.
-                이 버튼이 모바일·데스크톱 공통으로 유일한 뒤로 이동 수단이라 md:hidden 없이 항상 노출된다. */}
-              <button
-                type="button"
-                onClick={() => navigate(-1)}
-                aria-label="뒤로"
-                className="cursor-pointer text-[20px] leading-none text-ink"
-              >
-                ←
-              </button>
-              <h1 className="mt-2 font-bold text-ink text-[20px]">{detail.title}</h1>
-
-              {/* 출발/도착 주소를 보여주는 유일한 자리라 탭과 무관하게 항상 띄운다.
-                추적 중엔 방향을 바꿀 수 없게(진행률 계산과 꼬이므로) 숨긴다 —
-                모바일에서 이 블록을 포함한 정보 영역 전체가 접히는 것과도 맞아떨어진다. */}
-              {!isTracking && (
-                <div className="mt-3">
-                  <DirectionSelector
-                    start={startAddress}
-                    end={endAddress}
-                    direction={direction}
-                    onToggle={toggleDirection}
-                  />
-                </div>
-              )}
-
-              {/* 코스 정보 / 주변 정보 토글 */}
+          {loading && validId ? (
+            <p className="py-16 text-center text-[14px] text-caption">코스를 불러오는 중…</p>
+          ) : !validId ? (
+            <ErrorNotice
+              title="잘못된 코스예요"
+              description="존재하지 않는 코스 주소예요."
+              onBack={() => navigate(-1)}
+            />
+          ) : error ? (
+            // 조회 실패(연결/서버) — 재시도 + 목록으로
+            <ErrorNotice
+              title={CONNECTION_ERROR_TITLE}
+              description={CONNECTION_ERROR_DESC}
+              onRetry={retry}
+              onBack={() => navigate(-1)}
+            />
+          ) : !detail ? (
+            <ErrorNotice title="코스를 찾을 수 없어요" onBack={() => navigate(-1)} />
+          ) : (
+            <>
+              {/* 스크롤 영역 (모바일은 콘텐츠 높이에 맞춰 시트가 줄어 따라가기 버튼과 붙는다)
+                추적 중에는 모바일에서만 숨겨 지도를 넓게 쓴다. 데스크톱은 지도와 나란히 놓여
+                가릴 일이 없고, 숨기면 좌측 컬럼이 텅 비므로 그대로 둔다. */}
               <div
-                role="tablist"
-                className="mt-4 flex gap-1 rounded-2xl bg-lavender p-1"
-              >
-                {([["course", "코스 정보"], ["nearby", "주변 정보"]] as const).map(([key, label]) => {
-                  const active = infoTab === key;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      onClick={() => changeInfoTab(key)}
-                      className={`flex-1 cursor-pointer rounded-[14px] py-2 text-[16px] font-bold transition-colors ${
-                        active ? "bg-white text-ink shadow-[0px_2px_4px_0px_rgba(0,0,0,0.12)]" : "text-caption"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {infoTab === "course" ? (
-                <div className="mt-4">
-                  {detail.description && (
-                    <div>
-                      {/* 모바일: 3줄로 접고 더보기 / 데스크톱(md+): 공간이 넉넉해 전체 표시 */}
-                      <p
-                        ref={descRef}
-                        className={`text-[14px] leading-relaxed text-ink md:line-clamp-none ${
-                          descExpanded ? "" : "line-clamp-3"
-                        }`}
-                      >
-                        {withLineBreaks(detail.description)}
-                      </p>
-                      {(descOverflow || descExpanded) && (
-                        <button
-                          type="button"
-                          onClick={() => setDescExpanded((v) => !v)}
-                          className="mt-1 cursor-pointer text-[13px] font-bold text-accent md:hidden"
-                        >
-                          {descExpanded ? "접기" : "더보기"}
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 코스 대표 사진 — 원본 비율 그대로. 없으면 표시 안 함 */}
-                  {detail.image_url && (
-                    <img
-                      src={detail.image_url}
-                      alt={detail.title}
-                      className="mt-3 w-full rounded-[14px]"
-                    />
-                  )}
-
-                  {/* 도보 / 자전거 선택 */}
-                  <div className="mt-4 flex gap-3">
-                    {orderedRoutes.map((r) => (
-                      <ModeCard
-                        key={r.route_type}
-                        route={r}
-                        active={r.route_type === routeType}
-                        disabled={isTracking}
-                        onSelect={() => changeRouteType(r.route_type)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-4">
-                  <Nearby
-                    ref={nearbyRef}
-                    courseId={courseId}
-                    routeType={routeType === "자전거" ? "bicycle" : "trail"}
-                    category={parseCategoryParam(searchParams)}
-                    onCategoryChange={changeCategory}
-                    onSpotsChange={setNearbySpots}
-                    onSelectedChange={(spot) => setSelectedNearbySpotId(spot?.id ?? null)}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* 시트 하단 페이드 — 시트가 콘텐츠 중간을 자르는 게 '깨진 레이아웃'이 아니라
-              '아래에 더 있음'으로 읽히게 한다. 진행 방향 카드가 역지오코딩된 주소 길이에 따라
-              높이가 변해(주소 로드 전후로도 커진다) 잘리는 위치가 코스마다·로드 전후로 달라지는데,
-              높이 수치로는 그걸 다 맞출 수 없어서 신호로 대신한다.
-              펼침·접힘 양쪽에 다 건다: 접힘에선 진행 방향 카드가, 펼침에선 설명·사진이 잘린다.
-              -mt-10으로 스크롤 영역 위에 겹쳐 레이아웃 높이는 차지하지 않는다.
-              relative 래퍼를 새로 두지 않는 이유: 주변 정보 탭의 SpotDetailSheet가
-              이 section을 기준으로 absolute 배치되므로 중간에 위치 기준이 생기면 안 된다. */}
-            {!isTracking && (
-              <div
-                aria-hidden
-                className="pointer-events-none -mt-10 h-10 shrink-0 bg-linear-to-t from-white to-transparent md:hidden"
-              />
-            )}
-
-            {/* 따라가기 (하단 고정) */}
-            {infoTab === "course" && (
-            <div
-              // 버튼 위 여백(mt-3=12px)과 아래 흰 여백을 같게 맞춘다.
-              className="shrink-0 px-5 pt-3"
-              style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
-            >
-              {trackingError && (
-                <p role="alert" className="mb-2 text-center text-[13px] leading-relaxed text-caption">
-                  {trackingError}
-                </p>
-              )}
-
-              {/* 화면 유지 실패는 추적 자체는 되는 경고라 role="alert" 없이 조용히 알린다 */}
-              {wakeLockFailed && (
-                <p className="mb-2 break-keep text-center text-[13px] leading-relaxed text-caption">
-                  {WAKE_LOCK_FAILURE_MESSAGE}
-                </p>
-              )}
-
-              {showStats && (
-                <TrackingStats progress={progress} remainingKm={remainingKm} eta={eta} />
-              )}
-
-              {/* 일시정지 중에는 재개와 종료를 함께 내놓는다 — 둘 다 여기서만 고를 수 있다 */}
-              {trackingStatus === "paused" ? (
-                <div className={`flex gap-2 ${showStats ? "mt-3" : ""}`}>
-                  <button
-                    type="button"
-                    onClick={handleStopTracking}
-                    className="flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] border border-accent bg-white text-[15px] font-bold text-accent"
-                  >
-                    ■ 종료
-                  </button>
-                  <button
-                    type="button"
-                    onClick={resume}
-                    className="flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] bg-accent text-[15px] font-bold text-lavender"
-                  >
-                    ▶ 다시 따라가기
-                  </button>
-                </div>
-              ) : (
-              <button
-                type="button"
-                onClick={isTracking ? handleStopTracking : handleStartTracking}
-                disabled={!activeRoute}
-                aria-pressed={isTracking}
-                className={`flex h-14 w-full items-center justify-center gap-2 rounded-[14px] text-[15px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
-                  showStats ? "mt-3" : ""
-                } ${
-                  isTracking
-                    ? "cursor-pointer border border-accent bg-white text-accent"
-                    : "cursor-pointer bg-accent text-lavender"
+                className={`min-h-0 overflow-y-auto px-5 pb-6 pt-3 md:flex-1 ${
+                  isTracking ? "hidden md:block" : ""
                 }`}
               >
-                {isTracking && !currentLocation && (
-                  // 작은 글리프는 뭔지 알아보기 어려워 회전 스피너로 '찾는 중'을 표현
-                  <span
-                    aria-hidden
-                    className="size-4 animate-spin rounded-full border-2 border-accent border-t-transparent"
-                  />
+                {/* 뒤로 + 제목 + 주소.
+                  이 버튼이 모바일·데스크톱 공통으로 유일한 뒤로 이동 수단이라 md:hidden 없이 항상 노출된다. */}
+                <button
+                  type="button"
+                  onClick={() => navigate(-1)}
+                  aria-label="뒤로"
+                  className="cursor-pointer text-[20px] leading-none text-ink"
+                >
+                  ←
+                </button>
+                <h1 className="mt-2 font-bold text-ink text-[20px]">{detail.title}</h1>
+
+                {/* 출발/도착 주소를 보여주는 유일한 자리라 탭과 무관하게 항상 띄운다.
+                  추적 중엔 방향을 바꿀 수 없게(진행률 계산과 꼬이므로) 숨긴다 —
+                  모바일에서 이 블록을 포함한 정보 영역 전체가 접히는 것과도 맞아떨어진다. */}
+                {!isTracking && (
+                  <div className="mt-3">
+                    <DirectionSelector
+                      start={startAddress}
+                      end={endAddress}
+                      direction={direction}
+                      onToggle={toggleDirection}
+                    />
+                  </div>
                 )}
-                {isTracking
-                  ? currentLocation
-                    ? "■ 따라가기 종료"
-                    : "현재 위치 찾는 중…"
-                  : `${activeRoute ? MODE_ICON[activeRoute.route_type] : "🚶"} 따라가기`}
-              </button>
+
+                {/* 코스 정보 / 주변 정보 토글 */}
+                <div
+                  role="tablist"
+                  className="mt-4 flex gap-1 rounded-2xl bg-lavender p-1"
+                >
+                  {([["course", "코스 정보"], ["nearby", "주변 정보"]] as const).map(([key, label]) => {
+                    const active = infoTab === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => changeInfoTab(key)}
+                        className={`flex-1 cursor-pointer rounded-[14px] py-2 text-[16px] font-bold transition-colors ${
+                          active ? "bg-white text-ink shadow-[0px_2px_4px_0px_rgba(0,0,0,0.12)]" : "text-caption"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {infoTab === "course" ? (
+                  <div className="mt-4">
+                    {detail.description && (
+                      <div>
+                        {/* 모바일: 3줄로 접고 더보기 / 데스크톱(md+): 공간이 넉넉해 전체 표시 */}
+                        <p
+                          ref={descRef}
+                          className={`text-[14px] leading-relaxed text-ink md:line-clamp-none ${
+                            descExpanded ? "" : "line-clamp-3"
+                          }`}
+                        >
+                          {withLineBreaks(detail.description)}
+                        </p>
+                        {(descOverflow || descExpanded) && (
+                          <button
+                            type="button"
+                            onClick={() => setDescExpanded((v) => !v)}
+                            className="mt-1 cursor-pointer text-[13px] font-bold text-accent md:hidden"
+                          >
+                            {descExpanded ? "접기" : "더보기"}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 코스 대표 사진 — 원본 비율 그대로. 없으면 표시 안 함 */}
+                    {detail.image_url && (
+                      <img
+                        src={detail.image_url}
+                        alt={detail.title}
+                        className="mt-3 w-full rounded-[14px]"
+                      />
+                    )}
+
+                    {/* 도보 / 자전거 선택 */}
+                    <div className="mt-4 flex gap-3">
+                      {orderedRoutes.map((r) => (
+                        <ModeCard
+                          key={r.route_type}
+                          route={r}
+                          active={r.route_type === routeType}
+                          disabled={isTracking}
+                          onSelect={() => changeRouteType(r.route_type)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4">
+                    <Nearby
+                      ref={nearbyRef}
+                      courseId={courseId}
+                      routeType={routeType === "자전거" ? "bicycle" : "trail"}
+                      category={parseCategoryParam(searchParams)}
+                      onCategoryChange={changeCategory}
+                      onSpotsChange={setNearbySpots}
+                      onSelectedChange={(spot) => setSelectedNearbySpotId(spot?.id ?? null)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* 시트 하단 페이드 — 시트가 콘텐츠 중간을 자르는 게 '깨진 레이아웃'이 아니라
+                '아래에 더 있음'으로 읽히게 한다. 진행 방향 카드가 역지오코딩된 주소 길이에 따라
+                높이가 변해(주소 로드 전후로도 커진다) 잘리는 위치가 코스마다·로드 전후로 달라지는데,
+                높이 수치로는 그걸 다 맞출 수 없어서 신호로 대신한다.
+                펼침·접힘 양쪽에 다 건다: 접힘에선 진행 방향 카드가, 펼침에선 설명·사진이 잘린다.
+                -mt-10으로 스크롤 영역 위에 겹쳐 레이아웃 높이는 차지하지 않는다.
+                relative 래퍼를 새로 두지 않는 이유: 주변 정보 탭의 SpotDetailSheet가
+                이 section을 기준으로 absolute 배치되므로 중간에 위치 기준이 생기면 안 된다. */}
+              {!isTracking && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none -mt-10 h-10 shrink-0 bg-linear-to-t from-white to-transparent md:hidden"
+                />
               )}
-            </div>
-           )}
-          </>
-        )}
-      </section>
+
+              {/* 따라가기 (하단 고정) */}
+              {infoTab === "course" && (
+              <div
+                // 버튼 위 여백(mt-3=12px)과 아래 흰 여백을 같게 맞춘다.
+                className="shrink-0 px-5 pt-3"
+                style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+              >
+                {trackingError && (
+                  <p role="alert" className="mb-2 text-center text-[13px] leading-relaxed text-caption">
+                    {trackingError}
+                  </p>
+                )}
+
+                {/* 화면 유지 실패는 추적 자체는 되는 경고라 role="alert" 없이 조용히 알린다 */}
+                {wakeLockFailed && (
+                  <p className="mb-2 break-keep text-center text-[13px] leading-relaxed text-caption">
+                    {WAKE_LOCK_FAILURE_MESSAGE}
+                  </p>
+                )}
+
+                {showStats && (
+                  <TrackingStats progress={progress} remainingKm={remainingKm} eta={eta} />
+                )}
+
+                {/* 일시정지 중에는 재개와 종료를 함께 내놓는다 — 둘 다 여기서만 고를 수 있다 */}
+                {trackingStatus === "paused" ? (
+                  <div className={`flex gap-2 ${showStats ? "mt-3" : ""}`}>
+                    <button
+                      type="button"
+                      onClick={handleStopTracking}
+                      className="flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] border border-accent bg-white text-[15px] font-bold text-accent"
+                    >
+                      ■ 종료
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resume}
+                      className="flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] bg-accent text-[15px] font-bold text-lavender"
+                    >
+                      ▶ 다시 따라가기
+                    </button>
+                  </div>
+                ) : (
+                <button
+                  type="button"
+                  onClick={isTracking ? handleStopTracking : handleStartTracking}
+                  disabled={!activeRoute}
+                  aria-pressed={isTracking}
+                  className={`flex h-14 w-full items-center justify-center gap-2 rounded-[14px] text-[15px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
+                    showStats ? "mt-3" : ""
+                  } ${
+                    isTracking
+                      ? "cursor-pointer border border-accent bg-white text-accent"
+                      : "cursor-pointer bg-accent text-lavender"
+                  }`}
+                >
+                  {isTracking && !currentLocation && (
+                    // 작은 글리프는 뭔지 알아보기 어려워 회전 스피너로 '찾는 중'을 표현
+                    <span
+                      aria-hidden
+                      className="size-4 animate-spin rounded-full border-2 border-accent border-t-transparent"
+                    />
+                  )}
+                  {isTracking
+                    ? currentLocation
+                      ? "■ 따라가기 종료"
+                      : "현재 위치 찾는 중…"
+                    : `${activeRoute ? MODE_ICON[activeRoute.route_type] : "🚶"} 따라가기`}
+                </button>
+                )}
+              </div>
+             )}
+            </>
+          )}
+        </section>
+      </main>
       {record && (
         <RecordCard record={record} routePoints={waypoints} onClose={() => setRecord(null)} />
       )}
