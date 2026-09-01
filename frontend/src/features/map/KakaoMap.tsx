@@ -692,6 +692,43 @@ export function KakaoMap({
     cardWasOpenRef.current = open;
   }, [pickedCourseId, pickedStart, panToVisibleCenter]);
 
+  // 처음 열 때 중앙으로 옮겨도 그 뒤 지도를 끌거나 확대하면 카드가 마커를 그대로 따라가,
+  // 목록 패널 뒤로 들어가거나 화면 오른쪽 끝에서 잘린다. 좁은 화면일수록 남는 폭이 없어 금방 걸린다.
+  // 마커 위라는 관계는 두고 좌우로만 밀어, 카드가 늘 보이는 영역 안에 남게 한다.
+  const pickedCardRef = useRef<HTMLDivElement>(null);
+  const pickedLat = pickedStart?.lat;
+  const pickedLng = pickedStart?.lng;
+  useEffect(() => {
+    const el = pickedCardRef.current;
+    const container = mapContainerRef.current;
+    if (!map || !el || !container || pickedLat == null || pickedLng == null) return;
+
+    const place = () => {
+      const half = el.offsetWidth / 2;
+      if (half === 0) return;
+      // pointFromCoords는 컨테이너가 아니라 월드 좌표를 준다(지도를 끌어도 값이 그대로다).
+      // 중심과의 차이만 화면 픽셀과 같으므로, 중심이 놓이는 컨테이너 한가운데에서부터 재어 쓴다.
+      const proj = map.getProjection();
+      const centerX = proj.pointFromCoords(map.getCenter()).x;
+      const worldX = proj.pointFromCoords(new kakao.maps.LatLng(pickedLat, pickedLng)).x;
+      const markerX = container.clientWidth / 2 + (worldX - centerX);
+      const margin = 8;
+      const min = leftInset + margin + half;
+      const max = container.clientWidth - margin - half;
+      // 보이는 폭이 카드보다 좁으면 어느 쪽에 붙여도 잘리므로 그나마 가운데에 둔다.
+      const target = min > max ? (min + max) / 2 : Math.min(Math.max(markerX, min), max);
+      el.style.transform = `translateX(${Math.round(target - markerX)}px)`;
+    };
+
+    place();
+    kakao.maps.event.addListener(map, "center_changed", place);
+    kakao.maps.event.addListener(map, "zoom_changed", place);
+    return () => {
+      kakao.maps.event.removeListener(map, "center_changed", place);
+      kakao.maps.event.removeListener(map, "zoom_changed", place);
+    };
+  }, [map, pickedLat, pickedLng, leftInset]);
+
   // 목록 코스의 경로를 미리 세그먼트로 쪼개 둔다 (상세 지도와 같은 방식으로 gap에서 끊는다).
   const courseSegments = useMemo(
     () => courses.map((c) => ({ id: c.id, segments: splitIntoSegments(c.points) })),
@@ -845,7 +882,9 @@ export function KakaoMap({
                 zIndex={20}
                 clickable
               >
-                <div className="pb-4">{pickedCard}</div>
+                <div ref={pickedCardRef} className="pb-4">
+                  {pickedCard}
+                </div>
               </CustomOverlayMap>
             )}
           </>
