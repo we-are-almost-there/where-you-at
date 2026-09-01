@@ -436,7 +436,19 @@ function MenuIconGradients() {
     <svg aria-hidden className="absolute size-0">
       <defs>
         {MENU_ITEMS.map((item) => (
-          <linearGradient key={item.gradientId} id={item.gradientId} x1="0" y1="0" x2="1" y2="1">
+          // userSpaceOnUse로 아이콘 viewBox(24×24) 전체를 좌표계로 잡는다.
+          // 기본값(objectBoundingBox)은 path마다 자기 바운딩박스로 계산해서,
+          // 조각이 나뉜 글리프는 조각마다 그라데이션이 새로 시작하고
+          // 높이가 0인 가로선은 한 색으로 뭉갠다.
+          <linearGradient
+            key={item.gradientId}
+            id={item.gradientId}
+            gradientUnits="userSpaceOnUse"
+            x1="0"
+            y1="0"
+            x2="24"
+            y2="24"
+          >
             <stop offset="0%" stopColor={item.gradientStops[0]} />
             <stop offset="55%" stopColor={item.gradientStops[1]} />
             <stop offset="100%" stopColor={item.gradientStops[2]} />
