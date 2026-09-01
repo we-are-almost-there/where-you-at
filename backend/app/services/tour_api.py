@@ -168,6 +168,18 @@ DETAIL_TABLE_MAP = {
     "39": "restaurant",
 }
 
+# 일일 할당량 초과 시 응답 본문에 포함되는 에러 코드.
+# 예: {"OpenAPI_ServiceResponse": {"cmmMsgHeader": {
+#       "errMsg": "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR",
+#       "returnAuthMsg": "일일 서비스 요청제한 횟수 초과 에러",
+#       "returnReasonCode": "22"}}}
+_QUOTA_EXCEEDED_MSG = "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR"
+
+
+def _is_quota_exceeded(response_text: str) -> bool:
+    """TourAPI 일일 할당량 초과 응답인지 판별한다."""
+    return _QUOTA_EXCEEDED_MSG in response_text
+
 
 def fetch_area_based_list(
     content_type_id: int,
@@ -193,6 +205,12 @@ def fetch_area_based_list(
             params=params,
             timeout=15,
         )
+
+        # 할당량 초과 체크 — 초과 시 빈 결과가 아니라 명시적으로 예외를 던져
+        # 호출부(collect_by_content_type)가 정상 완료와 구분할 수 있게 한다.
+        if _is_quota_exceeded(response.text):
+            raise RuntimeError("API_QUOTA_EXCEEDED")
+
         response.raise_for_status()
 
         body = response.json().get("response", {}).get("body", {})
@@ -201,6 +219,8 @@ def fetch_area_based_list(
 
         return items, total_count
 
+    except RuntimeError:
+        raise  # API_QUOTA_EXCEEDED는 그대로 올려보냄 (호출부에서 처리)
     except (httpx.HTTPError, ValueError, TypeError):
         return [], 0
 
@@ -232,11 +252,9 @@ def fetch_detail_intro(
             timeout=15,
         )
 
-        # 할당량 초과 체크 — 실제 응답: returnReasonCode "22" / errMsg LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR
-        if "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR" in response.text:
+        if _is_quota_exceeded(response.text):
             raise RuntimeError("API_QUOTA_EXCEEDED")
 
-        # 429 체크
         if response.status_code == 429:
             raise httpx.HTTPStatusError(
                 "429 Too Many Requests",
@@ -257,12 +275,18 @@ def fetch_detail_intro(
         return results[0] if results else None
 
     except RuntimeError:
-        raise  # API_QUOTA_EXCEEDED는 그대로 올려보냄
+        raise
+    except httpx.TimeoutException as e:
+        # 진짜 빈 응답이 아니라 네트워크 지연 — 재시도 가능한 것으로 구분해 올려보낸다
+        print(f"[WARN] detailIntro 타임아웃 content_id={content_id}: {e}")
+        raise RuntimeError("TIMEOUT")
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429:
-            raise RuntimeError("RATE_LIMITED") # collect_tour_spots.py에서 재시도 처리
+            raise RuntimeError("RATE_LIMITED")
+        print(f"[WARN] detailIntro HTTP 에러 content_id={content_id}: {e.response.status_code} {e.response.text[:200]}")
         return None
-    except (httpx.HTTPError, ValueError, TypeError):
+    except (httpx.HTTPError, ValueError, TypeError) as e:
+        print(f"[WARN] detailIntro 파싱 실패 content_id={content_id}: {e}")
         return None
 
 

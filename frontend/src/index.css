@@ -8,23 +8,46 @@
   --color-accent: #6c5ce7; /* 바이올렛: 강조 */
   --color-start: #03c75a; /* 그린: 출발 마커 */
   --color-mapbg: #e3e7eb; /* 그레이: 지도 배경 */
+  --color-mapocean: #aed0e6; /* 페일 블루: 카카오 서비스 영역 밖을 덮는 바다색 */
   --color-lavender: #f1effc; /* 페일 라벤더: 아이콘·썸네일 배경 */
   --color-figure: #1a1533; /* 니어블랙 라벤더: 수치 */
   --color-caption: #888888; /* 라이트 그레이: 캡션 */
   --color-divider: #d9d7e1; /* 라이트 그레이: 구분선 */
 }
 
-/* 스크롤바 자리를 항상 비워둔다. 내용 길이에 따라 스크롤바가 생겼다 사라지면
-   뷰포트 폭이 바뀌어 지도·배경·제목이 좌우로 흔들린다. */
-html {
-  scrollbar-gutter: stable;
-}
-
 body {
   font-family: var(--font-sans);
+}
+
+/*
+ * 지도 가장자리에 드러나는 흰 판 덮기.
+ *
+ * 전국에 흩어진 결과를 한 번에 맞추면 세로 폭이 축척을 정한다(제주~강원 598km).
+ * 그러면 넓은 화면에서는 가로로 1,200km가 보이게 되고, 좌우 구석이 카카오 서비스 영역을
+ * 벗어난다. 카카오는 그 자리를 흰 이미지(white.png) 타일로 채우고, 타일이 아직 없는 자리는
+ * 지도 div 배경(bg_tile.png)으로 채운다. 축척을 낮추거나 패딩을 조절해도 세로가 축척을
+ * 정하는 한 피할 수 없어서, 바다와 이어져 보이는 색으로 덮는다.
+ *
+ * 카카오 SDK 내부 자산 경로에 기대는 처리다. 경로가 바뀌면 이 덮기만 무효가 되고
+ * 예전처럼 흰색이 보일 뿐이라 기능에는 영향이 없다.
+ */
+/* 첫 자식만 카카오가 만드는 지도 div다. 뒤따르는 형제는 지도 위 컨트롤 래퍼라
+   함께 겨냥하면 나중에 그쪽 배경까지 !important로 지워 버린다. */
+.map-surface > div:first-child {
+  background-image: none !important;
+}
+.map-surface img[src$="/white.png"] {
+  visibility: hidden;
 }
 
 @keyframes sidebarFadeUp {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* 정렬 일관성이 실제로 필요한 페이지(Race, Support등) 만
+   이 클래스를 붙여 켠다. 다른 페이지는 기본값(auto)이라 애초에 이 트레이드오프가
+   필요 없다. */
+html.scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
 }
