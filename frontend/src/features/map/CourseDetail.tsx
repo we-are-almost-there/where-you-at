@@ -160,6 +160,9 @@ export function CourseDetail() {
   // 진행률·이탈 감지·화면 안내는 "실제로 따라가는 중"에만 돌아야 한다.
   // 일시정지는 이 조건에서 빠지므로 아래 분기들은 그대로 두면 된다.
   const isTracking = trackingStatus === "tracking";
+  // 일시정지도 세션이 살아 있는 상태다. 멈춘 사이에 코스나 진행 방향을 갈아타면
+  // 이미 쌓인 기록·진행률과 어긋나므로, 그런 조작은 tracking/paused를 가리지 않고 잠근다.
+  const sessionActive = trackingStatus !== "idle";
   const [waypoints, setWaypoints] = useState<LatLng[]>([]);
   const [startAddress, endAddress] = useEndpointAddresses(waypoints);
   const [direction, setDirection] = useState<Direction>("forward"); // 기본 정방향, 토글로 역방향
@@ -569,9 +572,9 @@ export function CourseDetail() {
                 <h1 className="mt-2 font-bold text-ink text-[20px]">{detail.title}</h1>
 
                 {/* 출발/도착 주소를 보여주는 유일한 자리라 탭과 무관하게 항상 띄운다.
-                  추적 중엔 방향을 바꿀 수 없게(진행률 계산과 꼬이므로) 숨긴다 —
+                  세션이 진행 중이면 방향을 바꿀 수 없게(진행률 계산과 꼬이므로) 숨긴다 —
                   모바일에서 이 블록을 포함한 정보 영역 전체가 접히는 것과도 맞아떨어진다. */}
-                {!isTracking && (
+                {!sessionActive && (
                   <div className="mt-3">
                     <DirectionSelector
                       start={startAddress}
@@ -647,7 +650,7 @@ export function CourseDetail() {
                           key={r.route_type}
                           route={r}
                           active={r.route_type === routeType}
-                          disabled={isTracking}
+                          disabled={sessionActive}
                           onSelect={() => changeRouteType(r.route_type)}
                         />
                       ))}
