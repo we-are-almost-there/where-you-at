@@ -214,7 +214,16 @@ function FilterDropdown({
   };
 
   return (
-    <div ref={rootRef} onKeyDown={handleKeyDown} className={`relative flex shrink-0 ${className}`}>
+    <div
+      ref={rootRef}
+      onKeyDown={handleKeyDown}
+      // 항목이 버튼이라 Tab으로 메뉴 밖까지 나갈 수 있는데, 그때 메뉴가 열린 채 남으면
+      // 포커스는 다음 필터에 있고 목록만 떠 있는 상태가 된다. 나가는 순간 닫는다.
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+      className={`relative flex shrink-0 ${className}`}
+    >
       <button
         ref={triggerRef}
         type="button"
