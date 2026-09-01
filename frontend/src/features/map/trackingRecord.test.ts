@@ -57,11 +57,43 @@ describe("accumulateDistanceMeters", () => {
     const withSpike = accumulateDistanceMeters([point(0), spike, point(1)]);
     expect(withSpike).toBeCloseTo(accumulateDistanceMeters([point(0), point(1)]), 5);
   });
+
+  it("일시정지 중 이동한 거리는 누적하지 않는다", () => {
+    // 정지 10분 동안 약 500m 이동 → 0.83m/s라 속도 필터에 걸리지 않는다.
+    // segmentStart 표시가 없으면 이 500m가 그대로 더해진다.
+    const beforePause = point(0);
+    const afterResume = {
+      ...point(5), // 약 555m 북쪽
+      timestamp: beforePause.timestamp + 600_000,
+      segmentStart: true,
+    };
+    expect(accumulateDistanceMeters([beforePause, afterResume])).toBe(0);
+  });
+
+  it("재개 표본의 정확도가 나빠도 일시정지 구간은 끊는다", () => {
+    // 재개 직후 첫 표본은 대개 기지국 기반이라 정확도가 나쁘게 온다.
+    // 이 표본을 정확도만 보고 버리면 구간 경계까지 사라져, 정지 이전 지점과
+    // 재개 이후 표본이 이어지면서 정지 중 이동한 555m가 그대로 더해진다(약 667m).
+    // 표본이 2개뿐이면 나쁜 표본을 버린 뒤 비교 대상이 없어 그냥 0이 나오므로,
+    // 재개 이후 표본을 하나 더 둬야 경계가 유지되는지 드러난다.
+    const beforePause = point(0);
+    const badResume = { ...point(5), timestamp: 1_600_000, segmentStart: true, accuracy: 45 };
+    const next = { ...point(6), timestamp: 1_660_000 };
+    expect(accumulateDistanceMeters([beforePause, badResume, next])).toBe(0);
+  });
+
+  it("재개 이후의 이동은 정상적으로 누적한다", () => {
+    const resumed = { ...point(5), timestamp: 1_600_000, segmentStart: true };
+    const next = { ...point(6), timestamp: 1_660_000 };
+    const meters = accumulateDistanceMeters([point(0), resumed, next]);
+    expect(meters).toBeGreaterThan(100);
+    expect(meters).toBeLessThan(120);
+  });
 });
 
 describe("summarize", () => {
   it("거리·시간·평균 페이스를 계산한다", () => {
-    const record = summarize([point(0), point(1)], 1_000_000, 1_000_000 + 60_000);
+    const record = summarize([point(0), point(1)], 60_000);
     expect(record.durationMs).toBe(60_000);
     expect(record.distanceKm).toBeGreaterThan(0.1);
     // 약 111m를 60초 → 1km당 약 540초
@@ -70,11 +102,19 @@ describe("summarize", () => {
   });
 
   it("거의 움직이지 않았으면 페이스를 내지 않는다", () => {
-    expect(summarize([point(0)], 1_000_000, 1_000_060).paceSecPerKm).toBeNull();
+    expect(summarize([point(0)], 60_000).paceSecPerKm).toBeNull();
   });
 
-  it("종료 시각이 시작보다 앞서도 음수 시간이 되지 않는다", () => {
-    expect(summarize([], 2_000_000, 1_000_000).durationMs).toBe(0);
+  it("음수 활동 시간이 들어와도 0으로 막는다", () => {
+    expect(summarize([], -1_000).durationMs).toBe(0);
+  });
+
+  it("페이스는 벽시계가 아니라 활동 시간으로 낸다", () => {
+    // 같은 거리를 걸었어도 정지 시간이 빠진 쪽이 더 빠른 페이스로 나와야 한다.
+    const points = [point(0), point(1)];
+    const active = summarize(points, 60_000);
+    const withPause = summarize(points, 660_000); // 10분 정지가 섞였다면
+    expect(active.paceSecPerKm!).toBeLessThan(withPause.paceSecPerKm!);
   });
 });
 
