@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { CircleAlert } from "lucide-react";
+import { CircleAlert, CircleCheck } from "lucide-react";
 import { KakaoMap } from "./KakaoMap";
 import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "./components/ErrorNotice";
 import { getCourseDetail, getCourseGpx } from "./coursesApi";
@@ -109,15 +109,41 @@ const OUTLINE_CONTROL =
 const FILLED_CONTROL =
   "flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] bg-accent text-[15px] font-bold text-lavender";
 
+// 멈춰 있는 동안 쓰는 한 줄 요약. 재개할지 끝낼지 정하는 데 필요한 두 값만 남긴다.
+// 전체 통계 카드는 150px을 가져가 멈춘 화면에서 정작 보려던 것(코스 설명, 주변 목록)을 밀어낸다.
+function PausedSummary({ progress, remainingKm }: { progress: number; remainingKm: number }) {
+  return (
+    <div className="flex items-baseline justify-between rounded-[10px] bg-lavender px-3 py-2">
+      <span className="text-[13px] font-bold text-caption">
+        진행률 <span className="text-accent">{Math.round(progress)}%</span>
+      </span>
+      <span className="text-[13px] font-bold text-caption">{remainingKm.toFixed(1)}km 남음</span>
+    </div>
+  );
+}
+
 // 일시정지 중에는 재개와 종료를 함께 내놓는다 — 둘 다 여기서만 고를 수 있다.
 // 코스 정보 탭과 주변 정보 탭이 같은 조작을 쓰므로 한 곳에 둔다.
-function PausedControls({ onStop, onResume }: { onStop: () => void; onResume: () => void }) {
+function PausedControls({
+  onStop,
+  onResume,
+  // 완주한 뒤로는 이어 걷는 것보다 마무리가 다음 차례다. 자리는 그대로 두고 강조만 뒤집는다.
+  finished = false,
+}: {
+  onStop: () => void;
+  onResume: () => void;
+  finished?: boolean;
+}) {
   return (
     <div className="flex gap-2">
-      <button type="button" onClick={onStop} className={OUTLINE_CONTROL}>
+      <button type="button" onClick={onStop} className={finished ? FILLED_CONTROL : OUTLINE_CONTROL}>
         ■ 종료
       </button>
-      <button type="button" onClick={onResume} className={FILLED_CONTROL}>
+      <button
+        type="button"
+        onClick={onResume}
+        className={finished ? OUTLINE_CONTROL : FILLED_CONTROL}
+      >
         ▶ 다시 따라가기
       </button>
     </div>
@@ -167,6 +193,10 @@ export function CourseDetail() {
   const [startAddress, endAddress] = useEndpointAddresses(waypoints);
   const [direction, setDirection] = useState<Direction>("forward"); // 기본 정방향, 토글로 역방향
   const [progress, setProgress] = useState(0); // 0~100, 최고 진행률 유지
+  // 코스 끝에 닿았다는 뜻. 진행률은 최고치를 유지하므로 한 번 서면 되돌아가지 않는다.
+  // 화면과 같은 반올림을 쓴다 — 표본이 마지막 지점에 정확히 떨어지는 일은 없어서 99.9%에 멈추는데,
+  // 화면은 그걸 100%로 보여준다. 기준이 어긋나면 사용자 눈에는 완주인데 이탈 경고가 계속 뜬다.
+  const isFinished = Math.round(progress) >= 100;
   const [now, setNow] = useState(0); // 예상 종료 시각 계산의 기준 시각(추적 중에만 갱신)
   const [livePace, setLivePace] = useState<number | null>(null); // 실측 평균 페이스(초/km). 아직 못 낼 값이면 null
   const [startChecked, setStartChecked] = useState(false); // 세션당 한 번만 시작 거리 판정
@@ -175,6 +205,7 @@ export function CourseDetail() {
   const [offCourseMeters, setOffCourseMeters] = useState<number | null>(null); // null이 아니면 이탈 중(배너·유도선)
   const [offCourseGuidePoint, setOffCourseGuidePoint] = useState<LatLng | null>(null); // 유도선이 향할 코스 위 지점
   const wasOffCourseRef = useRef(false); // 이탈 진입 순간(아님→이탈)에만 음성이 나가도록 직전 상태 보관
+  const wasFinishedRef = useRef(false); // 완주 안내도 같은 이유로 직전 상태를 본다
   const [record, setRecord] = useState<TrackingRecord | null>(null); // null이 아니면 종료 후 기록 카드
 
   const nearbyRef = useRef<NearbyHandle>(null);
@@ -232,15 +263,22 @@ export function CourseDetail() {
         else setProgress((prev) => advanceProgress(prev, waypoints, currentLocation, direction));
       } else if (tooFarMeters == null) {
         setProgress((prev) => advanceProgress(prev, waypoints, currentLocation, direction));
-        // 주행 중 이탈 감지 — 히스테리시스: 이탈 중이면 EXIT까지 유지, 아니면 ENTER를 넘어야 이탈.
-        const { point, distance } = nearestPointOnCourse(waypoints, currentLocation);
-        const off = offCourseMeters != null ? distance >= OFF_COURSE_EXIT_M : distance > OFF_COURSE_ENTER_M;
-        if (off) {
-          setOffCourseMeters(distance);
-          setOffCourseGuidePoint(point);
-        } else {
+        if (isFinished) {
+          // 완주한 뒤의 이동은 이탈이 아니라 귀가다. 여기서 배너를 띄우면
+          // 코스를 다 걷고 역으로 향하는 사람에게 코스를 벗어났다고 경고하게 된다.
           if (offCourseMeters != null) setOffCourseMeters(null);
           if (offCourseGuidePoint != null) setOffCourseGuidePoint(null);
+        } else {
+          // 주행 중 이탈 감지 — 히스테리시스: 이탈 중이면 EXIT까지 유지, 아니면 ENTER를 넘어야 이탈.
+          const { point, distance } = nearestPointOnCourse(waypoints, currentLocation);
+          const off = offCourseMeters != null ? distance >= OFF_COURSE_EXIT_M : distance > OFF_COURSE_ENTER_M;
+          if (off) {
+            setOffCourseMeters(distance);
+            setOffCourseGuidePoint(point);
+          } else {
+            if (offCourseMeters != null) setOffCourseMeters(null);
+            if (offCourseGuidePoint != null) setOffCourseGuidePoint(null);
+          }
         }
       }
     }
@@ -272,6 +310,13 @@ export function CourseDetail() {
     if (isOffCourse && !wasOffCourseRef.current) announce("코스에서 벗어났어요");
     wasOffCourseRef.current = isOffCourse;
   }, [isOffCourse]);
+
+  // 완주한 순간에도 한 번만 알린다. 화면을 안 보고 걷는 사람에게는 이게 유일한 신호다.
+  // 진행률이 100에 선 뒤로는 계속 참이므로 직전 상태를 기억해 반복을 막는다.
+  useEffect(() => {
+    if (isFinished && !wasFinishedRef.current) announce("코스를 완주했어요");
+    wasFinishedRef.current = isFinished;
+  }, [isFinished]);
 
   // URL로 요청한 주행 방식이 없는 코스라면 보유한 첫 경로로 URL을 교정한다.
   useEffect(() => {
@@ -332,6 +377,7 @@ export function CourseDetail() {
     setOffCourseMeters(null);
     setOffCourseGuidePoint(null);
     wasOffCourseRef.current = false;
+    wasFinishedRef.current = false;
     primeSpeech(); // 버튼 탭(사용자 제스처) 시점에 iOS 음성 잠금 해제
     startTracking();
   };
@@ -424,6 +470,8 @@ export function CourseDetail() {
   // 이탈 배너·유도선은 실제 따라가는 중이고 이탈 판정이 선 경우에만
   // (일시정지 진입 시 위쪽에서 offCourseMeters를 비우므로 여기서 따로 막지 않는다).
   const showOffCourse = showStats && offCourseMeters != null;
+  // 완주 배너. 이탈과 같은 자리를 쓰지만 둘이 겹칠 일은 없다 — 완주한 뒤로는 이탈을 판정하지 않는다.
+  const showFinished = showStats && isFinished;
   const remainingRatio = 1 - progress / 100;
   const remainingKm = (activeRoute?.distance ?? 0) * remainingRatio;
   const eta = new Date(
@@ -480,17 +528,32 @@ export function CourseDetail() {
         {/* 지도 (z-0으로 stacking context를 가둬 Kakao 내부 레이어가 시트를 덮지 않게 함)
           폭에 상관없이 본문 전체를 채운다 — 패널은 어느 폭에서든 지도 위에 뜬다. */}
         <div className="absolute inset-0 z-0">
-          {/* 코스 이탈 배너 — 메뉴 버튼(top 16 + 높이 44) 아래, 가로 중앙. 조작 UI를 가리지 않는 비모달 안내. */}
-          {showOffCourse && (
+          {/* 지도 위 안내 배너 — 메뉴 버튼(top 16 + 높이 44) 아래. 조작 UI를 가리지 않는 비모달 안내.
+            가로 중앙은 지도 전체가 아니라 '패널에 가리지 않고 보이는 폭'의 한가운데다.
+            지도는 패널 아래까지 깔려 있어서 그냥 50%에 두면 창이 좁아질수록(패널 비중이 커질수록)
+            배너가 왼쪽으로 밀려 보인다. 지도를 fit할 때와 같은 보정(leftInset의 절반)을 쓴다. */}
+          {(showOffCourse || showFinished) && (
             <div
               role="status"
-              className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2"
-              style={{ top: "calc(env(safe-area-inset-top) + 68px)" }}
+              className="pointer-events-none absolute z-20 -translate-x-1/2"
+              style={{
+                top: "calc(env(safe-area-inset-top) + 68px)",
+                left: `calc(50% + ${Math.round(mapLeftInset / 2)}px)`,
+              }}
             >
-              <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-[13px] font-bold text-[#FF4D4F] shadow-[0_2px_10px_rgba(0,0,0,0.22)]">
-                <CircleAlert size={16} aria-hidden className="shrink-0" />
-                코스에서 약 {formatDistance(offCourseMeters!)} 벗어났어요
-              </div>
+              {showOffCourse ? (
+                <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-[13px] font-bold text-[#FF4D4F] shadow-[0_2px_10px_rgba(0,0,0,0.22)]">
+                  <CircleAlert size={16} aria-hidden className="shrink-0" />
+                  코스에서 약 {formatDistance(offCourseMeters!)} 벗어났어요
+                </div>
+              ) : (
+                // 완주는 출발 마커와 같은 그린으로. 강조색(바이올렛)은 화면 곳곳에 쓰여 신호가 안 되고,
+                // 그린은 이 앱에서 이미 '길의 시작과 끝'을 가리키는 색이다.
+                <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-[13px] font-bold text-[var(--color-start)] shadow-[0_2px_10px_rgba(0,0,0,0.22)]">
+                  <CircleCheck size={16} aria-hidden className="shrink-0" />
+                  코스를 완주했어요
+                </div>
+              )}
             </div>
           )}
           <KakaoMap
@@ -676,10 +739,12 @@ export function CourseDetail() {
                 높이가 변해(주소 로드 전후로도 커진다) 잘리는 위치가 코스마다·로드 전후로 달라지는데,
                 높이 수치로는 그걸 다 맞출 수 없어서 신호로 대신한다.
                 펼침·접힘 양쪽에 다 건다: 접힘에선 진행 방향 카드가, 펼침에선 설명·사진이 잘린다.
+                세션이 살아 있는 동안에는 걸지 않는다 — 바로 아래에 요약과 버튼이 불투명하게 붙어
+                스크롤 힌트로 읽히지 않고 사진 위에 얹힌 얼룩처럼 보인다.
                 -mt-10으로 스크롤 영역 위에 겹쳐 레이아웃 높이는 차지하지 않는다.
                 relative 래퍼를 새로 두지 않는 이유: 주변 정보 탭의 SpotDetailSheet가
                 이 section을 기준으로 absolute 배치되므로 중간에 위치 기준이 생기면 안 된다. */}
-              {!isTracking && (
+              {!sessionActive && (
                 <div
                   aria-hidden
                   className="pointer-events-none -mt-10 h-10 shrink-0 bg-linear-to-t from-white to-transparent md:hidden"
@@ -710,28 +775,47 @@ export function CourseDetail() {
                   </p>
                 )}
 
-                {showStats && (
-                  <TrackingStats
-                    progress={progress}
-                    remainingKm={remainingKm}
-                    eta={eta}
-                    pace={formatPace(livePace)}
-                  />
-                )}
+                {/* 따라가는 중에는 전체 카드, 멈춘 동안에는 한 줄. 멈춘 화면에서는 코스 설명이
+                  다시 보여야 하는데 카드가 150px을 가져가면 그 자리가 없다. */}
+                {showStats &&
+                  (trackingStatus === "paused" ? (
+                    <PausedSummary progress={progress} remainingKm={remainingKm} />
+                  ) : (
+                    <TrackingStats
+                      progress={progress}
+                      remainingKm={remainingKm}
+                      eta={eta}
+                      pace={formatPace(livePace)}
+                    />
+                  ))}
 
                 {trackingStatus === "paused" ? (
                   <div className={showStats ? "mt-3" : ""}>
-                    <PausedControls onStop={handleStopTracking} onResume={handleResume} />
+                    <PausedControls
+                      onStop={handleStopTracking}
+                      onResume={handleResume}
+                      finished={isFinished}
+                    />
                   </div>
                 ) : isTracking && currentLocation ? (
                   // 따라가는 중에는 종료 옆에 일시정지를 함께 둔다. 잠깐 쉬려고 종료를 누르면
                   // 기록이 거기서 끝나 버리는데, 그게 유일한 출구면 그렇게 누를 수밖에 없다.
                   // 위치를 잡는 동안에는 아직 멈출 진행이 없어 아래 단일 버튼을 그대로 쓴다.
                   <div className={`flex gap-2 ${showStats ? "mt-3" : ""}`}>
-                    <button type="button" onClick={handleStopTracking} className={OUTLINE_CONTROL}>
+                    {/* 완주하면 종료가 다음 차례다. 두 버튼의 자리는 그대로 두고 강조만 뒤집어
+                      "이제 끝낼 때"를 말한다(자동으로 끝내지는 않는다 — 100%는 추정이라서). */}
+                    <button
+                      type="button"
+                      onClick={handleStopTracking}
+                      className={isFinished ? FILLED_CONTROL : OUTLINE_CONTROL}
+                    >
                       ■ 종료
                     </button>
-                    <button type="button" onClick={pause} className={FILLED_CONTROL}>
+                    <button
+                      type="button"
+                      onClick={pause}
+                      className={isFinished ? OUTLINE_CONTROL : FILLED_CONTROL}
+                    >
                       ⏸ 일시정지
                     </button>
                   </div>
@@ -780,20 +864,17 @@ export function CourseDetail() {
                 </p>
 
                 {/* 어디까지 왔는지는 주변을 둘러보는 동안에도 알아야 재개할지 끝낼지 정할 수 있다.
-                  멈췄다는 말 바로 아래에 두어 '상태 → 근거 → 조작' 순으로 읽히게 한다.
-                  여기서는 주변 목록이 주인공이라 카드 대신 한 줄만 두고,
-                  모바일 시트는 그 한 줄도 목록을 밀어내므로 md 이상에서만 띄운다. */}
+                  멈췄다는 말 바로 아래에 두어 '상태 → 근거 → 조작' 순으로 읽히게 한다. */}
                 {showStats && (
-                  <div className="mb-2 hidden items-baseline justify-between rounded-[10px] bg-lavender px-3 py-2 md:flex">
-                    <span className="text-[13px] font-bold text-caption">
-                      진행률 <span className="text-accent">{Math.round(progress)}%</span>
-                    </span>
-                    <span className="text-[13px] font-bold text-caption">
-                      {remainingKm.toFixed(1)}km 남음
-                    </span>
+                  <div className="mb-2">
+                    <PausedSummary progress={progress} remainingKm={remainingKm} />
                   </div>
                 )}
-                <PausedControls onStop={handleStopTracking} onResume={resumeFromNearby} />
+                <PausedControls
+                  onStop={handleStopTracking}
+                  onResume={resumeFromNearby}
+                  finished={isFinished}
+                />
               </div>
             )}
             </>
