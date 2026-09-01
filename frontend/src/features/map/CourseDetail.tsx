@@ -469,7 +469,9 @@ export function CourseDetail() {
     trackingStatus !== "idle" && currentLocation != null && waypoints.length > 0 && tooFarMeters == null;
   // 이탈 배너·유도선은 실제 따라가는 중이고 이탈 판정이 선 경우에만
   // (일시정지 진입 시 위쪽에서 offCourseMeters를 비우므로 여기서 따로 막지 않는다).
-  const showOffCourse = showStats && offCourseMeters != null;
+  // !isFinished를 여기서 한 번 더 보는 이유: 이탈 상태를 지우는 건 다음 위치 표본이 들어올 때라,
+  // 완주한 순간과 그 표본 사이에 낡은 이탈 배너가 잠깐 남는다.
+  const showOffCourse = showStats && !isFinished && offCourseMeters != null;
   // 완주 배너. 이탈과 같은 자리를 쓰지만 둘이 겹칠 일은 없다 — 완주한 뒤로는 이탈을 판정하지 않는다.
   const showFinished = showStats && isFinished;
   const remainingRatio = 1 - progress / 100;
@@ -502,7 +504,10 @@ export function CourseDetail() {
           role="alertdialog"
           aria-modal="true"
           aria-label="코스에서 너무 멀어요"
-          className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 px-6"
+          // z-[55]: 상단바(sticky z-50)보다 위. 예전엔 상단바가 패널(z-10) 안에 있어 z-30으로도
+          // 덮였지만, 상단바를 레이아웃 최상단으로 옮기면서 그 위로 올라왔다.
+          // 기록 카드(z-[60])보다는 아래 — 둘이 같이 뜨는 경우는 없지만 순서는 지켜 둔다.
+          className="absolute inset-0 z-[55] flex items-center justify-center bg-black/40 px-6"
         >
           <div className="w-full max-w-sm rounded-[18px] bg-white px-5 py-6 text-center shadow-[0px_8px_24px_0px_rgba(0,0,0,0.2)]">
             {/* break-keep: 한글은 기본값이 글자 단위로 끊겨 "있어요"가 "있/어요"처럼 갈라진다 */}
