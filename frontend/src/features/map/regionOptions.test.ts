@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { buildRegionOptions, isGroup } from "./regionOptions";
+import { buildRegionOptions, type RegionGroup, type RegionSelectItem } from "./regionOptions";
 import type { Region } from "./types";
+
+const asGroup = (item: RegionSelectItem, name: string): RegionGroup => {
+  if (!("options" in item)) throw new Error(`${name}은 그룹이어야 함`);
+  return item;
+};
 
 // /api/regions 실제 응답 형태 (부산 광역시 3 + 경남 도 4)
 const regions: Region[] = [
@@ -21,14 +26,11 @@ describe("buildRegionOptions", () => {
   });
 
   it("광역시는 구를 흡수한 축약 flat 옵션 (부산광역시 → 부산, value=2자리)", () => {
-    const busan = opts[0];
-    expect(isGroup(busan)).toBe(false);
-    expect(busan).toEqual({ value: "26", label: "부산" });
+    expect(opts[0]).toEqual({ value: "26", label: "부산" });
   });
 
   it("도는 그룹: 라벨 축약 + '전체' 첫 항목 + 시군구 접미사 제거", () => {
-    const gyeongnam = opts[1];
-    if (!isGroup(gyeongnam)) throw new Error("경남은 그룹이어야 함");
+    const gyeongnam = asGroup(opts[1], "경남");
     expect(gyeongnam.label).toBe("경남");
     expect(gyeongnam.options[0]).toEqual({ value: "48", label: "경남 전체" });
     expect(gyeongnam.options.slice(1)).toEqual([
@@ -55,8 +57,7 @@ describe("buildRegionOptions - 전남광주통합특별시", () => {
   it("광역시처럼 흡수하지 않고 시군 그룹으로 전개", () => {
     const opts = buildRegionOptions(merged);
     expect(opts).toHaveLength(1);
-    const group = opts[0];
-    if (!isGroup(group)) throw new Error("전남광주통합특별시는 그룹이어야 함");
+    const group = asGroup(opts[0], "전남광주통합특별시");
     expect(group.label).toBe("전남광주통합");
     expect(group.options[0]).toEqual({ value: "12", label: "전남광주통합 전체" });
     expect(group.options.slice(1)).toEqual([
