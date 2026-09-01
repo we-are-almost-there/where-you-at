@@ -372,7 +372,7 @@ export function CourseDetail() {
   const mapBottomInset = isNarrow ? Math.round(sheetHeight) : 0;
 
   return (
-    // 모바일: 지도 풀블리드 + 하단 바텀시트 / md+: 상단바 + (좌 패널 + 우 지도)
+    // 모바일: 지도 풀블리드 + 하단 바텀시트 / md+: 상단바 + 지도 풀블리드 위 좌측 플로팅 패널
     <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-white">
       {/* 데스크톱 전용 상단바 — CourseExplore와 같이 레이아웃 최상단에 전체 폭으로 둔다.
         모바일은 지도 위 플로팅 버튼(KakaoMap)이 이 역할을 대신하므로 md 미만에서는 렌더되지 않는다. */}
@@ -410,9 +410,10 @@ export function CourseDetail() {
 
       {/* 상단바 아래 본문. 지도와 패널이 여기를 기준으로 자리를 잡으므로,
         모바일(상단바 없음)에서는 이 영역이 곧 화면 전체가 된다. */}
-      <main className="relative flex min-h-0 flex-1 md:flex-row">
-        {/* 지도 (z-0으로 stacking context를 가둬 Kakao 내부 레이어가 시트를 덮지 않게 함) */}
-        <div className="absolute inset-0 z-0 md:relative md:order-2 md:h-full md:min-w-0 md:flex-1">
+      <main className="relative flex min-h-0 flex-1">
+        {/* 지도 (z-0으로 stacking context를 가둬 Kakao 내부 레이어가 시트를 덮지 않게 함)
+          폭에 상관없이 본문 전체를 채운다 — 패널은 어느 폭에서든 지도 위에 뜬다. */}
+        <div className="absolute inset-0 z-0">
           {/* 코스 이탈 배너 — 메뉴 버튼(top 16 + 높이 44) 아래, 가로 중앙. 조작 UI를 가리지 않는 비모달 안내. */}
           {showOffCourse && (
             <div
@@ -443,13 +444,13 @@ export function CourseDetail() {
           />
         </div>
 
-        {/* 패널 (모바일=바텀시트, md+=좌측 컬럼)
-          md:relative 유지 필요: 주변 정보 탭 안의 SpotDetailSheet(상세 시트)가 absolute로 위치를 잡는데,
-          이 section이 relative여야 시트가 이 패널 안에서만 뜸.
+        {/* 패널 (모바일=바텀시트, md+=지도 위 플로팅 카드 — 목록 화면과 같은 폭 clamp를 쓴다)
+          absolute 유지 필요: 주변 정보 탭 안의 SpotDetailSheet(상세 시트)가 absolute로 위치를 잡는데,
+          이 section이 위치 기준이어야 시트가 이 패널 안에서만 뜸.
           static으로 바꾸면 시트가 기준을 잃고 지도까지 덮는 전체화면으로 퍼져버림. */}
         <section
           ref={panelRef}
-          className={`absolute inset-x-0 bottom-0 z-10 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] transition-[max-height] duration-300 md:relative md:order-1 md:h-full md:max-h-none md:basis-[46%] md:rounded-none md:shadow-none lg:basis-[44%] ${
+          className={`absolute inset-x-0 bottom-0 z-10 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] transition-[max-height] duration-300 md:inset-x-auto md:bottom-4 md:left-4 md:top-4 md:max-h-none md:w-[clamp(20rem,36vw,24rem)] md:rounded-2xl md:shadow-[0_8px_28px_rgba(0,0,0,0.2)] ${
             isTracking ? "max-h-[60%]" : sheetExpanded ? "max-h-[71%]" : "max-h-[51%]"
           }`}
         >
