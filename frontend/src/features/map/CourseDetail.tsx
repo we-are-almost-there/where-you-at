@@ -102,23 +102,22 @@ function ModeCard({
   );
 }
 
+// 하단 조작 버튼 두 종류. 종료는 언제나 왼쪽 아웃라인, 계속 이어가는 쪽은 오른쪽 채움으로 고정해
+// 따라가는 중과 일시정지 사이를 오가도 같은 자리를 누르게 한다.
+const OUTLINE_CONTROL =
+  "flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] border border-accent bg-white text-[15px] font-bold text-accent";
+const FILLED_CONTROL =
+  "flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] bg-accent text-[15px] font-bold text-lavender";
+
 // 일시정지 중에는 재개와 종료를 함께 내놓는다 — 둘 다 여기서만 고를 수 있다.
 // 코스 정보 탭과 주변 정보 탭이 같은 조작을 쓰므로 한 곳에 둔다.
 function PausedControls({ onStop, onResume }: { onStop: () => void; onResume: () => void }) {
   return (
     <div className="flex gap-2">
-      <button
-        type="button"
-        onClick={onStop}
-        className="flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] border border-accent bg-white text-[15px] font-bold text-accent"
-      >
+      <button type="button" onClick={onStop} className={OUTLINE_CONTROL}>
         ■ 종료
       </button>
-      <button
-        type="button"
-        onClick={onResume}
-        className="flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] bg-accent text-[15px] font-bold text-lavender"
-      >
+      <button type="button" onClick={onResume} className={FILLED_CONTROL}>
         ▶ 다시 따라가기
       </button>
     </div>
@@ -709,21 +708,31 @@ export function CourseDetail() {
                   <div className={showStats ? "mt-3" : ""}>
                     <PausedControls onStop={handleStopTracking} onResume={resume} />
                   </div>
+                ) : isTracking && currentLocation ? (
+                  // 따라가는 중에는 종료 옆에 일시정지를 함께 둔다. 잠깐 쉬려고 종료를 누르면
+                  // 기록이 거기서 끝나 버리는데, 그게 유일한 출구면 그렇게 누를 수밖에 없다.
+                  // 위치를 잡는 동안에는 아직 멈출 진행이 없어 아래 단일 버튼을 그대로 쓴다.
+                  <div className={`flex gap-2 ${showStats ? "mt-3" : ""}`}>
+                    <button type="button" onClick={handleStopTracking} className={OUTLINE_CONTROL}>
+                      ■ 종료
+                    </button>
+                    <button type="button" onClick={pause} className={FILLED_CONTROL}>
+                      ⏸ 일시정지
+                    </button>
+                  </div>
                 ) : (
                 <button
                   type="button"
                   onClick={isTracking ? handleStopTracking : handleStartTracking}
                   disabled={!activeRoute}
                   aria-pressed={isTracking}
-                  className={`flex h-14 w-full items-center justify-center gap-2 rounded-[14px] text-[15px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
-                    showStats ? "mt-3" : ""
-                  } ${
+                  className={`flex h-14 w-full cursor-pointer items-center justify-center gap-2 rounded-[14px] text-[15px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
                     isTracking
-                      ? "cursor-pointer border border-accent bg-white text-accent"
-                      : "cursor-pointer bg-accent text-lavender"
+                      ? "border border-accent bg-white text-accent"
+                      : "bg-accent text-lavender"
                   }`}
                 >
-                  {isTracking && !currentLocation && (
+                  {isTracking && (
                     // 작은 글리프는 뭔지 알아보기 어려워 회전 스피너로 '찾는 중'을 표현
                     <span
                       aria-hidden
@@ -731,9 +740,7 @@ export function CourseDetail() {
                     />
                   )}
                   {isTracking
-                    ? currentLocation
-                      ? "■ 따라가기 종료"
-                      : "현재 위치 찾는 중…"
+                    ? "현재 위치 찾는 중…"
                     : `${activeRoute ? MODE_ICON[activeRoute.route_type] : "🚶"} 따라가기`}
                 </button>
                 )}
