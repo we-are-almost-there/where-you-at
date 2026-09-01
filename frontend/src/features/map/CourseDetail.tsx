@@ -512,9 +512,14 @@ export function CourseDetail() {
           <div className="w-full max-w-sm rounded-[18px] bg-white px-5 py-6 text-center shadow-[0px_8px_24px_0px_rgba(0,0,0,0.2)]">
             {/* break-keep: 한글은 기본값이 글자 단위로 끊겨 "있어요"가 "있/어요"처럼 갈라진다 */}
             <p className="break-keep text-[17px] font-bold text-ink">코스에서 조금 먼 것 같아요</p>
+            {/* 화면 유지 안내와 같은 이유로 문장 단위로 줄을 나눈다. 한 문단으로 흘리면 폭에 따라
+              "코스 / 근처에서"처럼 문장 한가운데서 끊긴다. 앞 문장은 거리가 들어가 길이가 변하므로
+              좁은 화면에서 자기 안에서 한 번 더 접힐 수 있지만, 문장 경계는 유지된다. */}
             <p className="mt-2 break-keep text-[14px] leading-relaxed text-caption">
-              지금 계신 곳이 코스에서 약 {formatDistance(tooFarMeters)} 떨어져 있어요. 코스 근처에서
-              다시 시작해 주시겠어요?
+              <span className="block">
+                지금 계신 곳이 코스에서 약 {formatDistance(tooFarMeters)} 떨어져 있어요.
+              </span>
+              <span className="block">코스 근처에서 다시 시작해 주시겠어요?</span>
             </p>
             <button
               type="button"
