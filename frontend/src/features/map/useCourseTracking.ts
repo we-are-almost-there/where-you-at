@@ -123,6 +123,18 @@ export function useCourseTracking() {
     }
   }, [clearActiveWatch, closeSegment, resetSession]);
 
+  /**
+   * 진행 중인 세션을 지금 시점으로 요약한다. 시작한 적이 없으면 null.
+   * 종료 시와 같은 summarize를 쓰므로 주행 중 보던 값과 끝나고 나온 기록이 어긋나지 않는다.
+   * 표본이 들어올 때마다 렌더하지 않도록 상태로 들고 있지 않고, 부르는 쪽이 원하는 주기로 뽑아 간다.
+   */
+  const sampleRecord = useCallback((): TrackingRecord | null => {
+    if (!startedRef.current) return null;
+    // 열려 있는 구간은 닫지 않고 경과분만 더한다 — 여기서 닫으면 실제 정지가 아닌데 구간이 끊긴다.
+    const openMs = segmentStartedAtRef.current == null ? 0 : Date.now() - segmentStartedAtRef.current;
+    return summarize(pointsRef.current, activeMsRef.current + openMs);
+  }, []);
+
   /** 추적을 멈추고 이번 세션의 기록을 돌려준다. 시작한 적이 없으면 null. */
   const stopTracking = useCallback((): TrackingRecord | null => {
     clearActiveWatch();
@@ -182,5 +194,6 @@ export function useCourseTracking() {
     pause,
     resume,
     stopTracking,
+    sampleRecord,
   };
 }
