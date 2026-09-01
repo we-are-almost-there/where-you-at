@@ -98,6 +98,29 @@ function ModeCard({
   );
 }
 
+// 일시정지 중에는 재개와 종료를 함께 내놓는다 — 둘 다 여기서만 고를 수 있다.
+// 코스 정보 탭과 주변 정보 탭이 같은 조작을 쓰므로 한 곳에 둔다.
+function PausedControls({ onStop, onResume }: { onStop: () => void; onResume: () => void }) {
+  return (
+    <div className="flex gap-2">
+      <button
+        type="button"
+        onClick={onStop}
+        className="flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] border border-accent bg-white text-[15px] font-bold text-accent"
+      >
+        ■ 종료
+      </button>
+      <button
+        type="button"
+        onClick={onResume}
+        className="flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] bg-accent text-[15px] font-bold text-lavender"
+      >
+        ▶ 다시 따라가기
+      </button>
+    </div>
+  );
+}
+
 export function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -259,6 +282,14 @@ export function CourseDetail() {
     const nextParams = new URLSearchParams(searchParams);
     setInfoTabParam(nextParams, next);
     setSearchParams(nextParams, { replace: true });
+  };
+
+  // 주변 정보 탭에서 재개하면 코스 정보 탭으로 돌아간다.
+  // 그 자리에 머물면 모바일에서 추적 중 스크롤 영역이 숨겨져(주변 목록과 탭이 통째로 그 안에 있다)
+  // 방금 보던 목록이 사라진다. 재개를 눌렀다는 건 다시 걷겠다는 뜻이기도 하다.
+  const resumeFromNearby = () => {
+    resume();
+    changeInfoTab("course");
   };
 
   const changeCategory = (next: NearbySpot["category"]) => {
@@ -656,23 +687,9 @@ export function CourseDetail() {
                   <TrackingStats progress={progress} remainingKm={remainingKm} eta={eta} />
                 )}
 
-                {/* 일시정지 중에는 재개와 종료를 함께 내놓는다 — 둘 다 여기서만 고를 수 있다 */}
                 {trackingStatus === "paused" ? (
-                  <div className={`flex gap-2 ${showStats ? "mt-3" : ""}`}>
-                    <button
-                      type="button"
-                      onClick={handleStopTracking}
-                      className="flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] border border-accent bg-white text-[15px] font-bold text-accent"
-                    >
-                      ■ 종료
-                    </button>
-                    <button
-                      type="button"
-                      onClick={resume}
-                      className="flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] bg-accent text-[15px] font-bold text-lavender"
-                    >
-                      ▶ 다시 따라가기
-                    </button>
+                  <div className={showStats ? "mt-3" : ""}>
+                    <PausedControls onStop={handleStopTracking} onResume={resume} />
                   </div>
                 ) : (
                 <button
@@ -704,6 +721,26 @@ export function CourseDetail() {
                 )}
               </div>
              )}
+
+            {/* 주변 정보를 보는 동안에도 재개와 종료는 닿아야 한다. 탭을 여는 순간 일시정지가 걸리는데
+              여기에 조작이 없으면 멈춰 놓고 되돌릴 방법이 없다. 통계는 코스 정보 탭의 몫이라 빼고,
+              지금 멈춰 있다는 사실만 적는다. */}
+            {infoTab === "nearby" && trackingStatus === "paused" && (
+              <div
+                className="shrink-0 px-5 pt-3"
+                style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+              >
+                {trackingError && (
+                  <p role="alert" className="mb-2 text-center text-[13px] leading-relaxed text-caption">
+                    {trackingError}
+                  </p>
+                )}
+                <p className="mb-2 text-center text-[13px] font-bold text-caption">
+                  따라가기를 잠시 멈췄어요
+                </p>
+                <PausedControls onStop={handleStopTracking} onResume={resumeFromNearby} />
+              </div>
+            )}
             </>
           )}
         </section>
