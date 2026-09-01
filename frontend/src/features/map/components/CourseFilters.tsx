@@ -157,8 +157,8 @@ function FilterDropdown({
     (all.find((o) => o.getAttribute("aria-selected") === "true") ?? all[0])?.focus();
   }, [open]);
 
-  // 네이티브 select에는 있던 키보드 이동. 항목이 버튼이라 Tab은 이미 되지만,
-  // listbox는 위·아래로 훑는 게 기본이므로 그 경로도 열어 준다.
+  // 항목 사이 이동은 위·아래가 맡는다. 항목을 탭 순서에 두면 지역처럼 80개가 넘을 때
+  // 다음 필터로 가려고 Tab을 80번 눌러야 해서, 항목은 빼고 Tab은 위젯을 빠져나가게 둔다.
   const moveFocus = (step: number | "first" | "last") => {
     const all = options();
     if (all.length === 0) return;
@@ -191,6 +191,7 @@ function FilterDropdown({
         type="button"
         role="option"
         aria-selected={active}
+        tabIndex={-1}
         onClick={() => select(option.value)}
         className={`flex w-full items-center justify-between gap-4 rounded-lg py-2 pr-3 text-left text-[13px] text-ink transition-colors hover:bg-black/5 ${
           nested ? "pl-5" : "pl-3"
