@@ -87,6 +87,11 @@ def get_course(id: int, conn=Depends(get_db)):
 @router.get("/{id}/gpx", response_model=GpxResponse)
 def get_course_gpx(id: int, route_type: str = "trail", conn=Depends(get_db)):
     """코스 전체 경로 좌표 (상세 지도용). route_type으로 도보/자전거 구분."""
+    # 없는 코스와 "경로가 아직 안 들어온 코스"를 구분한다.
+    # 확인 없이 빈 배열을 주면 클라이언트가 둘을 똑같이 처리해 잘못된 id를 눈치채지 못한다.
+    if not crud.course_exists(conn, id):
+        raise HTTPException(status_code=404, detail="Course not found")
+
     waypoints = crud.get_waypoints(conn, id, route_type)
     return {"course_id": id, "route_type": route_type, "waypoints": waypoints}
 

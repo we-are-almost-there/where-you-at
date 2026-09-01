@@ -1,21 +1,18 @@
 import type { Course, RouteType } from "../types";
+import { formatDuration } from "../courseDuration";
 import { RoutePreview } from "./RoutePreview";
-
-function formatDuration(min: number): string {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  if (h && m) return `약 ${h}시간 ${m}분`;
-  if (h) return `약 ${h}시간`;
-  return `약 ${m}분`;
-}
 
 interface Props {
   course: Course;
   routeType: RouteType;
   onSelect?: (course: Course) => void;
+  /** 카드에 마우스가 올라오거나 키보드 포커스가 잡힐 때 — 지도에서 해당 코스를 강조하는 데 쓴다. */
+  onHoverChange?: (hovered: boolean) => void;
+  /** 지도 마커 쪽에서 이 코스를 가리키고 있을 때 — 카드에 테두리를 둘러 되짚어 준다. */
+  active?: boolean;
 }
 
-export function CourseCard({ course, routeType, onSelect }: Props) {
+export function CourseCard({ course, routeType, onSelect, onHoverChange, active }: Props) {
   const route =
     course.routes.find((r) => r.route_type === routeType) ?? course.routes[0];
   const points = routeType === "자전거" ? course.path_bicycle : course.path_trail;
@@ -23,11 +20,19 @@ export function CourseCard({ course, routeType, onSelect }: Props) {
   const hasRoute = points.length >= 2;
 
   return (
-    <article className="@container h-full">
+    // 강조는 ring이 아니라 outline으로 준다. ring은 box-shadow 위에 합성되는데 이 카드는
+    // shadow-[...] 임의값을 쓰고 있어 ring 레이어가 최종 box-shadow에 반영되지 않는다.
+    <article className="@container h-full" data-course-id={course.id}>
       <button
         type="button"
         onClick={() => onSelect?.(course)}
-        className="flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[14px] bg-white text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)]"
+        onMouseEnter={() => onHoverChange?.(true)}
+        onMouseLeave={() => onHoverChange?.(false)}
+        onFocus={() => onHoverChange?.(true)}
+        onBlur={() => onHoverChange?.(false)}
+        className={`flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[14px] bg-white text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)] ${
+          active ? "outline outline-2 outline-accent" : ""
+        }`}
       >
         {/* 미리보기: 경로와 대표 사진이 모두 있으면 반씩 표시하고, 하나만 있으면 전체 폭.
             둘 다 없으면 🏞️ fallback을 유지한다. */}

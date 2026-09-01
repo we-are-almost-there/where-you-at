@@ -26,9 +26,9 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
 
   return (
     <>
-      {/* 배경 딤 처리 — 순검정 대신 브랜드 잉크 톤 + 살짝 블러로 부드럽게 */}
+      {/* 배경 딤 처리 — 순검정 대신 브랜드 잉크 톤 + 살짝 블러로 부드럽게. */}
       <div
-        className={`fixed inset-0 z-40 bg-ink/30 backdrop-blur-[1px] transition-opacity duration-300 ${
+        className={`fixed inset-0 z-40 w-screen bg-ink/30 backdrop-blur-[1px] transition-opacity duration-300 ${
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         onClick={onClose}

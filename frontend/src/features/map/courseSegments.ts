@@ -5,7 +5,14 @@ import type { LatLng } from "./types";
 // 동일한 값 — 거리 계산에선 이미 제외되던 gap이 렌더에선 직선으로 이어지던 문제를 맞춘다.
 const GAP_SPLIT_KM = 3;
 
-function haversineKm(a: LatLng, b: LatLng): number {
+// 간략화된 좌표(목록 응답의 path_trail·path_bicycle)는 코스당 40점으로 솎아내므로 점 간격이
+// km 단위다. 232km 코스면 평균 5.8km라 3km 고정 기준으로는 정상 구간이 전부 gap으로 오인돼
+// 코스가 조각조각 끊긴다. 진짜 pen-up gap은 '그 경로의 평소 간격'에 비해 튀는 값이므로,
+// 중앙값의 배수도 함께 기준으로 삼아 둘 중 큰 쪽을 쓴다.
+// (원본 GPX는 간격이 수십 m라 중앙값 기준이 3km를 넘지 않아 기존 동작 그대로다.)
+const GAP_MEDIAN_MULTIPLE = 4;
+
+export function haversineKm(a: LatLng, b: LatLng): number {
   const R = 6371;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
   const dLng = ((b.lng - a.lng) * Math.PI) / 180;
@@ -23,9 +30,16 @@ function haversineKm(a: LatLng, b: LatLng): number {
  */
 export function splitIntoSegments(pts: LatLng[]): LatLng[][] {
   if (pts.length === 0) return [];
+
+  const gaps: number[] = [];
+  for (let i = 1; i < pts.length; i++) gaps.push(haversineKm(pts[i - 1], pts[i]));
+  const sorted = [...gaps].sort((a, b) => a - b);
+  const median = sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0;
+  const threshold = Math.max(GAP_SPLIT_KM, median * GAP_MEDIAN_MULTIPLE);
+
   const segments: LatLng[][] = [[pts[0]]];
   for (let i = 1; i < pts.length; i++) {
-    if (haversineKm(pts[i - 1], pts[i]) > GAP_SPLIT_KM) segments.push([]);
+    if (gaps[i - 1] > threshold) segments.push([]);
     segments[segments.length - 1].push(pts[i]);
   }
   return segments;

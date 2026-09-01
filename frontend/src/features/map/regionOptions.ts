@@ -11,8 +11,6 @@ export interface RegionGroup {
 }
 export type RegionSelectItem = RegionFlat | RegionGroup;
 
-export const isGroup = (item: RegionSelectItem): item is RegionGroup => "options" in item;
-
 // 시군구 5자리 코드의 앞 2자리 = 시도 코드 (행정표준코드). 접두 매칭으로 시도 전체를 커버.
 const sidoCode = (regionCode: string) => regionCode.slice(0, 2);
 

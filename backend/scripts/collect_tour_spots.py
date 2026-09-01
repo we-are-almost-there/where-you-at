@@ -167,7 +167,8 @@ DETAIL_TABLE_QUERY = {
 
 # ── 수집 ─────────────────────────────────────────────────────────────────────
 
-def collect_by_content_type(conn, content_type_id: int):
+def collect_by_content_type(conn, content_type_id: int) -> bool:
+    """콘텐츠타입 하나를 수집한다. 할당량 초과로 중단되면 False, 정상 완료면 True."""
     ctype_str = str(content_type_id)
     detail_table = DETAIL_TABLE_MAP[ctype_str]
     print(f"\n[INFO] 콘텐츠타입 {content_type_id} 수집 시작 → {detail_table}")
@@ -180,6 +181,11 @@ def collect_by_content_type(conn, content_type_id: int):
     while True:
         try:
             items, total_count = fetch_area_based_list(content_type_id, page_no, num_of_rows)
+        except RuntimeError as e:
+            if "API_QUOTA_EXCEEDED" in str(e):
+                print(f"[ERROR] API 할당량 초과 — 콘텐츠타입 {content_type_id} page {page_no}에서 중단")
+                return False
+            raise
         except Exception as e:
             print(f"[ERROR] areaBasedList 실패 (page {page_no}): {e}")
             break
@@ -224,7 +230,8 @@ def collect_by_content_type(conn, content_type_id: int):
             except Exception as e:
                 # 429(레이트 리밋)·기타 에러는 스킵하고 계속 진행
                 # collect_by_content_type은 tour_spot 공통 데이터 수집이 주목적이므로
-                # 상세 테이블 누락분은 --fill-details(fill_missing_details)로 재수집
+                # 상세 테이블 누락분은 --fill-details(fill_missing_details)로 재시도/quota
+                # 구분까지 포함해 재수집하도록 의도한다.
                 print(f"[WARN] detailIntro 실패 content_id={content_id}: {e}")
 
         upsert_tour_spots(conn, spot_rows)
@@ -235,11 +242,12 @@ def collect_by_content_type(conn, content_type_id: int):
 
         if total_collected >= total_count or page_no > max_pages:
             break
-        
+
         page_no += 1
         time.sleep(0.1)
 
     print(f"[INFO] 콘텐츠타입 {content_type_id} 완료 — {total_collected}건")
+    return True
 
 
 def fill_missing_details(conn):
@@ -254,11 +262,11 @@ def fill_missing_details(conn):
                 AND content_id NOT IN (SELECT content_id FROM {detail_table})
             """, (ctype_str,))
             missing = [row[0] for row in cur.fetchall()]
- 
+
         if not missing:
             print(f"[INFO] 콘텐츠타입 {ctype_str} 누락 없음")
             continue
- 
+
         print(f"\n[INFO] 콘텐츠타입 {ctype_str} 누락 {len(missing)}건 재수집 시작")
         detail_rows = []
 
@@ -269,8 +277,11 @@ def fill_missing_details(conn):
                     if intro:
                         intro["content_id"] = content_id
                         detail_rows.append(intro)
+                    else:
+                        print(f"[WARN] detailIntro 빈 응답 content_id={content_id} (상세정보 없음)")
+                        detail_rows.append({"content_id": content_id})
                     time.sleep(1.0)
-                    break  # 성공 시 재시도 루프 탈출
+                    break
                 except RuntimeError as e:
                     if "API_QUOTA_EXCEEDED" in str(e):
                         print("[ERROR] API 할당량 초과 — 종료합니다.")
@@ -278,21 +289,32 @@ def fill_missing_details(conn):
                             UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
                         return False
                     elif "RATE_LIMITED" in str(e):
+                        if retry == 4:
+                            print(f"[ERROR] 429 5회 소진 content_id={content_id} — 이번 세션 보류, 다음 재수집 때 다시 시도")
+                            break
                         wait = 10.0 * (retry + 1)
                         print(f"[WARN] 429 — {wait:.0f}초 대기 후 재시도 ({retry+1}/5)")
                         time.sleep(wait)
+                    elif "TIMEOUT" in str(e):
+                        if retry == 4:
+                            print(f"[ERROR] 타임아웃 5회 소진 content_id={content_id} — 이번 세션 보류, 다음 재수집 때 다시 시도")
+                            break  # detail_rows에 넣지 않음 → 다음 실행 시 여전히 "누락"으로 잡혀 자동 재시도됨
+                        wait = 3.0 * (retry + 1)
+                        print(f"[WARN] 타임아웃 — {wait:.0f}초 대기 후 재시도 content_id={content_id} ({retry+1}/5)")
+                        time.sleep(wait)
                     else:
+                        print(f"[ERROR] detailIntro 실패 content_id={content_id}: {e}")
                         break
-                        
+
             # 100건마다 중간 적재
             if len(detail_rows) >= 100:
                 UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
                 print(f"[INFO] {i}/{len(missing)} 중간 적재 완료")
                 detail_rows = []
- 
+
         if detail_rows:
             UPSERT_DETAIL_FN[detail_table](conn, detail_rows)
- 
+
         print(f"[INFO] 콘텐츠타입 {ctype_str} 재수집 완료")
 
     return True
@@ -302,17 +324,25 @@ def main():
     conn = get_db_connection()
     if not conn:
         return
+    completed = True
     try:
         for ct in CONTENT_TYPES:
-            collect_by_content_type(conn, ct)
+            if not collect_by_content_type(conn, ct):
+                print("[ERROR] API 할당량 초과 — 남은 콘텐츠타입 수집을 중단합니다.")
+                completed = False
+                break
     finally:
         conn.close()
-    print("\n[INFO] 전체 수집 완료")
+
+    if completed:
+        print("\n[INFO] 전체 수집 완료")
+    else:
+        print("\n[INFO] 오늘 수집 세션 종료 (내일 다시 실행하세요)")
 
 
 def main_fill():
     """누락된 상세 정보만 재수집.
-    
+
     기존 스크립트 실행 시 detailIntro 호출 시간 텀이 짧아
     상세 테이블(attraction/accommodation/restaurant)에 누락이 발생할 수 있다.
     이 옵션은 tour_spot에는 있으나 상세 테이블에 없는 데이터만 선별해 재수집한다.
@@ -324,12 +354,12 @@ def main_fill():
         completed = fill_missing_details(conn)
     finally:
         conn.close()
-    
+
     if completed:
         print("\n[INFO] 누락 상세 재수집 완료")
     else:
         print("\n[INFO] 오늘 재수집 세션 종료 (내일 다시 실행하세요)")
- 
+
 if __name__ == "__main__":
     args = sys.argv[1:]
     if "--fill-details" in args:

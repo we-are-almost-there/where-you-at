@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { KakaoMap } from "./KakaoMap";
-import { CourseFilters } from "./components/CourseFilters";
+import { KakaoMap, type CourseMapItem } from "./KakaoMap";
+import {
+  CourseFilterChips,
+  CourseKeywordSearch,
+  CourseMobileFilters,
+  CourseSortFilter,
+} from "./components/CourseFilters";
 import { DifficultyFilter } from "./components/DifficultyFilter";
+import { CourseGroupPicker } from "./components/CourseGroupPicker";
 import { CourseList } from "./components/CourseList";
 import { CourseTabs } from "./components/CourseTabs";
 import { Pagination } from "./components/Pagination";
@@ -29,6 +35,34 @@ export function CourseExplore() {
   const [geoDenied, setGeoDenied] = useState(false);
   const [regionOptions, setRegionOptions] = useState<RegionSelectItem[]>([]);
   const listScrollRef = useRef<HTMLDivElement>(null);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const [mapLeftInset, setMapLeftInset] = useState(0);
+
+  // 데스크톱 지도에서 패널이 실제로 덮는 폭을 잰다. 패널 폭이 clamp와 창 크기에 따라
+  // 달라지므로 CSS 수치를 JS에 한 번 더 하드코딩하지 않는다.
+  useEffect(() => {
+    const layout = layoutRef.current;
+    const panel = panelRef.current;
+    if (!layout || !panel) return;
+
+    const measure = () => {
+      if (window.getComputedStyle(panel).position !== "absolute") {
+        setMapLeftInset(0);
+        return;
+      }
+      const layoutBox = layout.getBoundingClientRect();
+      const panelBox = panel.getBoundingClientRect();
+      const next = Math.max(0, Math.ceil(panelBox.right - layoutBox.left + 16));
+      setMapLeftInset((current) => (current === next ? current : next));
+    };
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(layout);
+    observer.observe(panel);
+    measure();
+    return () => observer.disconnect();
+  }, []);
 
   // 지역 필터 옵션 로드. 코스와 달리 재조회 트리거가 없으므로, 마운트 시점에
   // 백엔드가 아직 안 떠 있으면 영구히 빈 필터가 된다. 실패 시 짧게 재시도해 자가 복구한다.
@@ -103,6 +137,104 @@ export function CourseExplore() {
 
   const totalPages = Math.max(1, Math.ceil(res.total_count / DEFAULT_PAGE_SIZE));
 
+  // 지금 짚고 있는 코스들과 그 출처. 카드 강조(테두리)는 지도 쪽에서 짚었을 때만 필요하므로
+  // id만으로는 부족하고 어디서 왔는지를 같이 들고 있어야 한다.
+  // ids가 복수인 경우: DMZ 본코스와 우회로처럼 시작점이 포개진 마커를 짚었을 때. 마커 하나로는
+  // 둘 중 어느 쪽인지 정할 수 없으므로 둘 다 켠다(선을 짚으면 하나로 좁혀진다).
+  const [hovered, setHovered] = useState<{ ids: number[]; from: "card" | "map" } | null>(null);
+
+  // 시작점이 포개진 마커를 눌러 고르는 중인 코스들. hover와 달리 커서가 떠나도 남아 있어야 하므로
+  // 별도 상태로 두고, 열려 있는 동안에는 hover보다 이쪽을 우선한다.
+  const [picked, setPicked] = useState<{ ids: number[]; index: number } | null>(null);
+  const pickedId = picked ? picked.ids[picked.index] : null;
+
+  // 현재 페이지 결과를 지도용으로 변환. 좌표(path_*)는 목록 응답에 이미 담겨 오므로 추가 요청이 없다.
+  const mapCourses = useMemo<CourseMapItem[]>(
+    () =>
+      res.courses.map((c) => ({
+        id: c.id,
+        title: c.title,
+        points: routeType === "자전거" ? c.path_bicycle : c.path_trail,
+        // 카드와 같은 기준으로 고른다 — 지금 탭의 주행 방식, 없으면 가진 것 중 첫 번째.
+        distanceKm: (c.routes.find((r) => r.route_type === routeType) ?? c.routes[0]).distance,
+      })),
+    [res.courses, routeType],
+  );
+
+  const openCourse = (id: number) => {
+    navigate(`/courses/${id}${routeType === "자전거" ? "?type=bicycle" : ""}`);
+  };
+
+  // 목록에서 사라진 코스를 계속 짚고 있지 않도록, 현재 페이지에 있는 id만 유효로 본다.
+  // (마커에 커서를 올린 채로 목록이 갱신되면 mouseout이 오지 않아 id가 남는다)
+  // hover가 살아 있으면 그쪽이 이긴다 — 고른 코스를 열어둔 채로 다른 마커를 잠깐 훑어볼 수 있고,
+  // 커서를 떼면 다시 고른 코스로 돌아온다.
+  const activeCourseIds = useMemo(() => {
+    const ids = hovered ? hovered.ids : pickedId != null ? [pickedId] : [];
+    return ids.filter((id) => mapCourses.some((c) => c.id === id));
+  }, [hovered, pickedId, mapCourses]);
+  // 카드 테두리는 '지도가 이 카드를 가리키는 중'이라는 신호이므로, 카드 자신을 hover할 때는 빼야 한다.
+  // 코스가 하나로 정해질 때만 켠다. 시작점이 포개져 여럿이 잡혔을 땐 카드가 한 장씩만 화면에
+  // 들어와(패널 525px에 카드 250px) 그중 하나만 테두리가 보이는데, 그러면 라벨은 여러 개라고
+  // 하는데 목록은 하나를 가리키는 꼴이 된다. 그때는 목록을 건드리지 않고 지도가 답한다.
+  const pointedFromMap = hovered ? hovered.from === "map" : pickedId != null;
+  const mapPointedIds = pointedFromMap && activeCourseIds.length === 1 ? activeCourseIds : [];
+  // 지도를 옮기는 건 카드에서 짚었고 대상이 하나로 정해졌을 때만.
+  const focusCourseId = hovered?.from === "card" && activeCourseIds.length === 1 ? activeCourseIds[0] : null;
+
+  const scrollCardIntoView = (id: number) => {
+    const scroller = listScrollRef.current;
+    const card = scroller?.querySelector(`[data-course-id="${id}"]`);
+    if (!scroller || !card) return;
+    // 이미 다 보이는 카드는 건드리지 않는다. 마커가 촘촘히 붙어 있어 커서가 여러 개를 스치고
+    // 지나갈 때, 매번 스크롤을 걸면 목록이 계속 덜컹거린다.
+    const view = scroller.getBoundingClientRect();
+    const box = card.getBoundingClientRect();
+    if (box.top >= view.top && box.bottom <= view.bottom) return;
+    card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+
+  // 지도 → 목록 방향 매칭. 마커는 시작점이 포개진 코스를 한꺼번에(지도가 묶어서 넘겨준다),
+  // 선은 경로가 갈라지므로 하나만 짚는다.
+  // (카드 → 지도 방향은 카드 자신의 hover가 처리하므로 여기서 스크롤하면 안 된다 — 목록이 계속 흔들린다.)
+  const handleMapHover = (ids: number[]) => {
+    if (ids.length === 0) {
+      setHovered(null);
+      return;
+    }
+    setHovered({ ids, from: "map" });
+    // 코스가 하나로 정해질 때만 목록을 옮긴다. 시작점이 포개져 여럿이 잡혔을 땐 첫 번째로만
+    // 스크롤하게 되는데, 나머지가 화면 밖이면 어디 있는지 알 수 없어 오히려 헷갈린다.
+    // 그때는 목록에 답을 미루지 않고 지도가 답한다 — 잡힌 코스의 경로선이 함께 진해진다.
+    if (ids.length === 1) scrollCardIntoView(ids[0]);
+  };
+
+  // 결과가 바뀌면(필터·페이지·탭) 카드가 가리키던 코스는 더 이상 화면에 없다.
+  const [pickedBaseline, setPickedBaseline] = useState(res.courses);
+  if (pickedBaseline !== res.courses) {
+    setPickedBaseline(res.courses);
+    if (picked) setPicked(null);
+  }
+  // 카드가 넘겨 보는 실제 대상. index는 이 배열 기준이라 목록 스크롤도 여기서 뽑아 쓴다.
+  const pickedCourses = picked
+    ? picked.ids.flatMap((id) => res.courses.filter((c) => c.id === id))
+    : [];
+
+  // 시작점이 포개진 마커 클릭 — 지도를 확대해 갈라놓는 대신 그 자리의 코스를 카드로 넘겨 본다.
+  const pickGroup = (ids: number[]) => {
+    // 지금 페이지에 있는 코스만 담아 두면 ids와 pickedCourses의 순서·길이가 어긋나지 않는다.
+    const valid = ids.filter((id) => res.courses.some((c) => c.id === id));
+    if (valid.length < 2) return;
+    setPicked({ ids: valid, index: 0 });
+    scrollCardIntoView(valid[0]);
+  };
+  const pickIndex = (index: number) => {
+    if (!picked) return;
+    setPicked({ ...picked, index });
+    const next = pickedCourses[index];
+    if (next) scrollCardIntoView(next.id);
+  };
+
   const updateUrlState = (next: CourseUrlState, replace = false) => {
     setSearchParams(buildCourseSearchParams(next), { replace });
   };
@@ -128,64 +260,116 @@ export function CourseExplore() {
   };
 
   return (
-    // 상·하단 고정 앱 레이아웃: 모바일=세로 1열 / md+=목록 + 지도 분할
-    <div className="flex h-dvh w-full flex-col overflow-hidden bg-white md:flex-row">
-      {/* 코스 목록 영역 */}
-      <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white md:order-1 md:min-w-0 md:flex-none md:basis-[46%] lg:basis-[44%]">
-        {/* 상단바 */}
-        <AppHeader />
-        {/* 제목 + 탭 */}
-        <div className="shrink-0 px-4 pb-0 pt-4 md:pt-5">
-          <h1 className="font-bold text-ink text-[20px]">코스 목록</h1>
-          <div className="mt-3">
-            <CourseTabs value={routeType} onChange={changeType} />
-          </div>
-        </div>
+    // 모바일은 기존 목록 화면, md 이상은 전체 지도 위에 목록 패널을 띄운다.
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-white">
+      <AppHeader />
 
-        {/* 필터 + 카드 목록 (상단 고정 아래 영역 내부 스크롤) */}
-        <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4 md:min-w-0">
-          <CourseFilters value={filters} onChange={changeFilters} regionOptions={regionOptions} />
-          {/* 코스 수 + 난이도(도보 전용)를 한 줄에 배치 */}
-          <div className="mt-3 mb-3 flex items-center justify-between gap-3">
-            <p className="text-[13px] text-caption">총 {res.total_count}개 코스</p>
-            {routeType === "도보" && (
-              <DifficultyFilter
-                value={filters.difficulty}
-                onChange={(v) => changeFilters({ ...filters, difficulty: v })}
+      <main ref={layoutRef} className="relative flex min-h-0 flex-1">
+        {/* 지도: md+ 전용, 상단바 아래 영역을 채우는 배경 */}
+        <aside className="hidden md:absolute md:inset-0 md:block">
+          <KakaoMap
+            courses={mapCourses}
+            activeCourseIds={activeCourseIds}
+            focusCourseId={focusCourseId}
+            leftInset={mapLeftInset}
+            onCourseClick={openCourse}
+            onCourseGroupClick={pickGroup}
+            pickedCourseId={pickedId}
+            pickedCard={
+              pickedCourses.length > 1 && picked ? (
+                <CourseGroupPicker
+                  courses={pickedCourses}
+                  index={picked.index}
+                  routeType={routeType}
+                  onIndexChange={pickIndex}
+                  onSelect={(course) => openCourse(course.id)}
+                  onClose={() => setPicked(null)}
+                />
+              ) : null
+            }
+            onCourseMarkerHover={handleMapHover}
+            onCourseLineHover={(id) => handleMapHover(id == null ? [] : [id])}
+          />
+        </aside>
+
+        {/* 코스 목록 영역 */}
+        <section
+          ref={panelRef}
+          className="z-20 flex min-h-0 flex-1 flex-col overflow-hidden bg-white md:absolute md:bottom-4 md:left-4 md:top-4 md:w-[clamp(20rem,36vw,24rem)] md:flex-none md:rounded-2xl md:shadow-[0_8px_28px_rgba(0,0,0,0.2)]"
+        >
+          {/* 제목 + 탭 */}
+          <div className="shrink-0 px-4 pb-0 pt-4 md:pt-5">
+            <h1 className="font-bold text-ink text-[20px]">코스 목록</h1>
+            <div className="mt-3">
+              <CourseTabs value={routeType} onChange={changeType} />
+            </div>
+          </div>
+
+          {/* 필터 + 카드 목록 (상단 고정 아래 영역 내부 스크롤) */}
+          <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4 md:min-w-0">
+            <CourseKeywordSearch value={filters} onChange={changeFilters} />
+            <div className="mt-2.5 md:hidden">
+              <CourseMobileFilters
+                value={filters}
+                onChange={changeFilters}
+                regionOptions={regionOptions}
               />
+            </div>
+            {/* 코스 수 + 데스크톱 정렬 / 모바일 난이도 */}
+            <div className="mt-3 mb-3 flex items-center justify-between gap-3">
+              <p className="text-[13px] text-caption">총 {res.total_count}개 코스</p>
+              <div className="hidden md:block">
+                <CourseSortFilter value={filters} onChange={changeFilters} />
+              </div>
+              {routeType === "도보" && (
+                <div className="md:hidden">
+                  <DifficultyFilter
+                    value={filters.difficulty}
+                    onChange={(next) => changeFilters({ ...filters, difficulty: next })}
+                  />
+                </div>
+              )}
+            </div>
+            {error ? (
+              <ErrorNotice
+                title={CONNECTION_ERROR_TITLE}
+                description={CONNECTION_ERROR_DESC}
+                onRetry={retry}
+              />
+            ) : loading ? (
+              <p className="py-16 text-center text-[14px] text-caption">코스를 불러오는 중…</p>
+            ) : (
+              <>
+                <CourseList
+                  courses={res.courses}
+                  routeType={routeType}
+                  onSelect={(course) => openCourse(course.id)}
+                  onHover={(id) => setHovered(id == null ? null : { ids: [id], from: "card" })}
+                  activeIds={mapPointedIds}
+                />
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  onChange={(nextPage) => updateUrlState({ routeType, filters, page: nextPage })}
+                />
+              </>
             )}
           </div>
-          {error ? (
-            <ErrorNotice
-              title={CONNECTION_ERROR_TITLE}
-              description={CONNECTION_ERROR_DESC}
-              onRetry={retry}
-            />
-          ) : loading ? (
-            <p className="py-16 text-center text-[14px] text-caption">코스를 불러오는 중…</p>
-          ) : (
-            <>
-              <CourseList
-                courses={res.courses}
-                routeType={routeType}
-                onSelect={(course) =>
-                  navigate(`/courses/${course.id}${routeType === "자전거" ? "?type=bicycle" : ""}`)
-                }
-              />
-              <Pagination
-                page={page}
-                totalPages={totalPages}
-                onChange={(nextPage) => updateUrlState({ routeType, filters, page: nextPage })}
-              />
-            </>
-          )}
-        </div>
-      </section>
+        </section>
 
-      {/* 지도: md+ 전용, 넓게 차지 */}
-      <aside className="hidden md:order-2 md:block md:h-full md:min-w-0 md:flex-1">
-        <KakaoMap />
-      </aside>
+        {/* 데스크톱 필터: 검색창은 패널에 두고 선택 필터만 지도 위에 띄운다. */}
+        <div
+          className="pointer-events-none absolute right-4 top-4 z-10 hidden md:block [&>*]:pointer-events-auto"
+          style={{ left: mapLeftInset }}
+        >
+          <CourseFilterChips
+            value={filters}
+            onChange={changeFilters}
+            regionOptions={regionOptions}
+            showDifficulty={routeType === "도보"}
+          />
+        </div>
+      </main>
     </div>
   );
 }
