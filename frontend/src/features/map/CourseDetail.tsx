@@ -748,8 +748,7 @@ export function CourseDetail() {
              )}
 
             {/* 주변 정보를 보는 동안에도 재개와 종료는 닿아야 한다. 탭을 여는 순간 일시정지가 걸리는데
-              여기에 조작이 없으면 멈춰 놓고 되돌릴 방법이 없다. 통계는 코스 정보 탭의 몫이라 빼고,
-              지금 멈춰 있다는 사실만 적는다. */}
+              여기에 조작이 없으면 멈춰 놓고 되돌릴 방법이 없다. */}
             {infoTab === "nearby" && trackingStatus === "paused" && (
               <div
                 className="shrink-0 px-5 pt-3"
@@ -760,6 +759,21 @@ export function CourseDetail() {
                     {trackingError}
                   </p>
                 )}
+
+                {/* 어디까지 왔는지는 주변을 둘러보는 동안에도 알아야 재개할지 끝낼지 정할 수 있다.
+                  md 이상은 패널이 화면 높이만큼 길어 그대로 두고, 모바일 시트에서는 그만큼
+                  주변 목록이 밀려나므로 뺀다. */}
+                {showStats && (
+                  <div className="mb-3 hidden md:block">
+                    <TrackingStats
+                      progress={progress}
+                      remainingKm={remainingKm}
+                      eta={eta}
+                      pace={formatPace(livePace)}
+                    />
+                  </div>
+                )}
+
                 <p className="mb-2 text-center text-[13px] font-bold text-caption">
                   따라가기를 잠시 멈췄어요
                 </p>
