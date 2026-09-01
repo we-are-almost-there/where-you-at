@@ -547,9 +547,12 @@ export function CourseDetail() {
                   코스에서 약 {formatDistance(offCourseMeters!)} 벗어났어요
                 </div>
               ) : (
-                // 완주는 출발 마커와 같은 그린으로. 강조색(바이올렛)은 화면 곳곳에 쓰여 신호가 안 되고,
+                // 완주는 그린으로. 강조색(바이올렛)은 화면 곳곳에 쓰여 신호가 되지 못하고,
                 // 그린은 이 앱에서 이미 '길의 시작과 끝'을 가리키는 색이다.
-                <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-[13px] font-bold text-[var(--color-start)] shadow-[0_2px_10px_rgba(0,0,0,0.22)]">
+                // 다만 마커용 원색(--color-start #03c75a)을 그대로 쓰면 흰 배경 위 13px 글자에서
+                // 눈이 부시고 대비도 2.25:1로 낮다. 살짝만 눌러 3.5:1로 맞춘 값 —
+                // 옆자리를 쓰는 이탈 배너의 빨강(#FF4D4F, 3.27:1)과 같은 무게로 읽힌다.
+                <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-[13px] font-bold text-[#0B9D4E] shadow-[0_2px_10px_rgba(0,0,0,0.22)]">
                   <CircleCheck size={16} aria-hidden className="shrink-0" />
                   코스를 완주했어요
                 </div>
