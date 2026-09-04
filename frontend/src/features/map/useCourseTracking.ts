@@ -38,7 +38,10 @@ export function useCourseTracking() {
   const activeMsRef = useRef(0);
   const segmentStartedAtRef = useRef<number | null>(null);
   const startedRef = useRef(false); // 세션을 시작한 적이 있는지 — 기록을 남길지 판단한다
-  const resumedRef = useRef(false); // 재개 후 첫 표본에 구간 경계를 찍기 위한 1회성 플래그
+  // 재개 후 첫 표본에 구간 경계를 찍기 위한 1회성 플래그.
+  // 성공 표본이 소비할 때까지 유지한다 — 에러 콜백에서 내리면 watch가 살아남는 에러 뒤에
+  // 들어온 첫 표본이 경계를 잃고, 정지 중 이동한 거리가 누적 거리에 섞인다.
+  const resumedRef = useRef(false);
   const [currentLocation, setCurrentLocation] = useState<TrackedLocation | null>(null);
   const [status, setStatus] = useState<TrackingStatus>("idle");
   const [error, setError] = useState<string | null>(null);
