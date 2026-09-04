@@ -45,7 +45,7 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 정렬 일관성이 실제로 필요한 페이지(Race, Support등) 만
+/* 정렬 일관성이 실제로 필요한 페이지(Race, Support, Bicycle등) 만
    이 클래스를 붙여 켠다. 다른 페이지는 기본값(auto)이라 애초에 이 트레이드오프가
    필요 없다. */
 html.scrollbar-gutter-stable {

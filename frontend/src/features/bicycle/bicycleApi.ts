@@ -17,13 +17,15 @@ interface ApiBicycleFacility {
 }
 
 export interface BicycleRegionOption {
-  sido: string;
-  sido_code: string;
-}
-
-export interface BicycleSigunguOption {
   region_code: string;
   name: string;
+  sido: string;
+}
+
+export interface BicycleSubregionOption {
+  region_code: string;
+  name: string;
+  cnt: number;
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -88,12 +90,17 @@ export async function getBicycleFacilityDetail(id: number): Promise<BicycleFacil
   return fromApiFacility(f);
 }
 
-/** GET /api/bicycle-facilities/regions — 자전거 시설 보유 시/도 목록. */
-export async function getBicycleRegions(): Promise<BicycleRegionOption[]> {
-  return apiGet<BicycleRegionOption[]>("/api/bicycle-facilities/regions");
+/** GET /api/bicycle-facilities/regions — 자전거 시설 보유 지역(시/도+시/군/구), 현재 탭 기준. */
+export async function getBicycleRegions(dataSource: string): Promise<BicycleRegionOption[]> {
+  return apiGet<BicycleRegionOption[]>(`/api/bicycle-facilities/regions?data_source=${dataSource}`);
 }
 
-/** GET /api/bicycle-facilities/regions/{sidoCode}/sigungu — 시/군/구 목록. */
-export async function getBicycleSigungu(sidoCode: string): Promise<BicycleSigunguOption[]> {
-  return apiGet<BicycleSigunguOption[]>(`/api/bicycle-facilities/regions/${sidoCode}/sigungu`);
+/** GET /api/bicycle-facilities/regions/{parentCode}/subregions — 하위 구 목록(현재 탭 기준 개수 포함). */
+export async function getBicycleSubregions(
+  parentCode: string,
+  dataSource: string,
+): Promise<BicycleSubregionOption[]> {
+  return apiGet<BicycleSubregionOption[]>(
+    `/api/bicycle-facilities/regions/${parentCode}/subregions?data_source=${dataSource}`,
+  );
 }

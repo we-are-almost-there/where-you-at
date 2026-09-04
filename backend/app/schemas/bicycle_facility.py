@@ -23,9 +23,11 @@ class BicycleFacilityListResponse(BaseModel):
     facilities: list[BicycleFacilitySummary]
 
 class BicycleRegionOption(BaseModel):
-    sido: str
-    sido_code: str
-
-class BicycleSigunguOption(BaseModel):
     region_code: str
     name: str
+    sido: str
+
+class BicycleSubregionOption(BaseModel):
+    region_code: str
+    name: str
+    cnt: int

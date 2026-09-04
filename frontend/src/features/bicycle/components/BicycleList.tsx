@@ -3,9 +3,10 @@ import { BicycleCard } from "./BicycleCard";
 
 interface Props {
   facilities: BicycleFacility[];
+  variant?: "standard" | "realtime";
 }
 
-export function BicycleList({ facilities }: Props) {
+export function BicycleList({ facilities, variant = "standard" }: Props) {
   if (facilities.length === 0) {
     return (
       <p className="py-16 text-center text-[14px] text-caption">
@@ -15,9 +16,9 @@ export function BicycleList({ facilities }: Props) {
   }
 
   return (
-    <div className="grid max-w-[960px] gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+    <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
       {facilities.map((facility) => (
-        <BicycleCard key={facility.id} facility={facility} />
+        <BicycleCard key={facility.id} facility={facility} variant={variant} />
       ))}
     </div>
   );
