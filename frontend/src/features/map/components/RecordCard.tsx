@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import type { TrackingRecord } from "../trackingRecord";
-import type { LatLng } from "../types";
+import type { LatLng, RouteType } from "../types";
 import {
   CANVAS_W,
   FONTS,
@@ -106,10 +106,13 @@ const REVOKE_DELAY_MS = 30_000;
 
 export function RecordCard({
   record,
+  routeType,
   routePoints,
   onClose,
 }: {
   record: TrackingRecord;
+  /** 따라간 종목. 페이스를 분/km로 쓸지 km/h로 쓸지 가른다. */
+  routeType: RouteType;
   routePoints: LatLng[];
   onClose: () => void;
 }) {
@@ -175,6 +178,7 @@ export function RecordCard({
       try {
         drawn = draw(canvas, {
           record,
+          routeType,
           image,
           transform,
           routePoints,
@@ -205,6 +209,7 @@ export function RecordCard({
     };
   }, [
     record,
+    routeType,
     image,
     transform,
     routePoints,
@@ -287,7 +292,7 @@ export function RecordCard({
     // 글자가 실제로 차지하는 폭만 잡는다 — 레이아웃 폭 그대로면 빈 여백을 눌러도 수치가 끌린다.
     const ctx = e.currentTarget.getContext("2d");
     const stats = ctx
-      ? statsHitBox(ctx, record, template, canvasH, textScale, fontChoice, statsOffset)
+      ? statsHitBox(ctx, record, routeType, template, canvasH, textScale, fontChoice, statsOffset)
       : statsBoxAt(template, canvasH, textScale, statsOffset);
     const onStats =
       x >= stats.left &&

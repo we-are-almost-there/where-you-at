@@ -16,7 +16,7 @@ import { useEndpointAddresses } from "./endpointAddress";
 import { DirectionSelector } from "./components/DirectionSelector";
 import { TrackingStats } from "./components/TrackingStats";
 import { RecordCard } from "./components/RecordCard";
-import { formatPace, type TrackingRecord } from "./trackingRecord";
+import { paceStat, type TrackingRecord } from "./trackingRecord";
 import SidebarDrawer from "../../components/layout/SidebarDrawer";
 import AppHeader from "../../components/layout/AppHeader";
 import { parseRouteTypeParam, setRouteTypeParam, parseInfoTabParam, setInfoTabParam, parseCategoryParam, setCategoryParam } from "./courseUrlState";
@@ -798,7 +798,7 @@ export function CourseDetail() {
                       progress={progress}
                       remainingKm={remainingKm}
                       eta={eta}
-                      pace={formatPace(livePace)}
+                      pace={paceStat(livePace, routeType)}
                     />
                   ))}
 
@@ -895,7 +895,12 @@ export function CourseDetail() {
         </section>
       </main>
       {record && (
-        <RecordCard record={record} routePoints={waypoints} onClose={() => setRecord(null)} />
+        <RecordCard
+          record={record}
+          routeType={routeType}
+          routePoints={waypoints}
+          onClose={() => setRecord(null)}
+        />
       )}
       <SidebarDrawer isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
     </div>

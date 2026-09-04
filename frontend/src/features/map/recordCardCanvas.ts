@@ -1,5 +1,5 @@
-import { formatDistance, formatDuration, formatPace, type TrackingRecord } from "./trackingRecord";
-import type { LatLng } from "./types";
+import { formatDistance, formatDuration, paceStat, type TrackingRecord } from "./trackingRecord";
+import type { LatLng, RouteType } from "./types";
 
 export type Template = "top" | "center" | "bottom";
 export type TextColor = "white" | "black";
@@ -93,10 +93,13 @@ interface Stat {
 }
 
 /** 카드에 찍히는 세 수치. 그리기와 끌기 판정이 같은 문자열을 봐야 폭이 어긋나지 않는다. */
-function statValues(record: TrackingRecord): Stat[] {
+function statValues(record: TrackingRecord, routeType: RouteType): Stat[] {
+  // 카드에는 값 옆에 단위를 붙일 자리가 없다. 거리 칸이 캡션에 "Km"를 쓰듯,
+  // 단위가 있는 종목은 캡션 자리에 단위를 쓴다.
+  const pace = paceStat(record.paceSecPerKm, routeType);
   return [
     { value: formatDistance(record.distanceKm), caption: "Km" },
-    { value: formatPace(record.paceSecPerKm), caption: "평균 페이스" },
+    { value: pace.value, caption: pace.unit || pace.caption },
     { value: formatDuration(record.durationMs), caption: "시간" },
   ];
 }
@@ -215,6 +218,7 @@ export function statsBoxAt(
 export function statsHitBox(
   ctx: CanvasRenderingContext2D,
   record: TrackingRecord,
+  routeType: RouteType,
   template: Template,
   canvasH: number,
   textScale: number,
@@ -223,7 +227,7 @@ export function statsHitBox(
 ) {
   const box = statsBoxAt(template, canvasH, textScale, offset);
   const { family, weight } = FONTS.find((f) => f.key === fontChoice) ?? FONTS[0];
-  const values = statValues(record);
+  const values = statValues(record, routeType);
 
   let width: number;
   if (template === "center") {
@@ -354,6 +358,8 @@ function drawStatRow(
 
 export interface DrawOptions {
   record: TrackingRecord;
+  /** 페이스를 분/km로 쓸지 km/h로 쓸지 가른다. */
+  routeType: RouteType;
   image: (CanvasImageSource & { width: number; height: number }) | null;
   transform: PhotoTransform;
   routePoints: LatLng[];
@@ -373,6 +379,7 @@ export function draw(canvas: HTMLCanvasElement, options: DrawOptions): boolean {
   if (!ctx) return false;
   const {
     record,
+    routeType,
     image,
     transform,
     routePoints,
@@ -403,7 +410,7 @@ export function draw(canvas: HTMLCanvasElement, options: DrawOptions): boolean {
   ctx.shadowColor = textColor === "white" ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.55)";
   ctx.shadowBlur = 18;
 
-  const stats = statValues(record);
+  const stats = statValues(record, routeType);
   const statsBox = statsBoxAt(template, canvasH, textScale, statsOffset);
   if (template === "center") {
     // 가운데 배치는 거리를 크게 쓰는 구성 — 아래 두 수치와의 비는 2배 남짓으로 유지해

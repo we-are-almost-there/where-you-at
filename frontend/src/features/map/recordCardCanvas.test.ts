@@ -6,12 +6,14 @@ import {
   clampPhotoOffset,
   clampRouteOffset,
   clampStatsOffset,
+  draw,
   routeBoxAt,
   routeLayout,
   statsBoxAt,
   statsHitBox,
   statsLayout,
 } from "./recordCardCanvas";
+import type { RouteType } from "./types";
 
 const FEED_H = 1350;
 
@@ -109,7 +111,7 @@ describe("statsHitBox", () => {
 
   it("글자가 실제로 차지하는 폭만 잡는다", () => {
     const layout = statsBoxAt("top", FEED_H, 1, { x: 0, y: 0 });
-    const hit = statsHitBox(fakeCtx, record, "top", FEED_H, 1, "pretendard", { x: 0, y: 0 });
+    const hit = statsHitBox(fakeCtx, record, "도보", "top", FEED_H, 1, "pretendard", { x: 0, y: 0 });
     expect(hit.width).toBeLessThan(layout.width);
     // 마지막 열의 시작(2/3 지점)보다는 넓어야 세 번째 수치를 잡을 수 있다
     expect(hit.width).toBeGreaterThan(((CANVAS_W - PADDING * 2) / 3) * 2);
@@ -117,7 +119,7 @@ describe("statsHitBox", () => {
 
   it("자리·높이는 레이아웃과 같다", () => {
     const layout = statsBoxAt("top", FEED_H, 1, { x: 0, y: 0 });
-    const hit = statsHitBox(fakeCtx, record, "top", FEED_H, 1, "pretendard", { x: 0, y: 0 });
+    const hit = statsHitBox(fakeCtx, record, "도보", "top", FEED_H, 1, "pretendard", { x: 0, y: 0 });
     expect(hit.left).toBe(layout.left);
     expect(hit.top).toBe(layout.top);
     expect(hit.height).toBe(layout.height);
@@ -125,8 +127,58 @@ describe("statsHitBox", () => {
 
   it("레이아웃 폭을 넘지 않는다", () => {
     const long = { distanceKm: 1234.56, durationMs: 359_999_000, paceSecPerKm: 3599 };
-    const hit = statsHitBox(fakeCtx, long, "top", FEED_H, 1.4, "blackhan", { x: 0, y: 0 });
+    const hit = statsHitBox(fakeCtx, long, "도보", "top", FEED_H, 1.4, "blackhan", { x: 0, y: 0 });
     expect(hit.width).toBeLessThanOrEqual(CANVAS_W - PADDING * 2);
+  });
+});
+
+describe("종목별 페이스 표기", () => {
+  // 캔버스가 없는 환경이라 그린 글자만 모아 확인한다.
+  function drawnTexts(routeType: RouteType): string[] {
+    const texts: string[] = [];
+    const ctx = {
+      measureText: (text: string) => ({ width: text.length * 20 }),
+      fillText: (text: string) => texts.push(text),
+      clearRect: () => {},
+      fillRect: () => {},
+    } as unknown as CanvasRenderingContext2D;
+    const canvas = {
+      width: CANVAS_W,
+      height: FEED_H,
+      getContext: () => ctx,
+    } as unknown as HTMLCanvasElement;
+
+    expect(
+      draw(canvas, {
+        record: { distanceKm: 9.73, durationMs: 3_688_000, paceSecPerKm: 180 },
+        routeType,
+        image: null,
+        transform: { scale: 1, offsetX: 0, offsetY: 0 },
+        routePoints: [],
+        template: "top",
+        textColor: "white",
+        fontChoice: "pretendard",
+        textScale: 1,
+        showRoute: false,
+        routeOffset: { x: 0, y: 0 },
+        routeScale: 1,
+        statsOffset: { x: 0, y: 0 },
+      }),
+    ).toBe(true);
+    return texts;
+  }
+
+  it("도보는 분/km와 평균 페이스 캡션을 쓴다", () => {
+    const texts = drawnTexts("도보");
+    expect(texts).toContain("3'00\"");
+    expect(texts).toContain("평균 페이스");
+  });
+
+  it("자전거는 km/h로 쓰고 단위를 캡션 자리에 둔다", () => {
+    const texts = drawnTexts("자전거");
+    expect(texts).toContain("20.0");
+    expect(texts).toContain("km/h");
+    expect(texts).not.toContain("평균 페이스");
   });
 });
 
