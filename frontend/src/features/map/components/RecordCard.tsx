@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import type { TrackingRecord } from "../trackingRecord";
 import type { LatLng } from "../types";
@@ -146,13 +146,24 @@ export function RecordCard({
   // 자리를 직접 재서 폭을 정하면 캔버스는 h-auto로 비율을 지키며 따라온다.
   const slotRef = useRef<HTMLDivElement>(null);
   const [previewWidth, setPreviewWidth] = useState(0);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const slot = slotRef.current;
     if (!slot) return;
-    const observer = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
+    const fit = (width: number, height: number) =>
       setPreviewWidth(Math.min(width, (height * CANVAS_W) / canvasH));
-    });
+
+    // ResizeObserver의 첫 콜백은 첫 페인트 뒤에 온다. 그것만 믿으면 카드가 열리는 한 프레임 동안
+    // 원본 크기(1080px)로 그려져, 좁은 화면에서는 화면 밖까지 튀었다가 제자리를 찾는다.
+    // 페인트 전에 한 번 직접 재 둔다 — clientWidth는 안쪽 여백을 포함하므로 빼야 자리와 같아진다.
+    const style = getComputedStyle(slot);
+    fit(
+      slot.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+      slot.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+    );
+
+    const observer = new ResizeObserver(([entry]) =>
+      fit(entry.contentRect.width, entry.contentRect.height),
+    );
     observer.observe(slot);
     return () => observer.disconnect();
   }, [canvasH]);
