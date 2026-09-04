@@ -434,7 +434,9 @@ export function RecordCard({
       {/* 미리보기가 남는 높이를 전부 가져간다 — 조작 결과를 스크롤 없이 바로 확인하기 위해서 */}
       <div ref={slotRef} className="flex min-h-0 flex-1 items-center justify-center px-5 py-4">
         {/* 래퍼가 캔버스 크기에 딱 맞아야 안내 문구가 사진 위에 얹힌다(부모 기준이면 사진 밖으로 떨어진다) */}
-        <div className="relative" style={{ width: previewWidth || undefined }}>
+        {/* 잰 폭을 그대로 쓴다. 자리가 없어 0이 나와도 폭을 비우면 안 된다 —
+          그러면 아무 제한 없이 원본 크기로 그려져 아래 조작 버튼을 덮어 카드를 닫을 수 없다. */}
+        <div className="relative" style={{ width: previewWidth }}>
           <canvas
             ref={canvasRef}
             width={CANVAS_W}
