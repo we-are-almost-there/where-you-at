@@ -4,6 +4,7 @@ import { SupportRegionMap } from "./components/SupportRegionMap";
 import { SupportRegionView } from "./components/SupportRegionView";
 import { SupportDetail } from "./components/SupportDetail";
 import AppHeader from "../../components/layout/AppHeader";
+import Footer from "../../components/layout/Footer";
 
 export function Support() {
   const [searchParams] = useSearchParams();
@@ -41,6 +42,7 @@ export function Support() {
           )}
         </div>
       </div>
+      <Footer />
     </>
   );
 }
