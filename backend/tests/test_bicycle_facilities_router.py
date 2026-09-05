@@ -169,7 +169,21 @@ class TestGetFacilityDetailEndpoint(unittest.TestCase):
 
     @patch(
         "app.api.routers.bicycle_facilities.get_bicycle_facility_by_id",
-        return_value={"id": 1, "facility_title": "테스트 대여소"},
+        return_value={
+            "id": 1,
+            "facility_title": "테스트 대여소",
+            "addr1": "서울특별시 종로구",
+            "map_x": 126.9,
+            "map_y": 37.5,
+            "facility_type": "rental_staffed",
+            "rental_fee_type": "무료",
+            "repair_available": False,
+            "open_hours": "09:00~18:00",
+            "total_bikes": 10,
+            "available_bikes": None,
+            "region_code": "11110",
+            "realtime_synced_at": None,
+        },
     )
     def test_existing_facility_returns_200(self, mock_get):
         res = self.client.get("/api/bicycle-facilities/1")

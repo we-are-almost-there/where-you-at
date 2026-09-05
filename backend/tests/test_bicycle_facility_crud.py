@@ -140,6 +140,32 @@ class TestListBicycleFacilitiesCombinedFilters(unittest.TestCase):
         self.assertEqual(params, ["유료", "혼합", 10, 10])
 
 
+class TestListBicycleFacilitiesNearestSort(unittest.TestCase):
+    def test_nearest_sort_with_coords_uses_st_distance(self):
+        conn, cursor = _mock_conn()
+        list_bicycle_facilities(conn, sort="nearest", lat=37.5665, lng=126.9780)
+        sql, params = _call_sql_params(cursor, call_index=1)
+        self.assertIn("ST_Distance", sql)
+        self.assertIn("ST_MakePoint(%s, %s)", sql)
+        # lng, lat 순서로 바인딩(PostGIS는 (x=경도, y=위도) 순서)
+        self.assertEqual(params[0], 126.9780)
+        self.assertEqual(params[1], 37.5665)
+
+    def test_nearest_sort_without_coords_falls_back_to_default(self):
+        conn, cursor = _mock_conn()
+        list_bicycle_facilities(conn, sort="nearest", lat=None, lng=None)
+        sql, params = _call_sql_params(cursor, call_index=1)
+        self.assertNotIn("ST_Distance", sql)
+        self.assertIn("ORDER BY bicycle_id", sql)
+
+    def test_no_sort_uses_default_order(self):
+        conn, cursor = _mock_conn()
+        list_bicycle_facilities(conn, lat=37.5665, lng=126.9780)  # sort 없음
+        sql, params = _call_sql_params(cursor, call_index=1)
+        self.assertNotIn("ST_Distance", sql)
+        self.assertIn("ORDER BY bicycle_id", sql)
+
+
 # ── list_bicycle_regions ─────────────────────────────────────────────────
 
 
@@ -275,7 +301,7 @@ class TestGetBicycleFacilityById(unittest.TestCase):
         get_bicycle_facility_by_id(conn, 42)
         sql, params = _call_sql_params(cursor)
         self.assertIn("WHERE bicycle_id = %s", sql)
-        self.assertEqual(params, (42,))
+        self.assertEqual(params, [42])
 
 
 if __name__ == "__main__":

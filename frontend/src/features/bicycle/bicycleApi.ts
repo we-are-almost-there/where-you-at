@@ -1,5 +1,4 @@
-import type { BicycleFacility, BicycleFacilityDetail, BicycleFacilityListResponse } from "./types";
-
+import type { BicycleFacility, BicycleFacilityListResponse } from "./types";
 interface ApiBicycleFacility {
   id: number;
   facility_title: string;
@@ -85,7 +84,7 @@ export async function getBicycleFacilities(
 }
 
 /** GET /api/bicycle-facilities/{id} — 자전거 시설 상세. (목록과 동일 구조라 그대로 재사용) */
-export async function getBicycleFacilityDetail(id: number): Promise<BicycleFacilityDetail> {
+export async function getBicycleFacilityDetail(id: number): Promise<BicycleFacility> {
   const f = await apiGet<ApiBicycleFacility>(`/api/bicycle-facilities/${id}`);
   return fromApiFacility(f);
 }

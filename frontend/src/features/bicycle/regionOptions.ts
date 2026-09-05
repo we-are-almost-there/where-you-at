@@ -69,6 +69,13 @@ export function buildBicycleRegionOptions(regions: BicycleRegionOption[]): Regio
  * "OO시 XX구" 패턴이 있는 것만 "OO시" 그룹(optgroup)으로 묶고, 나머지
  * (시/군 자체, 또는 전남광주통합의 "동구"처럼 접두어 없이 구만 있는 경우)는
  * 단독 옵션으로 그대로 둔다.
+ *
+ * cityKey(region_code 앞 4자리)로 같은 시의 구들을 묶는다. 영동군/증평군처럼
+ * 4자리 접두가 우연히 겹치는 "군" 지역이 실제로 있지만("구"가 없는 이름이라
+ * standalone으로 빠져 이 경로를 타지 않음), "OO시 XX구" 패턴을 가진 지역들
+ * 사이에서는 4자리 접두 충돌이 없음을 실제 region 테이블로 확인했다
+ * (SELECT ... WHERE name LIKE '%시%구' GROUP BY LEFT(region_code,4)
+ * HAVING COUNT(DISTINCT ...) > 1 → 0 rows).
  */
 export function buildBicycleSubregionOptions(subregions: BicycleSubregionOption[]): RegionSelectItem[] {
   const groupedByCity = new Map<string, { cityName: string; items: BicycleSubregionOption[] }>();

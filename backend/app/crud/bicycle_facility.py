@@ -1,5 +1,4 @@
 from psycopg2.extras import RealDictCursor
-from .region import code2_to_sido
 
 
 def get_bicycle_facility_by_id(conn, bicycle_id: int) -> dict | None:
@@ -15,7 +14,7 @@ def get_bicycle_facility_by_id(conn, bicycle_id: int) -> dict | None:
             FROM bicycle_facility
             WHERE bicycle_id = %s
             """,
-            (bicycle_id,),
+            [bicycle_id],  # (bicycle_id,) → [bicycle_id]
         )
         row = cur.fetchone()
         return dict(row) if row else None
@@ -28,6 +27,9 @@ def list_bicycle_facilities(
     facility_type: str | None = None,
     fee_type: str | None = None,
     data_source: str | None = None,
+    sort: str | None = None,
+    lat: float | None = None,
+    lng: float | None = None,
     page: int = 1,
     size: int = 20,
 ) -> tuple[int, list[dict]]:
@@ -43,6 +45,9 @@ def list_bicycle_facilities(
     - "realtime": 실시간 API 신규삽입(rt:) 전체 (4,780건)
     fee_type: rental_fee_type 필터(무료/유료). "실시간" 탭 카드는 요금
     정보를 표시하지 않으므로 프론트에서는 "운영 정보" 탭에서만 이 필터를 노출한다.
+    sort/lat/lng: 코스 탐색(list_courses)과 동일한 패턴 — sort="nearest"이고
+    lat/lng이 모두 있을 때만 PostGIS geom 컬럼 기준 거리순 정렬. 그 외에는
+    bicycle_id 기본 정렬로 폴백한다.
     None이면 필터 없이 전체.
     """
     where = []
@@ -70,12 +75,20 @@ def list_bicycle_facilities(
 
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
+    use_nearest = sort == "nearest" and lat is not None and lng is not None
+    if use_nearest:
+        order_sql = "ORDER BY ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography)"
+    else:
+        order_sql = "ORDER BY bicycle_id"
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"SELECT count(*) AS total FROM bicycle_facility {where_sql}",
             params,
         )
         total = cur.fetchone()["total"]
+
+        order_params = [lng, lat] if use_nearest else []
 
         cur.execute(
             f"""
@@ -85,10 +98,10 @@ def list_bicycle_facilities(
                 total_bikes, available_bikes, region_code, realtime_synced_at
             FROM bicycle_facility
             {where_sql}
-            ORDER BY bicycle_id
+            {order_sql}
             LIMIT %s OFFSET %s
             """,
-            [*params, size, (page - 1) * size],
+            [*params, *order_params, size, (page - 1) * size],
         )
         rows = cur.fetchall()
 

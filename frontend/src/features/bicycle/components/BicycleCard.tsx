@@ -30,7 +30,7 @@ function getAvailabilityDisplay(facility: BicycleFacility): {
   if (facility.realtime_synced_at != null) {
     return { text: `대여 가능 ${facility.available_bikes ?? 0}대`, isRealtime: true };
   }
-  if (facility.total_bikes != null && facility.total_bikes > 0) {
+  if (facility.total_bikes != null) {
     return { text: `보유 ${facility.total_bikes}대`, isRealtime: false };
   }
   return { text: "보유 수량 확인 불가", isRealtime: false };

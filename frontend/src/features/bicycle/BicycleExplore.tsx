@@ -16,6 +16,9 @@ import AppHeader from "../../components/layout/AppHeader";
 import { BicycleRegionSelect } from "./components/BicycleRegionSelect";
 import { buildBicycleRegionOptions, buildBicycleSubregionOptions } from "./regionOptions";
 
+// 페이지당 20개. 24로 늘리면 3열(태블릿) 구간의 마지막 줄은 꽉 채울 수 있지만,
+// 2열(모바일) 구간이 10줄→12줄로 늘어나 스크롤 부담이 커진다. 3열 마지막 줄이
+// 2개로 끝나는 정도는 자연스러운 그리드 특성으로 보고 20을 그대로 유지한다.
 const DEFAULT_PAGE_SIZE = 20;
 
 const EMPTY_RES: BicycleFacilityListResponse = {
@@ -67,6 +70,11 @@ export function BicycleExplore() {
 
   const [regions, setRegions] = useState<BicycleRegionOption[]>([]);
   const [subregions, setSubregions] = useState<BicycleSubregionOption[]>([]);
+  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoDenied, setGeoDenied] = useState(false);
+
+  // navigator.geolocation 지원 여부는 상태가 아니라 매 렌더 계산해도 되는 값
+  const geoSupported = typeof navigator !== "undefined" && !!navigator.geolocation;
 
   useEffect(() => {
     getBicycleRegions(dataSource)
@@ -96,6 +104,22 @@ export function BicycleExplore() {
     };
   }, [region, dataSource]);
 
+  // 위치 응답을 기다리지 않고 곧바로 기본 순서(ID순)로
+  // 먼저 보여준다. 위치가 나중에 도착하면 query가 바뀌어 조용히 재조회되고,
+  // 그 결과 순서만 "가까운 순"으로 자연스럽게 바뀐다. 거부/미지원이면 그대로 ID순 유지.
+  useEffect(() => {
+    if (userLoc || geoDenied || !geoSupported) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => setGeoDenied(true), // 타임아웃도 이 error 콜백으로 들어옴
+      {
+        timeout: 5000, // 5초 안에 응답 없으면 실패 처리 → ID순 유지
+        maximumAge: 60000, // 1분 이내 캐시된 위치는 재사용 (즉시 응답 가능)
+        enableHighAccuracy: false, // GPS 대신 wifi/IP 기반 등 빠른 방식 우선
+      },
+    );
+  }, [userLoc, geoDenied, geoSupported]);
+
   const effectiveSubregions = region ? subregions : [];
 
   const regionOptions = useMemo(() => buildBicycleRegionOptions(regions), [regions]);
@@ -104,26 +128,40 @@ export function BicycleExplore() {
     [effectiveSubregions],
   );
 
+  const effectiveRegion = subregionCode || region;
+
   const query = useMemo(() => {
     const q: Record<string, string> = {
       page: String(page),
       size: String(DEFAULT_PAGE_SIZE),
       data_source: dataSource,
     };
-    const effectiveRegion = subregionCode || region;
     if (effectiveRegion) q.region = effectiveRegion;
     if (facilityType) q.facility_type = facilityType;
     if (feeType) q.fee_type = feeType;
+    // 지역 필터를 선택했어도 위치를 확보했으면 항상 가까운 순으로 정렬한다.
+    // (예: "세종" 필터 + 내 위치가 부산이어도, 세종 안에서 내 위치 기준
+    // 가까운 순으로 보여준다 — 지역 중심이 아니라 실제 사용자 위치 기준.)
+    if (userLoc) {
+      q.sort = "nearest";
+      q.lat = String(userLoc.lat);
+      q.lng = String(userLoc.lng);
+    }
     return q;
-  }, [page, region, subregionCode, facilityType, feeType, dataSource]);
+  }, [page, effectiveRegion, facilityType, feeType, dataSource, userLoc]);
 
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
+
   const [res, setRes] = useState<BicycleFacilityListResponse>(EMPTY_RES);
-  const [resolvedQuery, setResolvedQuery] = useState<string | null>(null);
+  const [resolvedQueryKey, setResolvedQueryKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
-  const loading = resolvedQuery !== queryKey;
 
+  // queryKey가 마지막으로 반영 완료된 값과 다르면 로딩 중이라는 뜻 — 렌더링 중 계산.
+  const loading = resolvedQueryKey !== queryKey;
+
+  // 진입 시 위치를 기다리지 않으므로 첫 로딩이 빠르고, 위치가 나중에 도착해
+  // query가 바뀌면 여기서 곧바로 재조회되어 순서만 조용히 갱신된다.
   useEffect(() => {
     let cancelled = false;
     getBicycleFacilities(query)
@@ -131,12 +169,12 @@ export function BicycleExplore() {
         if (cancelled) return;
         setRes(r);
         setError(null);
-        setResolvedQuery(queryKey);
+        setResolvedQueryKey(queryKey);
       })
       .catch((e) => {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : "자전거 시설을 불러오지 못했어요");
-        setResolvedQuery(queryKey);
+        setResolvedQueryKey(queryKey);
       });
     return () => {
       cancelled = true;
@@ -148,9 +186,6 @@ export function BicycleExplore() {
     setRetryTick((t) => t + 1);
   };
 
-  // res는 로딩 중엔 이전 응답 그대로 유지되므로(setRes가 성공 시에만 호출됨),
-  // totalPages도 별도 처리 없이 자동으로 안정적이다 — 탭/필터 전환 중에도
-  // 페이지네이션이 사라졌다 나타나며 화면이 흔들리지 않는다.
   const totalPages = Math.max(1, Math.ceil(res.total_count / DEFAULT_PAGE_SIZE));
 
   const changeRegion = (next: string) => {
@@ -253,7 +288,10 @@ export function BicycleExplore() {
           )}
         </div>
 
-        <p className="mt-3 mb-3 text-[13px] text-caption">총 {res.total_count}개 시설</p>
+        <p className="mt-3 mb-3 text-[13px] text-caption">
+          총 {res.total_count}개 시설
+          {query.sort === "nearest" && " · 가까운 순"}
+        </p>
 
         {error ? (
           <ErrorNotice title={CONNECTION_ERROR_TITLE} description={CONNECTION_ERROR_DESC} onRetry={retry} />

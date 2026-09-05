@@ -11,6 +11,7 @@ from app.schemas.bicycle_facility import (
     BicycleFacilityListResponse,
     BicycleRegionOption,
     BicycleSubregionOption,
+    BicycleFacilitySummary,
 )
 
 
@@ -26,6 +27,9 @@ def list_facilities(
     facility_type: str | None = None,
     fee_type: str | None = Query(None, pattern="^(무료|유료)$"),
     data_source: str | None = Query(None, pattern="^(standard|realtime)$"),
+    sort: str | None = Query(None, pattern="^nearest$"),
+    lat: float | None = Query(None, ge=-90, le=90),
+    lng: float | None = Query(None, ge=-180, le=180),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
 ):
@@ -34,10 +38,19 @@ def list_facilities(
 
     if not conn:
         raise HTTPException(status_code=503, detail="DB 연결 실패")
+
     try:
         total, rows = list_bicycle_facilities(
-            conn, region=region, facility_type=facility_type, fee_type=fee_type,
-            data_source=data_source, page=page, size=size
+            conn,
+            region=region,
+            facility_type=facility_type,
+            fee_type=fee_type,
+            data_source=data_source,
+            sort=sort,
+            lat=lat,
+            lng=lng,
+            page=page,
+            size=size,
         )
         return {"total_count": total, "page": page, "size": size, "facilities": rows}
     finally:
@@ -71,7 +84,7 @@ def get_bicycle_subregions(
         conn.close()
 
 
-@router.get("/{id}")
+@router.get("/{id}", response_model=BicycleFacilitySummary)
 def retrieve_bicycle_facility(id: int):
     """자전거 대여소/정비소 상세정보를 조회한다."""
 

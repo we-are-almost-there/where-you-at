@@ -18,19 +18,9 @@ export interface BicycleFacility {
   realtime_synced_at: string | null;
 }
 
-export interface BicycleFacilityDetail extends BicycleFacility {
-  open_hours: string;
-  realtime_synced_at: string | null;
-}
-
 export interface BicycleFacilityListResponse {
   total_count: number;
   page: number;
   size: number;
   facilities: BicycleFacility[];
-}
-
-export interface BicycleFacilityFilterState {
-  region: string;
-  facilityType: string;
 }
