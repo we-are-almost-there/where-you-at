@@ -5,7 +5,6 @@ const FACILITY_TYPE_LABEL: Record<string, string> = {
   rental_staffed: "유인대여소",
   rental_unmanned: "무인대여소",
   rental_mixed: "유·무인 대여소",
-  rental_unknown: "유형 정보 없음",
 };
 
 const FEE_TYPE_LABEL: Record<string, string> = {
