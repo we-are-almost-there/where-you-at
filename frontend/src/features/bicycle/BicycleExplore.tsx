@@ -91,6 +91,10 @@ export function BicycleExplore() {
         }
       })
       .catch((err) => console.error("[BicycleExplore] regions fetch failed:", err));
+    // dataSource(탭) 변경 시에만 지역 목록을 재조회한다. region/facilityType/feeType은
+    // effect 실행 시점의 최신값만 확인하면 되고, 이 값들이 바뀔 때마다 재조회할
+    // 필요는 없어 의도적으로 deps에서 제외한다(포함 시 필터 변경마다 불필요한 재조회 발생).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataSource]);
 
   useEffect(() => {
@@ -120,12 +124,10 @@ export function BicycleExplore() {
     );
   }, [userLoc, geoDenied, geoSupported]);
 
-  const effectiveSubregions = region ? subregions : [];
-
   const regionOptions = useMemo(() => buildBicycleRegionOptions(regions), [regions]);
   const subregionOptions = useMemo(
-    () => buildBicycleSubregionOptions(effectiveSubregions),
-    [effectiveSubregions],
+    () => buildBicycleSubregionOptions(region ? subregions : []),
+    [region, subregions],
   );
 
   const effectiveRegion = subregionCode || region;
@@ -179,6 +181,10 @@ export function BicycleExplore() {
     return () => {
       cancelled = true;
     };
+    // query 대신 queryKey(query를 문자열화한 값)로 변경 여부를 비교한다. query 객체
+    // 참조는 매 렌더 바뀔 수 있어도 queryKey가 같으면 재실행할 필요가 없으므로,
+    // query는 의도적으로 deps에서 제외한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryKey, retryTick]);
 
   const retry = () => {
