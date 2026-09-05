@@ -104,7 +104,7 @@ def main() -> None:
         if not addr:
             unresolved_addr.append((row["bicycle_id"], row["facility_title"], row["map_y"], row["map_x"]))
         else:
-            region_code = region_code_from_address(conn, addr)
+            region_code = "36110" if addr.startswith("세종특별자치시") else region_code_from_address(conn, addr)
             resolved.append((row["bicycle_id"], row["facility_title"], addr, region_code))
             if region_code is None:
                 unresolved_region.append((row["bicycle_id"], row["facility_title"], addr))
