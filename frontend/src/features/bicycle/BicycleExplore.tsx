@@ -139,7 +139,14 @@ export function BicycleExplore() {
     [region, subregions],
   );
 
-  const effectiveRegion = subregionCode || region;
+  // subregionCode가 현재 region의 하위 지역이 아니면 무효로 본다.
+  // subregions를 아직 못 불러온 초기 렌더 시점(길이 0)에는 판단을 보류하고
+  // subregionCode를 그대로 신뢰한다 — 지역을 안 바꾼 정상 케이스에서
+  // subregions 로딩 중에 잠깐 region으로 되돌아가 깜빡이는 것을 막기 위함이다.
+  const subregionValid =
+    subregions.length === 0 || subregions.some((s) => s.region_code === subregionCode);
+  const effectiveSubregionCode = subregionValid ? subregionCode : "";
+  const effectiveRegion = effectiveSubregionCode || region;
 
   const query = useMemo(() => {
     const q: Record<string, string> = {
@@ -148,8 +155,10 @@ export function BicycleExplore() {
       data_source: dataSource,
     };
     if (effectiveRegion) q.region = effectiveRegion;
-    if (facilityType) q.facility_type = facilityType;
-    if (feeType) q.fee_type = feeType;
+    // 유형/요금 필터는 "운영 정보" 탭에서만 UI에 노출되므로, 실시간 탭일 때
+    // URL에 남아있는 값은 무시한다 (탭 전환 시 URL 정리가 누락돼도 안전하도록).
+    if (dataSource === "standard" && facilityType) q.facility_type = facilityType;
+    if (dataSource === "standard" && feeType) q.fee_type = feeType;
     // 지역 필터를 선택했어도 위치를 확보했으면 항상 가까운 순으로 정렬한다.
     // (예: "세종" 필터 + 내 위치가 부산이어도, 세종 안에서 내 위치 기준
     // 가까운 순으로 보여준다 — 지역 중심이 아니라 실제 사용자 위치 기준.)
