@@ -267,6 +267,9 @@ export function BicycleExplore() {
 
   const changeTab = (next: DataSourceTab) => {
     const params: Record<string, string> = { page: "1", source: TAB_TO_DATA_SOURCE[next] };
+    // region/subregionCode는 탭이 바뀌어도 유지 (지역은 탭과 무관한 필터이므로)
+    if (region) params.region = region;
+    if (subregionCode) params.gu = subregionCode;
     if (next === "운영 정보" && facilityType) params.type = facilityType;
     if (next === "운영 정보" && feeType) params.fee = feeType;
     setSearchParams(params);
