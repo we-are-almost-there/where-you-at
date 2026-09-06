@@ -26,8 +26,8 @@ function getAvailabilityDisplay(facility: BicycleFacility): {
   text: string;
   isRealtime: boolean;
 } {
-  if (facility.realtime_synced_at != null) {
-    return { text: `대여 가능 ${facility.available_bikes ?? 0}대`, isRealtime: true };
+  if (facility.realtime_synced_at != null && facility.available_bikes != null) {
+    return { text: `대여 가능 ${facility.available_bikes}대`, isRealtime: true };
   }
   if (facility.total_bikes != null) {
     return { text: `보유 ${facility.total_bikes}대`, isRealtime: false };
@@ -98,7 +98,7 @@ function StandardFacilityCard({ facility }: CardProps) {
  */
 function RealtimeCard({ facility }: CardProps) {
   const title = stripNumberPrefix(facility.facility_title);
-  const hasRealtimeData = facility.realtime_synced_at != null;
+  const hasRealtimeData = facility.realtime_synced_at != null && facility.available_bikes != null;
 
   return (
     <div className={`${cardBase} p-4 text-center`}>
@@ -106,7 +106,7 @@ function RealtimeCard({ facility }: CardProps) {
       {facility.addr1 && <p className="mt-1 line-clamp-1 text-[12px] text-caption">{facility.addr1}</p>}
 
       <p className={`my-2 font-bold text-[28px] ${hasRealtimeData ? "text-accent" : "text-caption"}`}>
-        {hasRealtimeData ? facility.available_bikes ?? 0 : "−"}
+        {hasRealtimeData ? facility.available_bikes : "−"}
       </p>
       <p className="text-[11px] text-caption">{hasRealtimeData ? "대여 가능 (대)" : "보유 수량 확인 불가"}</p>
     </div>

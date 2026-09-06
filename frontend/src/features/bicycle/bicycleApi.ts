@@ -83,12 +83,6 @@ export async function getBicycleFacilities(
   };
 }
 
-/** GET /api/bicycle-facilities/{id} — 자전거 시설 상세. (목록과 동일 구조라 그대로 재사용) */
-export async function getBicycleFacilityDetail(id: number): Promise<BicycleFacility> {
-  const f = await apiGet<ApiBicycleFacility>(`/api/bicycle-facilities/${id}`);
-  return fromApiFacility(f);
-}
-
 /** GET /api/bicycle-facilities/regions — 자전거 시설 보유 지역(시/도+시/군/구), 현재 탭 기준. */
 export async function getBicycleRegions(dataSource: string): Promise<BicycleRegionOption[]> {
   return apiGet<BicycleRegionOption[]>(`/api/bicycle-facilities/regions?data_source=${dataSource}`);

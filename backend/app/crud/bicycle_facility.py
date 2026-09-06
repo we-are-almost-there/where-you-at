@@ -77,7 +77,7 @@ def list_bicycle_facilities(
 
     use_nearest = sort == "nearest" and lat is not None and lng is not None
     if use_nearest:
-        order_sql = "ORDER BY ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography)"
+        order_sql = "ORDER BY geom <-> ST_SetSRID(ST_MakePoint(%s, %s), 4326), bicycle_id"
     else:
         order_sql = "ORDER BY bicycle_id"
 

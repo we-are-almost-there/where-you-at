@@ -59,14 +59,16 @@ export function BicycleExplore() {
   }, []);
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const page = Number(searchParams.get("page") ?? "1");
+  const pageParam = Number(searchParams.get("page") ?? "1");
+  const page = Number.isInteger(pageParam) && pageParam >= 1 ? pageParam : 1;
   const region = searchParams.get("region") ?? "";
   const subregionCode = searchParams.get("gu") ?? "";
   const facilityType = searchParams.get("type") ?? "";
   const feeType = searchParams.get("fee") ?? "";
 
-  const dataSource = searchParams.get("source") ?? "standard";
-  const activeTab: DataSourceTab = DATA_SOURCE_TO_TAB[dataSource] ?? "운영 정보";
+  const rawDataSource = searchParams.get("source") ?? "standard";
+  const activeTab: DataSourceTab = DATA_SOURCE_TO_TAB[rawDataSource] ?? "운영 정보";
+  const dataSource = TAB_TO_DATA_SOURCE[activeTab];
 
   const [regions, setRegions] = useState<BicycleRegionOption[]>([]);
   const [subregions, setSubregions] = useState<BicycleSubregionOption[]>([]);
@@ -77,8 +79,10 @@ export function BicycleExplore() {
   const geoSupported = typeof navigator !== "undefined" && !!navigator.geolocation;
 
   useEffect(() => {
+    let cancelled = false;
     getBicycleRegions(dataSource)
       .then((newRegions) => {
+        if (cancelled) return;
         setRegions(newRegions);
         const stillValid = newRegions.some(
           (r) => r.region_code === region || r.region_code.startsWith(region),
@@ -87,10 +91,15 @@ export function BicycleExplore() {
           const params: Record<string, string> = { page: "1", source: dataSource };
           if (dataSource === "standard" && facilityType) params.type = facilityType;
           if (dataSource === "standard" && feeType) params.fee = feeType;
-          setSearchParams(params);
+          setSearchParams(params, { replace: true });
         }
       })
-      .catch((err) => console.error("[BicycleExplore] regions fetch failed:", err));
+      .catch((err) => {
+        if (!cancelled) console.error("[BicycleExplore] regions fetch failed:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
     // dataSource(탭) 변경 시에만 지역 목록을 재조회한다. region/facilityType/feeType은
     // effect 실행 시점의 최신값만 확인하면 되고, 이 값들이 바뀔 때마다 재조회할
     // 필요는 없어 의도적으로 deps에서 제외한다(포함 시 필터 변경마다 불필요한 재조회 발생).
@@ -176,7 +185,10 @@ export function BicycleExplore() {
       .catch((e) => {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : "자전거 시설을 불러오지 못했어요");
-        setResolvedQueryKey(queryKey);
+        // resolvedQueryKey는 갱신하지 않는다. 에러는 이 쿼리를 아직 성공적으로
+        // 처리하지 못했다는 뜻이므로, retry() 호출 시 loading이 다시 true가
+        // 되어 "불러오는 중..."이 뜨게 한다. 여기서 갱신하면 재시도 중에도
+        // loading이 false로 계산되어 결과 없음 문구가 먼저 잘못 뜬다.
       });
     return () => {
       cancelled = true;
@@ -192,7 +204,22 @@ export function BicycleExplore() {
     setRetryTick((t) => t + 1);
   };
 
+  // 페이지 이동 시 스크롤을 맨 위로 (새 페이지의 첫 카드부터 보이도록)
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [page]);
+
   const totalPages = Math.max(1, Math.ceil(res.total_count / DEFAULT_PAGE_SIZE));
+
+  useEffect(() => {
+    if (loading || error || res.total_count === 0 || page <= totalPages) return;
+    const params: Record<string, string> = { page: String(totalPages), source: dataSource };
+    if (region) params.region = region;
+    if (subregionCode) params.gu = subregionCode;
+    if (facilityType) params.type = facilityType;
+    if (feeType) params.fee = feeType;
+    setSearchParams(params, { replace: true });
+  }, [loading, error, res.total_count, page, totalPages, region, subregionCode, facilityType, feeType, dataSource, setSearchParams]);
 
   const changeRegion = (next: string) => {
     const params: Record<string, string> = { page: "1", source: dataSource };
@@ -301,13 +328,16 @@ export function BicycleExplore() {
 
         {error ? (
           <ErrorNotice title={CONNECTION_ERROR_TITLE} description={CONNECTION_ERROR_DESC} onRetry={retry} />
-        ) : loading ? (
+        ) : loading && res.facilities.length === 0 ? (
+          // 데이터가 아예 없을 때만(최초 진입 등) 로딩 문구를 보여준다. 이미 목록이
+          // 있는 상태에서 쿼리가 바뀌어 재조회되는 중에는 이전 목록을 그대로 유지해
+          // "불러오는 중..."으로 화면이 깜빡이며 지워지는 것을 막는다.
           <p className="py-10 text-center text-sm text-gray-400">불러오는 중...</p>
         ) : (
           <BicycleList facilities={res.facilities} variant={dataSource as "standard" | "realtime"} />
         )}
 
-        {!error && !loading && (
+        {!error && res.facilities.length > 0 && (
           <Pagination
             page={page}
             totalPages={totalPages}

@@ -136,12 +136,21 @@ def main() -> None:
     if apply and resolved:
         with conn.cursor() as write_cur:
             for bid, _, addr, rc in resolved:
-                write_cur.execute(
-                    "UPDATE bicycle_facility SET addr1 = %s, region_code = %s WHERE bicycle_id = %s",
-                    (addr, rc, bid),
-                )
+                if rc is not None:
+                    write_cur.execute(
+                        "UPDATE bicycle_facility SET addr1 = %s, region_code = %s WHERE bicycle_id = %s",
+                        (addr, rc, bid),
+                    )
+                else:
+                    # region_code 역산 실패 시 기존 region_code를 NULL로 덮어쓰지 않는다.
+                    # 지금은 대상이 addr1 IS NULL(원래도 region_code NULL)이라 무해하지만,
+                    # 나중에 다른 조건으로 재사용하면 이미 있던 값을 지울 수 있어 방지한다.
+                    write_cur.execute(
+                        "UPDATE bicycle_facility SET addr1 = %s WHERE bicycle_id = %s",
+                        (addr, bid),
+                    )
         conn.commit()
-
+        
     cur.close()
     conn.close()
 

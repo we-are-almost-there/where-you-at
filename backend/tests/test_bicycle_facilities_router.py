@@ -146,7 +146,11 @@ class TestGetSubregionsEndpoint(unittest.TestCase):
             return_value=[],
         ):
             res = self.client.get("/api/bicycle-facilities/regions/11/subregions")
-        self.assertNotEqual(res.status_code, 422)
+        self.assertEqual(res.status_code, 200)
+
+    def test_invalid_parent_code_returns_422(self):
+        res = self.client.get("/api/bicycle-facilities/regions/abc/subregions")
+        self.assertEqual(res.status_code, 422)
 
 
 class TestGetFacilityDetailEndpoint(unittest.TestCase):

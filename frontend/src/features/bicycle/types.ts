@@ -1,7 +1,3 @@
-export interface BicycleFacilityRoute {
-  route_type: string;
-}
-
 export interface BicycleFacility {
   id: number;
   facility_title: string;
