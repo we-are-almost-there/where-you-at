@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import AppHeader from "../../components/layout/AppHeader";
+import Footer from "../../components/layout/Footer";
 import { fetchFeaturedCourses, fetchNearbyCourses, fetchUpcomingRaces } from "./homeApi";
 import type { CourseItem, UpcomingRace } from "./homeApi";
 import { BANNERS } from "./banners";
@@ -659,11 +660,7 @@ export default function Home() {
       </section>
       )}
 
-      <footer className="mt-auto border-t border-divider">
-        <div className="mx-auto w-full max-w-6xl px-4 py-6">
-          <p className="text-[13px] text-caption">© 2026 WHERE YOU AT</p>
-        </div>
-      </footer>
+      <Footer />
 
       {isGalleryOpen && <BannerGalleryModal onClose={() => setIsGalleryOpen(false)} />}
     </div>
