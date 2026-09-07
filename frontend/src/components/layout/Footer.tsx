@@ -7,6 +7,10 @@ const PUBLIC_DATA: [label: string, source: string][] = [
   ["자전거길 노선", "행정안전부 자전거길 DB"],
   ["관광 정보와 대회 행사", "한국관광공사 국문 관광정보 서비스"],
   ["자전거 대여소", "전국자전거대여소표준데이터"],
+  [
+    "실시간 대여 가능 수",
+    "행정안전부 한국지역정보개발원_(전국 통합데이터) 전국 공영자전거 실시간 정보",
+  ],
 ];
 
 const OTHER_SOURCES: [label: string, source: string][] = [
