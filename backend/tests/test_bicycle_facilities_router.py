@@ -72,6 +72,10 @@ class TestListFacilitiesEndpoint(unittest.TestCase):
         res = self.client.get("/api/bicycle-facilities", params={"fee_type": "혼합"})
         self.assertEqual(res.status_code, 422)
 
+    def test_invalid_facility_type_returns_422(self):
+        res = self.client.get("/api/bicycle-facilities", params={"facility_type": "rental_unmaned"})
+        self.assertEqual(res.status_code, 422)
+
     def test_invalid_data_source_returns_422(self):
         res = self.client.get("/api/bicycle-facilities", params={"data_source": "unknown"})
         self.assertEqual(res.status_code, 422)

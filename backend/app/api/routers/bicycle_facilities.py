@@ -24,7 +24,7 @@ router = APIRouter(
 @router.get("", response_model=BicycleFacilityListResponse)
 def list_facilities(
     region: str | None = Query(None, pattern=r"^\d{2}(\d{2,3})?$"),
-    facility_type: str | None = None,
+    facility_type: str | None = Query(None, pattern="^(rental_staffed|rental_unmanned|rental_mixed)$"),
     fee_type: str | None = Query(None, pattern="^(무료|유료)$"),
     data_source: str | None = Query(None, pattern="^(standard|realtime)$"),
     sort: str | None = Query(None, pattern="^nearest$"),
