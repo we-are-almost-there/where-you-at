@@ -22,11 +22,19 @@ function stripNumberPrefix(title: string): string {
   return title.replace(/^\d+\.\s*/, "");
 }
 
+// 실시간 동기화 시각과 대여 가능 대수가 둘 다 있어야 "신선한" 실시간 데이터로
+// 본다. realtime_synced_at만 있고 available_bikes가 null인 경우(수집 실패 등)를
+// "0대"로 잘못 표시하지 않기 위한 기준이며, StandardFacilityCard와 RealtimeCard
+// 양쪽에서 동일하게 사용한다.
+function hasFreshRealtimeData(facility: BicycleFacility): boolean {
+  return facility.realtime_synced_at != null && facility.available_bikes != null;
+}
+
 function getAvailabilityDisplay(facility: BicycleFacility): {
   text: string;
   isRealtime: boolean;
 } {
-  if (facility.realtime_synced_at != null && facility.available_bikes != null) {
+  if (hasFreshRealtimeData(facility)) {
     return { text: `대여 가능 ${facility.available_bikes}대`, isRealtime: true };
   }
   if (facility.total_bikes != null) {
@@ -98,7 +106,7 @@ function StandardFacilityCard({ facility }: CardProps) {
  */
 function RealtimeCard({ facility }: CardProps) {
   const title = stripNumberPrefix(facility.facility_title);
-  const hasRealtimeData = facility.realtime_synced_at != null && facility.available_bikes != null;
+  const hasRealtimeData = hasFreshRealtimeData(facility);
 
   return (
     <div className={`${cardBase} p-4 text-center`}>
