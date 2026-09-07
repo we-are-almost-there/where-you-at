@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Map, MapMarker } from "react-kakao-maps-sdk";
+import { EVENT_TYPE_COLOR } from "../types";
 
 interface RaceMapProps {
   raceTitle: string;
@@ -8,13 +9,13 @@ interface RaceMapProps {
   onAddressResolved?: (address: string | null) => void; //주소
 }
 
-function pinImageSrc(color: string, size: number): string {
+function pinImageSrc(color: string, size: number): { src: string; height: number } {
   const height = Math.round(size * (32 / 24));
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${height}" viewBox="0 0 24 32"><path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 20 12 20s12-11 12-20c0-6.6-5.4-12-12-12z" fill="${color}"/><circle cx="12" cy="12" r="5" fill="white"/></svg>`;
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  return { src: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, height };
 }
 
-const RACE_MARKER_COLOR = "#6C5CE7"; // 대회 위치 강조
+const RACE_MARKER_COLOR = EVENT_TYPE_COLOR.running; // 대회 위치 강조 (러닝 accent 재사용)
 
 
 export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, }: RaceMapProps) {
@@ -46,8 +47,10 @@ export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, }: Rac
     if (!sdkReady || !onAddressResolved) return;
     if (!kakao.maps.services) return;
 
+    let ignore = false;
     const geocoder = new kakao.maps.services.Geocoder();
     geocoder.coord2Address(lng, lat, (result, status) => {
+      if (ignore) return;
       if (status === kakao.maps.services.Status.OK && result[0]) {
         const roadAddress = result[0].road_address?.address_name;
         const jibunAddress = result[0].address?.address_name;
@@ -56,6 +59,10 @@ export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, }: Rac
         onAddressResolved(null);
       }
     });
+
+    return () => {
+      ignore = true;
+    };
   }, [sdkReady, lat, lng, onAddressResolved]);
 
   if (!sdkReady) {
@@ -63,8 +70,7 @@ export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, }: Rac
   }
 
   const racePinSize = 32;
-  const racePinHeight = Math.round(racePinSize * (32 / 24));
-
+  const racePin = pinImageSrc(RACE_MARKER_COLOR, racePinSize);
 
   return (
     <div ref={mapContainerRef} className="h-64 w-full overflow-hidden rounded-t-lg">
@@ -78,9 +84,9 @@ export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, }: Rac
           position={{ lat, lng }}
           title={raceTitle}
           image={{
-            src: pinImageSrc(RACE_MARKER_COLOR, racePinSize),
-            size: { width: racePinSize, height: racePinHeight },
-            options: { offset: { x: racePinSize / 2, y: racePinHeight } },
+            src: racePin.src,
+            size: { width: racePinSize, height: racePin.height },
+            options: { offset: { x: racePinSize / 2, y: racePin.height } },
           }}
           zIndex={10}
         />

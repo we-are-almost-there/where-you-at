@@ -40,6 +40,7 @@ export default function RaceDetailSheet({ race, onClose, backLabel }: RaceDetail
           <div className="mx-auto -mb-2 h-1 w-10 rounded-full bg-gray-200 md:hidden" />
 
           <button
+            type="button"
             onClick={onClose}
             className="self-start text-[13px] text-gray-400 hover:text-gray-600"
           >
@@ -81,14 +82,15 @@ export default function RaceDetailSheet({ race, onClose, backLabel }: RaceDetail
               href={homepageHref}
               target="_blank"
               rel="noreferrer"
-              className="rounded-lg bg-[#6C5CE7] py-3 text-center text-sm font-semibold text-white"
+              className="rounded-lg py-3 text-center text-sm font-semibold text-white"
+              style={{ backgroundColor: EVENT_TYPE_COLOR.running }}
             >
               대회 홈페이지 바로가기
             </a>
           )}
 
           {/* 지도 - 주소는 dl이 아니라 지도 캡션으로 표시 (텍스트 라벨 방식) */}
-          {race.map_x && race.map_y && (
+          {race.map_x != null && race.map_y != null && (
             <div>
               <RaceMap
                 raceTitle={race.race_title}

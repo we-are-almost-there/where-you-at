@@ -117,10 +117,9 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
             <div key={key} className="flex min-h-[64px] flex-col items-center gap-1 py-1">
               <span
                 className={`flex h-6 w-6 items-center justify-center rounded-full text-sm ${
-                  isToday
-                    ? "bg-[#6C5CE7] font-semibold text-white"
-                    : "text-gray-700"
+                  isToday ? "font-semibold text-white" : "text-gray-700"
                 }`}
+                style={isToday ? { backgroundColor: EVENT_TYPE_COLOR.running } : undefined}
               >
                 {date.getDate()}
               </span>

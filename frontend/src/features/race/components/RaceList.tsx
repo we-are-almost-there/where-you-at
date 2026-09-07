@@ -54,8 +54,9 @@ export default function RaceList({ races, selectedRaceId, onSelectRace }: RaceLi
               </span>
               <span
                 className={`block truncate text-sm ${
-                  isSelected ? "font-semibold text-[#6C5CE7]" : "font-medium text-gray-900"
+                  isSelected ? "font-semibold" : "font-medium text-gray-900"
                 }`}
+                style={isSelected ? { color: EVENT_TYPE_COLOR.running } : undefined}
               >
                 {race.race_title}
               </span>
@@ -63,7 +64,12 @@ export default function RaceList({ races, selectedRaceId, onSelectRace }: RaceLi
                 <span className="block truncate text-xs text-gray-500">{race.location_name}</span>
               )}
             </span>
-            <span className={`shrink-0 ${isSelected ? "text-[#6C5CE7]" : "text-gray-300"}`}>›</span>
+            <span
+              className={`shrink-0 ${isSelected ? "" : "text-gray-300"}`}
+              style={isSelected ? { color: EVENT_TYPE_COLOR.running } : undefined}
+            >
+              ›
+            </span>
           </button>
         );
       })}

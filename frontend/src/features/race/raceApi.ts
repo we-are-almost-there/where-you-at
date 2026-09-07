@@ -26,25 +26,51 @@ export interface RaceListQuery {
 export async function fetchRaceList(query: RaceListQuery = {}): Promise<Race[]> {
   if (USE_MOCK) return raceMock;
 
-  const params = new URLSearchParams();
-  if (query.region_code) params.set("region_code", query.region_code);
-  if (query.event_type) params.set("event_type", query.event_type);
-  if (query.upcoming_only !== undefined) {
-    params.set("upcoming_only", String(query.upcoming_only));
-  }
-  params.set("page", String(query.page ?? 1));
-  params.set("per_page", String(query.per_page ?? 100));
+  // page를 명시적으로 지정한 호출부는 그 페이지만 반환(추후 페이지네이션 UI 대비).
+  // page 미지정 시(현재 모든 호출부)에는 total을 다 채울 때까지 이어서 가져와
+  // per_page 상한 때문에 나머지 데이터가 조용히 누락되는 일이 없게 한다.
+  const shouldFetchAll = query.page === undefined;
+  const perPage = query.per_page ?? 100;
 
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}/api/races?${params}`);
-  } catch {
-    throw new Error("서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.");
-  }
-  if (!res.ok) throw new Error(`대회 목록 조회 실패 (${res.status})`);
+  const buildParams = (page: number) => {
+    const params = new URLSearchParams();
+    if (query.region_code) params.set("region_code", query.region_code);
+    if (query.event_type) params.set("event_type", query.event_type);
+    if (query.upcoming_only !== undefined) {
+      params.set("upcoming_only", String(query.upcoming_only));
+    }
+    params.set("page", String(page));
+    params.set("per_page", String(perPage));
+    return params;
+  };
 
-  const data: ApiRaceListResponse = await res.json();
-  return data.items;
+  const fetchPage = async (page: number): Promise<ApiRaceListResponse> => {
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/api/races?${buildParams(page)}`);
+    } catch {
+      throw new Error("서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.");
+    }
+    if (!res.ok) throw new Error(`대회 목록 조회 실패 (${res.status})`);
+    return res.json();
+  };
+
+  if (!shouldFetchAll) {
+    const data = await fetchPage(query.page ?? 1);
+    return data.items;
+  }
+
+  const allItems: Race[] = [];
+  let page = 1;
+  let total = Infinity;
+  while (allItems.length < total) {
+    const data = await fetchPage(page);
+    allItems.push(...data.items);
+    total = data.total;
+    if (data.items.length === 0) break; // 안전장치: 무한 루프 방지
+    page += 1;
+  }
+  return allItems;
 }
 
 // TODO: 대회 상세 페이지에서 목록 API 응답이 아닌 단건 조회가 필요해지면 사용.
