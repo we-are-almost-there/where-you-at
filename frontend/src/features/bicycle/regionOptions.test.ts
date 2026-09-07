@@ -83,6 +83,17 @@ describe("buildBicycleSubregionOptions", () => {
     }
   });
 
+  it("구 라벨에 시 이름과의 경계 공백이 남지 않는다", () => {
+    const subregions: BicycleSubregionOption[] = [
+      { region_code: "41111", name: "수원시 장안구", cnt: 2 },
+    ];
+    const result = buildBicycleSubregionOptions(subregions);
+    const group = result.find((r) => "options" in r);
+    if (group && "options" in group) {
+      expect(group.options[0].label).toBe("장안구 (2)"); // 공백 없이 정확히 일치
+    }
+  });
+
   it("구가 없는 시/군(예: 광명시)은 단독 옵션으로 처리한다", () => {
     const subregions: BicycleSubregionOption[] = [
       { region_code: "41210", name: "광명시", cnt: 2 },

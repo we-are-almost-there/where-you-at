@@ -72,6 +72,7 @@ export function BicycleExplore() {
 
   const [regions, setRegions] = useState<BicycleRegionOption[]>([]);
   const [subregions, setSubregions] = useState<BicycleSubregionOption[]>([]);
+  const [subregionsReady, setSubregionsReady] = useState(false);
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [geoDenied, setGeoDenied] = useState(false);
 
@@ -109,8 +110,17 @@ export function BicycleExplore() {
   useEffect(() => {
     if (!region) return;
     let cancelled = false;
+    // 새 지역으로 요청을 시작하는 시점에 이전 결과를 즉시 무효화한다.
+    // region/dataSource만으로는 파생시킬 수 없는 "지금 막 새 요청을 시작했다"는
+    // 타이밍 정보라 setState로 직접 표시할 수밖에 없다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSubregionsReady(false);
     getBicycleSubregions(region, dataSource)
-      .then((opts) => !cancelled && setSubregions(opts))
+      .then((opts) => {
+        if (cancelled) return;
+        setSubregions(opts);
+        setSubregionsReady(true);
+      })
       .catch((err) => console.error("[BicycleExplore] subregions fetch failed:", err));
     return () => {
       cancelled = true;
@@ -134,19 +144,27 @@ export function BicycleExplore() {
   }, [userLoc, geoDenied, geoSupported]);
 
   const regionOptions = useMemo(() => buildBicycleRegionOptions(regions), [regions]);
+
+  // region이 없으면 subregionsReady도 유효하지 않은 것으로 취급한다
+  // (state를 억지로 비우지 않고 렌더링 시점에 계산).
+  const effectiveSubregionsReady = region ? subregionsReady : false;
+
   const subregionOptions = useMemo(
     () => buildBicycleSubregionOptions(region ? subregions : []),
     [region, subregions],
   );
 
-  // subregionCode가 현재 region의 하위 지역이 아니면 무효로 본다.
-  // subregions를 아직 못 불러온 초기 렌더 시점(길이 0)에는 판단을 보류하고
-  // subregionCode를 그대로 신뢰한다 — 지역을 안 바꾼 정상 케이스에서
-  // subregions 로딩 중에 잠깐 region으로 되돌아가 깜빡이는 것을 막기 위함이다.
+  // subregionCode가 현재 region의 하위 지역인지 검증한다.
+  // - region이 없으면 gu를 신뢰할 근거 자체가 없으므로 무조건 무효.
+  // - region은 있지만 조회가 아직 안 끝났으면(effectiveSubregionsReady === false)
+  //   판단을 보류하고 subregionCode를 그대로 유지한다.
+  // - 조회가 끝났으면(세종처럼 결과가 빈 배열인 경우 포함) 실제 목록과 대조한다.
+  //   region이 falsy면 뒤의 subregions.some(...)은 평가되지 않으므로
+  //   subregions를 그대로 참조해도 안전하다.
   const subregionValid =
-    subregions.length === 0 || subregions.some((s) => s.region_code === subregionCode);
+    !!region && (!effectiveSubregionsReady || subregions.some((s) => s.region_code === subregionCode));
   const effectiveSubregionCode = subregionValid ? subregionCode : "";
-  const effectiveRegion = effectiveSubregionCode || region;
+const effectiveRegion = effectiveSubregionCode || region;
 
   const query = useMemo(() => {
     const q: Record<string, string> = {

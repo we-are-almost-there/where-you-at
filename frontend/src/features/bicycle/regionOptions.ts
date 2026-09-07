@@ -85,7 +85,7 @@ export function buildBicycleSubregionOptions(subregions: BicycleSubregionOption[
   const groupOptions: RegionSelectItem[] = Array.from(groupedByCity.values()).map(({ cityName, items }) => ({
     label: cityName,
     options: items.map((s) => {
-      const guName = s.name.slice(cityName.length); // "수원시 장안구" → "장안구"
+      const guName = s.name.slice(cityName.length).trim(); // "수원시 장안구" → "장안구"
       return { value: s.region_code, label: `${guName} (${s.cnt})` };
     }),
   }));
