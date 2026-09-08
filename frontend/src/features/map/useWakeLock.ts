@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
-export const WAKE_LOCK_FAILURE_MESSAGE =
-  "화면 꺼짐 방지를 켜지 못했어요. 기기 설정에서 화면 자동 꺼짐 시간을 늘려 주세요.";
+// 문장 단위로 줄을 나눠 둔다. 한 줄로 흘리면 폭에 따라 문장 한가운데서 끊겨
+// "무엇이 안 됐는지"와 "무엇을 하면 되는지"가 뒤섞인다.
+export const WAKE_LOCK_FAILURE_LINES = [
+  "화면 꺼짐 방지를 켜지 못했어요.",
+  "기기 설정에서 화면 자동 꺼짐 시간을 늘려 주세요.",
+];
 
 /**
  * 지금 Wake Lock을 요청해야 하는지 판정한다.

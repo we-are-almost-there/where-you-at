@@ -161,3 +161,51 @@ describe("useCourseTracking 권한 거부", () => {
     expect(stopAndTakeRecord(result.current.stopTracking)?.distanceKm).toBeLessThan(0.3);
   });
 });
+
+describe("useCourseTracking 진행 중 요약", () => {
+  it("시작한 적이 없으면 요약할 것도 없다", () => {
+    const { result } = renderHook(() => useCourseTracking());
+
+    expect(result.current.sampleRecord()).toBeNull();
+  });
+
+  it("진행 중에는 아직 안 닫힌 구간의 경과 시간까지 포함해 요약한다", () => {
+    const { result } = renderHook(() => useCourseTracking());
+
+    act(() => result.current.startTracking());
+    emit(0, 0);
+    emit(1, 60); // 약 111m를 1분에
+
+    const record = result.current.sampleRecord();
+    expect(record?.distanceKm).toBeCloseTo(0.111, 2);
+    // 구간을 닫아야만 시간이 잡히면 주행 내내 0분으로 보인다.
+    expect(record?.durationMs).toBe(60_000);
+  });
+
+  it("일시정지 중에는 시간이 흘러도 활동 시간이 늘지 않는다", () => {
+    const { result } = renderHook(() => useCourseTracking());
+
+    act(() => result.current.startTracking());
+    emit(0, 0);
+    emit(1, 60);
+
+    act(() => result.current.pause());
+    now += 600_000; // 주변 정보를 10분 봤다
+
+    const record = result.current.sampleRecord();
+    expect(record?.durationMs).toBe(60_000);
+    expect(record?.distanceKm).toBeCloseTo(0.111, 2);
+  });
+
+  it("종료 직전의 요약과 종료가 돌려주는 기록이 같다", () => {
+    const { result } = renderHook(() => useCourseTracking());
+
+    act(() => result.current.startTracking());
+    emit(0, 0);
+    emit(1, 60);
+
+    // 주행 중 보던 페이스와 기록 카드의 페이스가 어긋나면 둘 중 하나는 거짓말이 된다.
+    const sampled = result.current.sampleRecord();
+    expect(stopAndTakeRecord(result.current.stopTracking)).toEqual(sampled);
+  });
+});

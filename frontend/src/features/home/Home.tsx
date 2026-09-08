@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import AppHeader from "../../components/layout/AppHeader";
+import Footer from "../../components/layout/Footer";
 import { fetchFeaturedCourses, fetchNearbyCourses, fetchUpcomingRaces } from "./homeApi";
 import type { CourseItem, UpcomingRace } from "./homeApi";
 import { BANNERS } from "./banners";
@@ -137,9 +138,10 @@ function CourseGrid({ items }: { items: CourseItem[] }) {
               />
             )}
 
-            {/* 내 위치에서의 거리는 코스 길이와 헷갈리지 않게 썸네일 위로 올린다 */}
+            {/* 내 위치에서의 거리는 코스 길이와 헷갈리지 않게 썸네일 위로 올린다.
+                스타일은 코스 목록 카드의 '방문 혜택 지역' 뱃지와 맞춘다. */}
             {item.highlight && (
-              <span className="absolute left-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-[13px] font-semibold text-white backdrop-blur-sm">
+              <span className="absolute left-2 top-2 rounded-md bg-white px-2 py-1 text-[13px] font-semibold leading-none text-accent shadow-[0px_1px_4px_0px_rgba(0,0,0,0.18)]">
                 {item.highlight}
               </span>
             )}
@@ -435,7 +437,19 @@ function MenuIconGradients() {
     <svg aria-hidden className="absolute size-0">
       <defs>
         {MENU_ITEMS.map((item) => (
-          <linearGradient key={item.gradientId} id={item.gradientId} x1="0" y1="0" x2="1" y2="1">
+          // userSpaceOnUse로 아이콘 viewBox(24×24) 전체를 좌표계로 잡는다.
+          // 기본값(objectBoundingBox)은 path마다 자기 바운딩박스로 계산해서,
+          // 조각이 나뉜 글리프는 조각마다 그라데이션이 새로 시작하고
+          // 높이가 0인 가로선은 한 색으로 뭉갠다.
+          <linearGradient
+            key={item.gradientId}
+            id={item.gradientId}
+            gradientUnits="userSpaceOnUse"
+            x1="0"
+            y1="0"
+            x2="24"
+            y2="24"
+          >
             <stop offset="0%" stopColor={item.gradientStops[0]} />
             <stop offset="55%" stopColor={item.gradientStops[1]} />
             <stop offset="100%" stopColor={item.gradientStops[2]} />
@@ -646,11 +660,7 @@ export default function Home() {
       </section>
       )}
 
-      <footer className="mt-auto border-t border-divider">
-        <div className="mx-auto w-full max-w-6xl px-4 py-6">
-          <p className="text-[13px] text-caption">© 2026 WHERE YOU AT</p>
-        </div>
-      </footer>
+      <Footer />
 
       {isGalleryOpen && <BannerGalleryModal onClose={() => setIsGalleryOpen(false)} />}
     </div>

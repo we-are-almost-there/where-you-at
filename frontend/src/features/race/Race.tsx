@@ -5,6 +5,7 @@ import RaceDetailSheet from "./components/RaceDetailSheet";
 import { fetchRaceList } from "./raceApi";
 import { EVENT_TYPE_COLOR, EVENT_TYPE_LABEL, type EventType, type Race as RaceType } from "./types";
 import AppHeader from "../../components/layout/AppHeader";
+import Footer from "../../components/layout/Footer";
 
 type ViewMode = "list" | "calendar";
 
@@ -160,6 +161,7 @@ export default function Race() {
           )}
         </div>
       </div>
+      <Footer />
     </>
   );
 }
