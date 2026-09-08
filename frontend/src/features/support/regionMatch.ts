@@ -1,4 +1,4 @@
-import type { Feature, FeatureCollection } from "geojson";
+import type { Feature, FeatureCollection, Geometry, Position } from "geojson";
 
 /**
  * 시군구 도형(korea-all-regions.json)을 시도·지원지역과 이어 붙인다.
@@ -23,12 +23,21 @@ export type RegionEntry = {
 
 type BBox = [number, number, number, number]; // minX, minY, maxX, maxY
 
-const polysOf = (geom: any): number[][][][] =>
-  geom.type === "MultiPolygon" ? geom.coordinates : [geom.coordinates];
+/**
+ * 도형을 폴리곤(0번=외곽 링, 나머지=구멍) 배열로 편다.
+ * Polygon·MultiPolygon만 다루고 그 외 도형은 빈 배열 — 지금 쓰는 세 파일은 전부 면이다.
+ * 지도 그리기(SupportRegionMap)도 같은 함수를 거쳐야 좌표계가 어긋나지 않는다.
+ */
+export const polygonsOf = (geom: Geometry): Position[][][] =>
+  geom.type === "MultiPolygon"
+    ? geom.coordinates
+    : geom.type === "Polygon"
+      ? [geom.coordinates]
+      : [];
 
-function bboxOf(geom: any): BBox {
+function bboxOf(geom: Geometry): BBox {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const poly of polysOf(geom))
+  for (const poly of polygonsOf(geom))
     for (const ring of poly)
       for (const [x, y] of ring) {
         if (x < minX) minX = x;
@@ -39,10 +48,10 @@ function bboxOf(geom: any): BBox {
   return [minX, minY, maxX, maxY];
 }
 
-const inBBox = (p: number[], b: BBox) =>
+const inBBox = (p: Position, b: BBox) =>
   p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
 
-function inRing(p: number[], ring: number[][]): boolean {
+function inRing(p: Position, ring: Position[]): boolean {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const [xi, yi] = ring[i];
@@ -55,21 +64,21 @@ function inRing(p: number[], ring: number[][]): boolean {
 }
 
 /** 외곽 링 안에 있으면서 구멍에는 안 들어간 점 */
-const inPolygon = (p: number[], poly: number[][][]) =>
+const inPolygon = (p: Position, poly: Position[][]) =>
   inRing(p, poly[0]) && !poly.slice(1).some((hole) => inRing(p, hole));
 
-const inGeometry = (p: number[], geom: any) =>
-  polysOf(geom).some((poly) => inPolygon(p, poly));
+const inGeometry = (p: Position, geom: Geometry) =>
+  polygonsOf(geom).some((poly) => inPolygon(p, poly));
 
 /**
  * 도형 안에 확실히 들어가는 점 하나.
  * 초승달처럼 오목한 시군구는 정점 평균이 도형 밖으로 나갈 수 있어,
  * 그때는 외곽 링의 정점들과 평균점으로 만든 삼각형 중점들을 훑어 대체점을 찾는다.
  */
-function interiorPoint(geom: any): number[] {
-  let best: number[][][] | null = null;
+function interiorPoint(geom: Geometry): Position {
+  let best: Position[][] | null = null;
   let bestLen = 0;
-  for (const poly of polysOf(geom)) {
+  for (const poly of polygonsOf(geom)) {
     if (poly[0].length > bestLen) {
       bestLen = poly[0].length;
       best = poly;
@@ -109,11 +118,13 @@ export function buildRegionIndex(
   const sidoBoxes = sido.features.map((f) => bboxOf(f.geometry));
 
   // 1) 시군구 → 시도
+  const sidoCodeOf = (f: Feature) => String(f.properties?.sido_code);
+
   const sidoCodes = regionPoints.map((p) => {
     for (let i = 0; i < sido.features.length; i++) {
       if (!inBBox(p, sidoBoxes[i])) continue;
       if (inGeometry(p, sido.features[i].geometry)) {
-        return String((sido.features[i].properties as any).sido_code);
+        return sidoCodeOf(sido.features[i]);
       }
     }
     // 경계선에 걸친 섬 등 — 가장 가까운 시도로 보낸다 (드릴다운에서 누락되지 않게)
@@ -125,7 +136,7 @@ export function buildRegionIndex(
       const d = Math.hypot(p[0] - cx, p[1] - cy);
       if (d < best) {
         best = d;
-        nearest = String((sido.features[i].properties as any).sido_code);
+        nearest = sidoCodeOf(sido.features[i]);
       }
     });
     return nearest;
@@ -138,7 +149,7 @@ export function buildRegionIndex(
     for (let i = 0; i < allRegions.features.length; i++) {
       if (!inBBox(p, regionBoxes[i])) continue;
       if (inGeometry(p, allRegions.features[i].geometry)) {
-        supportCodes[i] = String((f.properties as any).region_code);
+        supportCodes[i] = String(f.properties?.region_code);
         break;
       }
     }
@@ -146,7 +157,7 @@ export function buildRegionIndex(
 
   return allRegions.features.map((feature, i) => ({
     feature,
-    name: String((feature.properties as any)?.name ?? ""),
+    name: String(feature.properties?.name ?? ""),
     sidoCode: sidoCodes[i],
     supportCode: supportCodes[i],
   }));

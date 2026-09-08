@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import type { Feature } from "geojson";
 import { BADGE_CLASS, BADGE_LABEL, type SupportListItem } from "../support.types";
 import { fetchSupportList } from "../supportApi";
+import { toUserError, type UserError } from "../supportError";
 import { SupportCalculator } from "./SupportCalculator";
+import { SupportErrorText } from "./SupportErrorText";
 
 type Props = {
   regionCode: string;
@@ -20,28 +23,54 @@ function loadRegionNames(): Promise<Map<string, string>> {
   regionNamesPromise ??= fetch("/support-regions-geo.json")
     .then((r) => r.json())
     .then(
-      (geo) =>
+      (geo: { features: Feature[] }) =>
         new Map<string, string>(
-          geo.features.map((f: any) => [String(f.properties.region_code), f.properties.name]),
+          geo.features.map((f): [string, string] => [
+            String(f.properties?.region_code),
+            String(f.properties?.name ?? ""),
+          ]),
         ),
-    );
+    )
+    .catch((err) => {
+      // 실패한 Promise를 그대로 두면 ??=가 "이미 값이 있다"고 보고 재요청하지 않는다.
+      // 네트워크가 돌아와도 새로고침 전까지 지역명이 계속 코드로만 보였다.
+      // 성공한 결과만 캐시로 남긴다.
+      regionNamesPromise = null;
+      throw err;
+    });
   return regionNamesPromise;
 }
 
+/** 목록을 어느 지역까지 받아왔는지. loading·error는 이 값에서 파생시킨다. */
+type Loaded = { regionCode: string; error: UserError | null };
+
 export function SupportRegionView({ regionCode }: Props) {
   const [items, setItems] = useState<SupportListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [regionName, setRegionName] = useState<string>("");
 
+  // loading·error를 별도 state로 두면 effect 안에서 setLoading(true)를 동기적으로
+  // 호출하게 되고, 지역을 바꿀 때마다 렌더가 한 번 더 돈다
+  // (react-hooks/set-state-in-effect). 렌더 중에 계산해서 그 왕복을 없앤다.
+  // 직전 지역의 응답이 남아 있으면 그건 지금 화면의 것이 아니다
+  const settled = loaded?.regionCode === regionCode ? loaded : null;
+  const loading = settled == null;
+  const error = settled?.error ?? null;
+
   useEffect(() => {
     let cancelled = false;
-    loadRegionNames().then((names) => {
-      if (!cancelled) setRegionName(names.get(regionCode) ?? "");
-    });
+    loadRegionNames()
+      .then((names) => {
+        if (!cancelled) setRegionName(names.get(regionCode) ?? "");
+      })
+      // 이름을 못 받으면 헤더에 지역코드를 그대로 보여준다.
+      // .catch가 없으면 unhandled rejection까지 같이 난다.
+      .catch(() => {
+        if (!cancelled) setRegionName("");
+      });
     return () => {
       cancelled = true;
     };
@@ -51,12 +80,19 @@ export function SupportRegionView({ regionCode }: Props) {
   // 목록을 비우면 패널 높이가 한 줄짜리 로딩 문구로 줄었다가 다시 늘어나며 요동친다.
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     fetchSupportList({ region_code: regionCode })
-      .then((next) => !cancelled && setItems(next))
-      .catch((err) => !cancelled && setError(err.message))
-      .finally(() => !cancelled && setLoading(false));
+      .then((next) => {
+        if (cancelled) return;
+        setItems(next);
+        setLoaded({ regionCode, error: null });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        // 실패했을 때만 목록을 비운다. 직전 지역 목록이 에러 문구 아래 남아 있으면
+        // 지금 지역의 제도로 읽힌다.
+        setItems([]);
+        setLoaded({ regionCode, error: toUserError(err, "지원 제도를 불러오지 못했어요") });
+      });
     return () => {
       cancelled = true;
     };
@@ -95,7 +131,7 @@ export function SupportRegionView({ regionCode }: Props) {
         {loading && items.length === 0 && (
           <p className="py-6 text-center text-[13px] text-caption">불러오는 중…</p>
         )}
-        {error && <p className="py-6 text-center text-[13px] text-caption">{error}</p>}
+        {error && <SupportErrorText error={error} />}
         {!loading && !error && items.length === 0 && (
           <p className="py-6 text-center text-[13px] text-caption">
             이 지역에 해당하는 지원 제도가 없어요.

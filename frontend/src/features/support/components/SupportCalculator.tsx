@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { calculateRefund } from "../supportApi";
 import type { CalculateResponse, CalculationBasisItem } from "../support.types";
+import { toUserError, type UserError } from "../supportError";
+import { SupportErrorText } from "./SupportErrorText";
 
 type Props = {
   regionCode: string;
@@ -35,7 +37,7 @@ export function SupportCalculator({ regionCode }: Props) {
   const [stayDuration, setStayDuration] = useState("1");
   const [result, setResult] = useState<CalculateResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UserError | null>(null);
 
   const handleChange = (key: string, value: string) => {
     // 숫자만
@@ -68,7 +70,7 @@ export function SupportCalculator({ regionCode }: Props) {
       stay_duration: stayNights,
     })
       .then(setResult)
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(toUserError(err, "환급액을 계산하지 못했어요")))
       .finally(() => setLoading(false));
   };
 
@@ -125,7 +127,7 @@ export function SupportCalculator({ regionCode }: Props) {
         </button>
       </div>
 
-      {error && <p className="text-[13px] text-caption">{error}</p>}
+      {error && <SupportErrorText error={error} className="py-2" />}
 
       {/* 영수증 */}
       {result && (

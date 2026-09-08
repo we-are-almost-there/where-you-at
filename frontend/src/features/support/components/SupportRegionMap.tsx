@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import type { FeatureCollection } from "geojson";
+import type { FeatureCollection, Geometry, Position } from "geojson";
 import { useSearchParams } from "react-router";
-import { buildRegionIndex, type RegionEntry } from "../regionMatch";
+import { buildRegionIndex, polygonsOf, type RegionEntry } from "../regionMatch";
+import { toUserError, type UserError } from "../supportError";
+import { SupportErrorText } from "./SupportErrorText";
 
 // viewBox는 고정하지 않고 그리는 대상의 비율에 맞춰 뷰마다 계산한다.
 // 고정하면 가로로 긴 도(강원 등)에서 위아래에 큰 죽은 여백이 생긴다.
@@ -47,11 +49,9 @@ function clampToWindow(v: number, [lo, hi]: [number, number], compress: number):
  * 링 전체를 평행이동해 모양과 구멍 정렬을 그대로 유지한다.
  * bbox 계산과 path 생성이 반드시 같은 함수를 거쳐야 좌표계가 어긋나지 않는다.
  */
-function insetRings(geom: any): number[][][] {
-  const polys: number[][][][] =
-    geom.type === "MultiPolygon" ? geom.coordinates : [geom.coordinates];
-  const rings: number[][][] = [];
-  for (const poly of polys) {
+function insetRings(geom: Geometry): Position[][] {
+  const rings: Position[][] = [];
+  for (const poly of polygonsOf(geom)) {
     const shell = poly[0];
     let sx = 0, sy = 0;
     for (const [lng, lat] of shell) { sx += lng; sy += lat; }
@@ -100,7 +100,7 @@ const badgeWidthEm = (name: string, active: boolean) => name.length + (active ? 
 /** 지도에 그릴 한 조각. 전국뷰는 시도, 시도뷰는 시군구가 들어온다. */
 type MapItem = {
   key: string;
-  geometry: any;
+  geometry: Geometry;
   name: string;
   /** 클릭 가능 여부 (전국뷰=지원지역 보유 시도, 시도뷰=지원 대상 시군구) */
   active: boolean;
@@ -115,7 +115,7 @@ export function SupportRegionMap() {
   const [svgPxWidth, setSvgPxWidth] = useState(VIEW_BASE);
   const [sido, setSido] = useState<FeatureCollection | null>(null);
   const [regions, setRegions] = useState<RegionEntry[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UserError | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [selectedSido, setSelectedSido] = useState<string | null>(null); // null=전국
 
@@ -136,7 +136,7 @@ export function SupportRegionMap() {
         // 코드 체계가 서로 달라 도형 포함 판정으로 잇는다. 데이터가 고정이라 한 번만 계산.
         setRegions(buildRegionIndex(all, sd, sp));
       })
-      .catch((err) => setError(err.message));
+      .catch((err) => setError(toUserError(err, "지도를 불러오지 못했어요")));
   }, []);
 
   // SVG가 실제로 몇 CSS px로 그려지는지 추적한다.
@@ -167,12 +167,11 @@ export function SupportRegionMap() {
   const viewItems = useMemo((): MapItem[] => {
     if (selectedSido == null) {
       return (sido?.features ?? []).map((f) => {
-        const p = f.properties as any;
-        const code = String(p.sido_code);
+        const code = String(f.properties?.sido_code);
         return {
           key: code,
           geometry: f.geometry,
-          name: String(p.sido_name),
+          name: String(f.properties?.sido_name),
           active: ACTIVE_SIDO.has(code),
           target: code,
         };
@@ -181,7 +180,7 @@ export function SupportRegionMap() {
     return (regions ?? [])
       .filter((r) => r.sidoCode === selectedSido)
       .map((r) => ({
-        key: `${selectedSido}-${(r.feature.properties as any)?.sgg_code ?? r.name}`,
+        key: `${selectedSido}-${r.feature.properties?.sgg_code ?? r.name}`,
         geometry: r.feature.geometry,
         name: r.name,
         active: r.supportCode != null,
@@ -227,7 +226,7 @@ export function SupportRegionMap() {
   const unitPerPx = viewW / svgPxWidth;
   const badgeFont = BADGE_FONT_PX * unitPerPx;
 
-  const toPath = (geom: any, proj: (p: number[]) => [number, number]): string =>
+  const toPath = (geom: Geometry, proj: (p: Position) => [number, number]): string =>
     insetRings(geom)
       .map(
         (ring) =>
@@ -304,14 +303,14 @@ export function SupportRegionMap() {
     return nodes;
   }, [badges, badgeFont, viewW, viewH, selectedSido]);
 
-  if (error) return <p className="py-16 text-center text-[14px] text-caption">{error}</p>;
+  if (error) return <SupportErrorText error={error} className="py-16" />;
   if (!sido || !regions)
     return <p className="py-16 text-center text-[14px] text-caption">지도를 불러오는 중…</p>;
 
   const selectedSidoName =
     selectedSido != null
-      ? (sido.features.find((f) => (f.properties as any).sido_code === selectedSido)
-          ?.properties as any)?.sido_name
+      ? sido.features.find((f) => f.properties?.sido_code === selectedSido)?.properties
+          ?.sido_name
       : null;
 
   // 시도 뷰에서 쓸 그 도의 색 (시군구 채움·배지 연결선에 공통 적용)

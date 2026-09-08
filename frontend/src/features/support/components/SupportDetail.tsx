@@ -2,8 +2,16 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { SupportDetail as SupportDetailType } from "../support.types";
 import { fetchSupportDetail } from "../supportApi";
+import { toUserError, type UserError } from "../supportError";
+import { SupportErrorText } from "./SupportErrorText";
 
 const STORAGE_KEY = (id: number) => `support_checklist_${id}`;
+
+// ?support= 에 숫자가 아닌 값이 들어온 경우. id만 보면 알 수 있어 요청을 보내지 않는다.
+const INVALID_ID_ERROR: UserError = {
+  title: "지원 제도를 찾을 수 없어요",
+  description: "주소가 잘못되었어요. 목록에서 다시 선택해 주세요.",
+};
 
 function loadChecked(id: number): Record<number, boolean> {
   try {
@@ -17,29 +25,41 @@ type Props = {
   id: number;
 };
 
+/** 상세를 어느 id까지 받아왔는지. loading·error는 이 값에서 파생시킨다. */
+type Loaded = { id: number; detail: SupportDetailType | null; error: UserError | null };
+
 export function SupportDetail({ id }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [detail, setDetail] = useState<SupportDetailType | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [checked, setChecked] = useState<Record<number, boolean>>({});
 
+  // effect 안에서 setLoading/setError를 동기적으로 호출하면 렌더가 한 번 더 돈다
+  // (react-hooks/set-state-in-effect). 어느 id까지 받아왔는지만 남기고
+  // 나머지는 렌더 중에 계산한다. 잘못된 id는 요청 없이 여기서 바로 갈린다.
+  const validId = Number.isInteger(id);
+  // 직전 id의 응답이 남아 있으면 그건 지금 화면의 것이 아니다
+  const settled = loaded?.id === id ? loaded : null;
+  const loading = validId && settled == null;
+  const error = !validId ? INVALID_ID_ERROR : (settled?.error ?? null);
+  const detail = settled?.detail ?? null;
+
   useEffect(() => {
-    if (!Number.isInteger(id)) {
-      setError("잘못된 지원 제도 ID입니다.");
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
+    if (!Number.isInteger(id)) return;
+    let cancelled = false;
     fetchSupportDetail(id)
       .then((data) => {
-        setDetail(data);
+        if (cancelled) return;
+        setLoaded({ id, detail: data, error: null });
         setChecked(loadChecked(id));
       })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (cancelled) return;
+        setLoaded({ id, detail: null, error: toUserError(err, "지원 제도를 불러오지 못했어요") });
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   // 제도 목록으로 = support 쿼리만 제거 (region 유지)
@@ -72,7 +92,7 @@ export function SupportDetail({ id }: Props) {
       </button>
 
       {loading && <p className="py-6 text-center text-[13px] text-caption">불러오는 중…</p>}
-      {error && <p className="py-6 text-center text-[13px] text-caption">{error}</p>}
+      {error && <SupportErrorText error={error} />}
 
       {!loading && !error && detail && (
         <>
