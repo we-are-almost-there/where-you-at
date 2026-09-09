@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import type { Feature } from "geojson";
+import type { RegionIndex } from "../regionMatch";
 import { BADGE_CLASS, BADGE_LABEL, type SupportListItem } from "../support.types";
 import { fetchSupportList } from "../supportApi";
 import { toUserError, type UserError } from "../supportError";
@@ -16,20 +16,19 @@ function formatAmount(amount: number | null): string {
   return `최대 ${amount.toLocaleString()}원`;
 }
 
-// 지역코드 → 지역명. 지역을 바꿀 때마다 762KB짜리 GeoJSON을 다시 받으면
-// 이름이 늦게 채워지며 헤더가 코드→이름으로 깜빡인다. 한 번만 받아 재사용한다.
+// 지역코드 → 지역명. 지역을 바꿀 때마다 다시 받으면 이름이 늦게 채워지며
+// 헤더가 코드→이름으로 깜빡인다. 한 번만 받아 재사용한다.
+//
+// 예전에는 support-regions-geo.json(762KB)에서 이름을 꺼냈는데, 그 파일은 지원지역
+// 88곳만 담고 있어 거기 없는 지역은 헤더에 코드가 그대로 노출됐다(옹진군 등).
+// region-index.json은 DB의 지역 전체를 담고 크기도 10KB다.
 let regionNamesPromise: Promise<Map<string, string>> | null = null;
 function loadRegionNames(): Promise<Map<string, string>> {
-  regionNamesPromise ??= fetch("/support-regions-geo.json")
+  regionNamesPromise ??= fetch("/region-index.json")
     .then((r) => r.json())
     .then(
-      (geo: { features: Feature[] }) =>
-        new Map<string, string>(
-          geo.features.map((f): [string, string] => [
-            String(f.properties?.region_code),
-            String(f.properties?.name ?? ""),
-          ]),
-        ),
+      (index: RegionIndex) =>
+        new Map<string, string>(Object.entries(index.names)),
     )
     .catch((err) => {
       // 실패한 Promise를 그대로 두면 ??=가 "이미 값이 있다"고 보고 재요청하지 않는다.

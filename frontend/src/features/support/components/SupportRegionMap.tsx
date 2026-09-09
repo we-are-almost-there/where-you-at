@@ -1,7 +1,12 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import type { FeatureCollection, Geometry, Position } from "geojson";
 import { useSearchParams } from "react-router";
-import { buildRegionIndex, polygonsOf, type RegionEntry } from "../regionMatch";
+import {
+  buildRegionIndex,
+  polygonsOf,
+  type RegionEntry,
+  type RegionIndex,
+} from "../regionMatch";
 import { fetchActiveRegionCodes } from "../supportApi";
 import { toUserError, type UserError } from "../supportError";
 import { SupportErrorText } from "./SupportErrorText";
@@ -104,16 +109,39 @@ type MapItem = {
   target: string | null;
 };
 
+/** 정적 파일에서 한 번만 만들어 두는 것들. 활성 지역 조회와 수명이 다르다. */
+type MapData = {
+  sido: FeatureCollection;
+  regions: RegionEntry[];
+  /** 활성 지역 조회가 실패했을 때 쓸 폴백 코드 목록 */
+  supportRegions: ReadonlySet<string>;
+};
+
+/** 활성 지역 조회 상태. loading을 ready·failed와 구분해야 낡은 색칠을 안 보여준다. */
+type ActiveState =
+  | { status: "loading" }
+  | { status: "ready"; codes: ReadonlySet<string> }
+  | { status: "failed" };
+
+// 지도 데이터가 오기 전에는 색칠할 대상이 없다. 매 렌더 새 Set을 만들면 useMemo가 헛돈다.
+const EMPTY_CODES: ReadonlySet<string> = new Set();
+
 export function SupportRegionMap() {
   const [, setSearchParams] = useSearchParams();
   const svgRef = useRef<SVGSVGElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const [svgPxWidth, setSvgPxWidth] = useState(VIEW_BASE);
-  const [sido, setSido] = useState<FeatureCollection | null>(null);
-  const [regions, setRegions] = useState<RegionEntry[] | null>(null);
+  const [mapData, setMapData] = useState<MapData | null>(null);
   const [error, setError] = useState<UserError | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [selectedSido, setSelectedSido] = useState<string | null>(null); // null=전국
+
+  // 진행 중인 제도가 있는 지역 조회 상태.
+  // loading을 따로 두는 이유: 응답을 기다리는 동안 폴백 목록으로 색칠해 버리면
+  // 사용자는 아무 표시 없이 낡은 색칠을 최신 정보로 믿게 된다. 그동안은 아무것도
+  // 활성으로 두지 않고 확인 중이라고 알린다.
+  const [active, setActive] = useState<ActiveState>({ status: "loading" });
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     const load = (url: string) =>
@@ -122,20 +150,66 @@ export function SupportRegionMap() {
         return r.json();
       });
 
+    let cancelled = false;
     Promise.all([
       load("/korea-sido.json"),
-      load("/support-regions-geo.json"),
       load("/korea-all-regions.json"),
-      // 실패해도 지도는 떠야 하므로 null로 흘려보내고 정적 파일 기준으로 폴백한다
-      fetchActiveRegionCodes().catch(() => null),
+      load("/region-index.json"),
     ])
-      .then(([sd, sp, all, active]) => {
-        setSido(sd);
-        // 코드 체계가 서로 달라 도형 포함 판정으로 잇는다. 데이터가 고정이라 한 번만 계산.
-        setRegions(buildRegionIndex(all, sd, sp, active ? new Set(active) : undefined));
+      .then(([sd, all, index]: [FeatureCollection, FeatureCollection, RegionIndex]) => {
+        if (cancelled) return;
+        setMapData({
+          sido: sd,
+          // 도형 계산은 여기서 한 번만. 활성 지역을 다시 받아도 이 결과는 그대로 쓴다.
+          regions: buildRegionIndex(all, sd, index.byShape),
+          supportRegions: new Set(index.supportRegions),
+        });
       })
-      .catch((err) => setError(toUserError(err, "지도를 불러오지 못했어요")));
+      .catch((err) => {
+        if (!cancelled) setError(toUserError(err, "지도를 불러오지 못했어요"));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  // 활성 지역 조회. 지도 도형과 달리 실패해도 지도는 떠야 하므로 따로 다룬다.
+  // 최초 조회와 재시도가 상태를 다르게 다뤄 각자 쓴다 — 최초에는 진행 표시가 필요 없고
+  // (지도 자체가 아직 로딩 중), 재시도는 눌린 걸 알려야 한다.
+  useEffect(() => {
+    let cancelled = false;
+    fetchActiveRegionCodes()
+      .then((codes) => {
+        if (!cancelled) setActive({ status: "ready", codes: new Set(codes) });
+      })
+      .catch(() => {
+        if (!cancelled) setActive({ status: "failed" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const retryActiveCodes = () => {
+    setRetrying(true);
+    fetchActiveRegionCodes()
+      .then((codes) => setActive({ status: "ready", codes: new Set(codes) }))
+      .catch(() => setActive({ status: "failed" }))
+      .finally(() => setRetrying(false));
+  };
+
+  // 색칠 대상.
+  //   ready   조회 결과 그대로
+  //   failed  폴백 목록. 기간·차수를 모르므로 끝난 제도가 섞이고, 그래서 안내를 띄운다
+  //   loading 아직 판단할 근거가 없다. 낡은 색을 잠깐 보여주느니 비워 둔다
+  const supportCodes =
+    active.status === "ready"
+      ? active.codes
+      : active.status === "failed"
+        ? (mapData?.supportRegions ?? EMPTY_CODES)
+        : EMPTY_CODES;
+  const regions = mapData?.regions ?? null;
+  const sido = mapData?.sido ?? null;
 
   // SVG가 실제로 몇 CSS px로 그려지는지 추적한다.
   // foreignObject 안의 px는 viewBox 단위라 화면 축소 배율만큼 같이 작아지는데,
@@ -174,10 +248,10 @@ export function SupportRegionMap() {
   const activeSidoCodes = useMemo(() => {
     const set = new Set<string>();
     for (const r of regions ?? []) {
-      if (r.supportCode != null && r.sidoCode) set.add(r.sidoCode);
+      if (r.regionCode && supportCodes.has(r.regionCode) && r.sidoCode) set.add(r.sidoCode);
     }
     return set;
-  }, [regions]);
+  }, [regions, supportCodes]);
 
   const viewItems = useMemo((): MapItem[] => {
     if (selectedSido == null) {
@@ -194,14 +268,17 @@ export function SupportRegionMap() {
     }
     return (regions ?? [])
       .filter((r) => r.sidoCode === selectedSido)
-      .map((r) => ({
-        key: `${selectedSido}-${r.feature.properties?.sgg_code ?? r.name}`,
-        geometry: r.feature.geometry,
-        name: r.name,
-        active: r.supportCode != null,
-        target: r.supportCode,
-      }));
-  }, [selectedSido, sido, regions, activeSidoCodes]);
+      .map((r) => {
+        const active = r.regionCode != null && supportCodes.has(r.regionCode);
+        return {
+          key: `${selectedSido}-${r.feature.properties?.sgg_code ?? r.name}`,
+          geometry: r.feature.geometry,
+          name: r.name,
+          active,
+          target: active ? r.regionCode : null,
+        };
+      });
+  }, [selectedSido, sido, regions, activeSidoCodes, supportCodes]);
 
   // 현재 뷰 대상의 경위도 범위에 맞춰 projection 계산 (전국이든 시도든).
   // 인셋을 적용한 좌표 기준으로 bbox를 잡으므로, project에 넘기는 좌표도
@@ -358,6 +435,32 @@ export function SupportRegionMap() {
           {selectedSido == null ? "지역을 선택하세요" : selectedSidoName}
         </span>
       </div>
+
+      {/* 색칠이 최신 정보가 아닌 동안에는 그 사실을 항상 드러낸다.
+          조용히 넘어가면 사용자는 지금 보이는 색을 최신으로 믿는다.
+          지도는 그대로 쓸 수 있으므로 막지 않고 칩으로 얹는다. */}
+      {active.status !== "ready" && (
+        <div
+          role="status"
+          className="mb-2 flex w-fit items-center gap-2 rounded-lg bg-white/80 px-3.5 py-1.5 ring-1 ring-white/70 backdrop-blur-sm md:absolute md:right-0 md:top-0 md:z-10 md:mb-0"
+        >
+          <span className="text-[12px] text-caption">
+            {active.status === "loading"
+              ? "최신 신청 정보를 확인하는 중이에요."
+              : "최신 신청 정보를 불러오지 못해 일부 지역이 실제와 다를 수 있어요."}
+          </span>
+          {active.status === "failed" && (
+            <button
+              type="button"
+              onClick={retryActiveCodes}
+              disabled={retrying}
+              className="shrink-0 cursor-pointer text-[12px] font-bold text-accent transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {retrying ? "확인 중…" : "다시 시도"}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 배경은 페이지 전체에 깔린 SeaBackdrop이 담당하므로 지도 자체는 투명하다 */}
       <div className="mx-auto w-full max-w-3xl px-2">

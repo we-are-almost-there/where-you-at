@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run check:region-index && tsc -b && vite build",
     "lint": "eslint .",
+    "generate:region-index": "node scripts/build-region-index.mjs",
+    "check:region-index": "node scripts/build-region-index.mjs --check",
     "preview": "vite preview",
     "test": "vitest run"
   },
