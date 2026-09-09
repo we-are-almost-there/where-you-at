@@ -77,7 +77,17 @@ def list_bicycle_facilities(
 
     use_nearest = sort == "nearest" and lat is not None and lng is not None
     if use_nearest:
-        order_sql = "ORDER BY geom <-> ST_SetSRID(ST_MakePoint(%s, %s), 4326), bicycle_id"
+        # geom은 geometry(Point,4326)이라 <->를 그대로 쓰면 위경도를 평면 좌표로 취급해
+        # "도(degree)" 단위 거리가 나온다. 위도 1도와 경도 1도를 같은 거리로 세는데
+        # 한국 위도(~36도)에서는 경도 1도가 위도 1도보다 짧아 동서 거리가 과대평가되고,
+        # 실제로 "가까운 순" 순위가 뒤바뀌는 걸 확인해 geography 캐스팅으로 되돌린다.
+        # KNN 인덱스는 못 타지만(시퀀셜 스캔) 현재 테이블 크기(6천여 행)에서는
+        # 같은 요청의 count(*)도 이미 시퀀셜 스캔이라 체감 차이가 없다.
+        order_sql = (
+            "ORDER BY ST_Distance("
+            "geom::geography, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography"
+            "), bicycle_id"
+        )
     else:
         order_sql = "ORDER BY bicycle_id"
 

@@ -141,11 +141,12 @@ class TestListBicycleFacilitiesCombinedFilters(unittest.TestCase):
 
 
 class TestListBicycleFacilitiesNearestSort(unittest.TestCase):
-    def test_nearest_sort_with_coords_uses_knn_operator(self):
+    def test_nearest_sort_with_coords_uses_geography_distance(self):
         conn, cursor = _mock_conn()
         list_bicycle_facilities(conn, sort="nearest", lat=37.5665, lng=126.9780)
         sql, params = _call_sql_params(cursor, call_index=1)
-        self.assertIn("<->", sql)
+        self.assertIn("ST_Distance(", sql)
+        self.assertIn("geom::geography", sql)
         self.assertIn("bicycle_id", sql)  # tiebreaker 확인
         self.assertIn("ST_MakePoint(%s, %s)", sql)
         self.assertEqual(params[0], 126.9780)
