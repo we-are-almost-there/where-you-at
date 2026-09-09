@@ -3,6 +3,7 @@ import { Home } from "./features/home";
 import { CourseExplore, CourseDetail } from "./features/map";
 import { Support } from "./features/support";
 import { Race } from "./features/race";
+import { BicycleExplore } from "./features/bicycle";
 import HelpPage from "./components/help/HelpPage";
 import PlaceholderPage from "./components/layout/PlaceholderPage";
 
@@ -20,6 +21,7 @@ function App() {
       <Route path="/terms" element={<PlaceholderPage title="이용약관" />} />
       <Route path="/privacy" element={<PlaceholderPage title="개인정보처리방침" />} />
       <Route path="/contact" element={<PlaceholderPage title="1:1 문의" />} />
+      <Route path="/bicycle-facilities" element={<BicycleExplore />} />
     </Routes>
   );
 }
