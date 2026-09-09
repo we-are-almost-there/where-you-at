@@ -41,6 +41,19 @@ export interface ChecklistItem {
 
 export type BadgeType = "refund" | "discount" | "pass";
 
+export const BADGE_LABEL: Record<BadgeType, string> = {
+  refund: "환급",
+  discount: "할인",
+  pass: "무료 패스",
+};
+
+// 코스 카드의 관광지 칩(bg-lavender/text-accent)과 같은 계열로 맞춘 뱃지 스타일
+export const BADGE_CLASS: Record<BadgeType, string> = {
+  refund: "bg-accent text-white",
+  pass: "bg-ink text-white",
+  discount: "bg-lavender text-accent",
+};
+
 export interface SupportListQuery {
   region_code?: string;
   target?: string;
