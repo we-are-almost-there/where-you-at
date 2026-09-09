@@ -145,7 +145,15 @@ export function SupportRegionMap() {
   // ResizeObserver의 contentRect는 SVG에서 신뢰할 수 없어 항상 rect를 직접 읽는다.
   // 컨테이너와 svg를 모두 관찰하고 window resize까지 듣는다 — 셋 중 하나만 놓쳐도
   // 배지 크기가 이전 화면 폭에 멈춰버린다.
+  //
+  // 구독 시점을 mapReady에 맞춘다. 데이터가 오기 전에는 아래에서 조기 반환하므로
+  // boxRef·svgRef가 아직 null이고, 이 값이 서는 렌더가 곧 지도가 처음 그려지는 렌더다.
+  // 의존성을 []로 두면 관찰 대상이 없는 채로 끝나 배지가 초기 폭(VIEW_BASE)에 멈추고,
+  // 아예 빼면 hover처럼 폭과 무관한 렌더마다 재구독된다.
+  // 이후의 폭 변화(패널 개폐·창 크기·브레이크포인트)는 ResizeObserver와 resize가 맡는다.
+  const mapReady = sido != null && regions != null;
   useEffect(() => {
+    if (!mapReady) return;
     const measure = () => {
       const w = svgRef.current?.getBoundingClientRect().width ?? 0;
       // 같은 값이면 setState가 바로 빠져나가므로 렌더 루프가 생기지 않는다
@@ -160,7 +168,7 @@ export function SupportRegionMap() {
       ro.disconnect();
       window.removeEventListener("resize", measure);
     };
-  });
+  }, [mapReady]);
 
   // 현재 뷰에서 그릴 항목들. 전국뷰는 시도, 시도뷰는 그 도의 시군구 전체를 그린다
   // (지원 대상이 아닌 시군구도 회색으로 깔아야 도의 윤곽이 살아난다).
