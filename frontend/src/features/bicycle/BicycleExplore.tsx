@@ -164,7 +164,19 @@ export function BicycleExplore() {
   const subregionValid =
     !!region && (!effectiveSubregionsReady || subregions.some((s) => s.region_code === subregionCode));
   const effectiveSubregionCode = subregionValid ? subregionCode : "";
-const effectiveRegion = effectiveSubregionCode || region;
+  const effectiveRegion = effectiveSubregionCode || region;
+
+  // subregions 조회가 끝난 뒤에도(effectiveSubregionsReady === true) gu가 여전히
+  // 무효라면(다른 탭에서 넘어온 값 등) URL에서 지운다. 그러지 않으면 쿼리에서는
+  // 무시돼 결과는 맞게 나오지만, 세부 지역 드롭다운의 value가 옵션에 없는 값을
+  // 계속 가리켜 "아무것도 선택 안 된 것처럼" 보이는 문제가 남는다.
+  useEffect(() => {
+    if (!region || !subregionCode || !effectiveSubregionsReady || subregionValid) return;
+    const params: Record<string, string> = { page: "1", source: dataSource, region };
+    if (facilityType) params.type = facilityType;
+    if (feeType) params.fee = feeType;
+    setSearchParams(params, { replace: true });
+  }, [region, subregionCode, effectiveSubregionsReady, subregionValid, dataSource, facilityType, feeType, setSearchParams]);
 
   const query = useMemo(() => {
     const q: Record<string, string> = {
