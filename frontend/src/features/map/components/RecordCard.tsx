@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import type { TrackingRecord } from "../trackingRecord";
 import type { LatLng } from "../types";
@@ -139,6 +139,34 @@ export function RecordCard({
 
   const hasRoute = routePoints.length >= 2;
   const canvasH = RATIOS.find((r) => r.key === ratio)?.height ?? RATIOS[0].height;
+
+  // 미리보기는 남는 자리에 맞춰 줄이되 비율을 지켜야 한다. CSS만으로는 안 된다 —
+  // 캔버스에 건 max-h-full은 백분율이라 높이가 정해지지 않은 래퍼를 기준으로 잡혀 무시되고,
+  // 그 빈자리를 flex의 늘이기가 채워 세로만 눌린다(폭에 여유가 있는 넓은 화면에서 드러난다).
+  // 자리를 직접 재서 폭을 정하면 캔버스는 h-auto로 비율을 지키며 따라온다.
+  const slotRef = useRef<HTMLDivElement>(null);
+  const [previewWidth, setPreviewWidth] = useState(0);
+  useLayoutEffect(() => {
+    const slot = slotRef.current;
+    if (!slot) return;
+    const fit = (width: number, height: number) =>
+      setPreviewWidth(Math.min(width, (height * CANVAS_W) / canvasH));
+
+    // ResizeObserver의 첫 콜백은 첫 페인트 뒤에 온다. 그것만 믿으면 카드가 열리는 한 프레임 동안
+    // 원본 크기(1080px)로 그려져, 좁은 화면에서는 화면 밖까지 튀었다가 제자리를 찾는다.
+    // 페인트 전에 한 번 직접 재 둔다 — clientWidth는 안쪽 여백을 포함하므로 빼야 자리와 같아진다.
+    const style = getComputedStyle(slot);
+    fit(
+      slot.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+      slot.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+    );
+
+    const observer = new ResizeObserver(([entry]) =>
+      fit(entry.contentRect.width, entry.contentRect.height),
+    );
+    observer.observe(slot);
+    return () => observer.disconnect();
+  }, [canvasH]);
   const routeDraggable = showRoute && hasRoute;
   const routeSize = ROUTE_BOX * routeScale;
   // 실제로 끌 수 있는 것만 말한다 — 없는 대상을 안내하면 그걸 찾게 만든다.
@@ -404,9 +432,11 @@ export function RecordCard({
       className="fixed inset-0 z-[60] flex flex-col bg-black/85"
     >
       {/* 미리보기가 남는 높이를 전부 가져간다 — 조작 결과를 스크롤 없이 바로 확인하기 위해서 */}
-      <div className="flex min-h-0 flex-1 items-center justify-center px-5 py-4">
+      <div ref={slotRef} className="flex min-h-0 flex-1 items-center justify-center px-5 py-4">
         {/* 래퍼가 캔버스 크기에 딱 맞아야 안내 문구가 사진 위에 얹힌다(부모 기준이면 사진 밖으로 떨어진다) */}
-        <div className="relative flex max-h-full">
+        {/* 잰 폭을 그대로 쓴다. 자리가 없어 0이 나와도 폭을 비우면 안 된다 —
+          그러면 아무 제한 없이 원본 크기로 그려져 아래 조작 버튼을 덮어 카드를 닫을 수 없다. */}
+        <div className="relative" style={{ width: previewWidth }}>
           <canvas
             ref={canvasRef}
             width={CANVAS_W}
@@ -416,8 +446,7 @@ export function RecordCard({
             onPointerMove={onPointerMove}
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
-            // max-w-full이 없으면 좁은 화면에서 고정폭이 화면을 넘쳐 카드가 잘린다
-            className="max-h-full w-auto max-w-full cursor-move touch-none rounded-[14px]"
+            className="block h-auto w-full rounded-[14px] cursor-move touch-none"
           />
           {/* 안내는 대상 위에 얹어야 무엇을 끌라는 말인지 바로 통한다. 한 번 끌면 사라진다. */}
           {!hasDragged && (
