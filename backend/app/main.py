@@ -18,12 +18,16 @@ app.include_router(api_router)
 
 
 @app.get("/health")
-def health():
+async def health():
     """살아있음(liveness) 확인 — 프로세스가 응답할 수 있는지만 본다.
 
     여기서 DB까지 확인하면 안 된다. 이 응답이 실패할 때 프로세스를 재시작하는 게
     보통의 설정인데, DB가 잠깐 끊겼다고 서버를 재시작해봐야 나아지는 게 없고
     재시작만 반복하게 된다. DB 상태는 아래 /health/ready에서 본다.
+
+    async인 이유: sync def로 두면 FastAPI가 스레드풀(anyio 기본 40)에서 돌린다.
+    DB가 느려져 슬롯이 다 차면 이 응답까지 스케줄되지 못해, 프로세스는 멀쩡한데
+    liveness가 실패한다. 블로킹 없이 즉시 반환하므로 이벤트 루프에서 처리한다.
     """
     return {"status": "ok"}
 
@@ -44,7 +48,11 @@ def readiness():
         with conn.cursor() as cur:
             cur.execute("SELECT 1")
         return {"status": "ok", "database": "up"}
-    except Exception:
+    except Exception as e:
+        # conn is None 경로는 get_db_connection이 원인을 찍어주지만, 이쪽은 아무것도
+        # 남지 않는다. SELECT 1을 넣은 이유인 "연결 객체는 있는데 세션이 끊긴" 경우가
+        # 정작 통째로 묻히므로 여기서 남긴다.
+        print(f"[ERROR] DB 세션 확인 실패: {e}")
         return JSONResponse(status_code=503, content={"status": "error", "database": "down"})
     finally:
         conn.close()

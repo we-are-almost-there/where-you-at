@@ -38,8 +38,19 @@ python -m venv .venv
 ```
 
 ```bash
-.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
+
+# Windows (PowerShell)
+.\.venv\Scripts\Activate.ps1
 ```
+
+> Windows에서 `Activate.ps1`이 "스크립트를 실행할 수 없으므로"라는 오류로 막히면,
+> PowerShell 실행 정책이 기본값(`Restricted`)이라 그렇습니다. 한 번만 풀어 주면 됩니다.
+>
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+> ```
 
 ```bash
 pip install -r requirements.txt
