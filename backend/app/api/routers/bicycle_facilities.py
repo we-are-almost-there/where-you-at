@@ -35,9 +35,6 @@ def list_facilities(
     conn=Depends(get_db),
 ):
     """자전거 대여소/정비소 목록을 조회한다."""
-    if not conn:
-        raise HTTPException(status_code=503, detail="DB 연결 실패")
-
     total, rows = list_bicycle_facilities(
         conn,
         region=region,
@@ -59,8 +56,6 @@ def get_bicycle_regions(
     conn=Depends(get_db),
 ):
     """자전거 시설이 있는 지역(시/도+시/군/구) 전체 목록. 지역 필터 드롭다운 데이터원."""
-    if not conn:
-        raise HTTPException(status_code=503, detail="DB 연결 실패")
     return list_bicycle_regions(conn, data_source=data_source)
 
 
@@ -71,17 +66,12 @@ def get_bicycle_subregions(
     conn=Depends(get_db),
 ):
     """특정 상위 지역(시/도 또는 시/군) 안의 하위 구 목록. 개수는 현재 탭 기준."""
-    if not conn:
-        raise HTTPException(status_code=503, detail="DB 연결 실패")
     return list_bicycle_subregions(conn, parent_code, data_source=data_source)
 
 
 @router.get("/{id}", response_model=BicycleFacilitySummary)
 def retrieve_bicycle_facility(id: int, conn=Depends(get_db)):
     """자전거 대여소/정비소 상세정보를 조회한다."""
-    if not conn:
-        raise HTTPException(status_code=503, detail="DB 연결 실패")
-
     facility = get_bicycle_facility_by_id(conn=conn, bicycle_id=id)
 
     if not facility:
