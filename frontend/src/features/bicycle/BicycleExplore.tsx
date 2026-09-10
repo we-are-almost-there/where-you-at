@@ -260,7 +260,11 @@ export function BicycleExplore() {
   }, [queryKey, retryTick]);
 
   const retry = () => {
-    // 두 조회가 함께 실패했다면 목록 재시도에서 세부 지역도 복구한다.
+    // 클릭 시점에 현재 지역/탭의 세부 지역 실패까지 확인된 경우에만 함께 재요청한다.
+    // 세부 지역 요청이 아직 진행 중이면 그대로 두고 목록만 재요청한다.
+    // 이후 세부 지역 요청이 실패하면 당시 목록 오류 상태에 따라 전용 아이콘 또는
+    // 목록 재시도로 처리한다. 한 번의 클릭이 이후 도착할 실패까지 처리하거나,
+    // 두 요청의 성공을 보장하는 것은 아니다.
     if (subregionsErrorForCurrent) {
       setSubregionsErrorKey(null);
       retrySubregions();
@@ -371,6 +375,14 @@ export function BicycleExplore() {
               }
               className={`${SELECT_CLASS} w-full disabled:cursor-not-allowed disabled:opacity-50 ${subregionsErrorForCurrent && !error ? "appearance-none pr-9" : ""}`}
             />
+            {/* 현재 지역/탭의 세부 지역만 실패하고 목록 오류가 없을 때 아이콘을 표시한다.
+                세부 지역 오류가 먼저 도착하면 아이콘이 보일 수 있으나, 목록 오류도
+                도착하면 숨기고 ErrorNotice의 재시도만 표시한다. 목록 재시도 후 늦게
+                세부 지역 실패가 확인된 경우에도 같은 조건을 적용한다.
+                두 재시도 UI는 동시에 표시하지 않으며, 함께 재요청할지는 retry()의
+                클릭 시점 상태로 결정한다. 목록과 세부 지역이 동시에 실패했을 때 두 버튼을 같이 보여주면,
+                아이콘을 먼저 눌러도 목록 오류는 그대로 남아 ErrorNotice 버튼을 한 번 더 눌러야 한다.
+                그 번거로움을 없애려고 아이콘은 숨기고 ErrorNotice 버튼 하나만 남긴다.*/}
             {region && subregionsErrorForCurrent && !error && (
               <button
                 type="button"
