@@ -35,7 +35,9 @@ interface ApiCourse {
   path_bicycle?: LatLng[];
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+// ??가 아니라 ||인 이유: .env에 VITE_API_BASE_URL=처럼 빈 값으로 두면 ??는 ""를
+// 그대로 통과시켜 요청이 상대경로로 나가고 404가 된다. 빈 값도 폴백으로 보낸다.
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 // 프론트(한국어) ↔ 백엔드(영어) 값 매핑.
 // 백엔드 DB는 route_type=trail/bicycle, difficulty=easy/medium/hard 로 저장하고

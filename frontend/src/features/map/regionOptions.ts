@@ -19,7 +19,8 @@ const sidoCode = (regionCode: string) => regionCode.slice(0, 2);
 const EXPAND_AS_PROVINCE = new Set(["전남광주통합특별시"]);
 
 // 필터 드롭다운은 좁으므로 정식 시도명을 축약해서 표시한다 (경상남도→경남, 부산광역시→부산).
-const SIDO_ABBR: Record<string, string> = {
+// bicycle/regionOptions.ts도 동일 매핑을 재사용한다 — 행정구역 개편 시 이 파일 하나만 고치면 된다.
+export const SIDO_ABBR: Record<string, string> = {
   서울특별시: "서울",
   부산광역시: "부산",
   대구광역시: "대구",
