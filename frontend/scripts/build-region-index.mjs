@@ -30,6 +30,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND = path.resolve(HERE, "..");
 const PUBLIC = path.join(FRONTEND, "public");
 const SEED = path.resolve(FRONTEND, "../backend/sql/02_region_seed.sql");
+const SUPPORT_SEED = path.resolve(FRONTEND, "../backend/sql/03_support_seed.sql");
 const OUT = path.join(PUBLIC, "region-index.json");
 // --check: 파일을 쓰지 않고 저장본이 지금 계산 결과와 같은지만 본다 (CI·빌드 전 확인용)
 const CHECK_ONLY = process.argv.includes("--check");
@@ -148,21 +149,44 @@ for (const f of all.features) {
 }
 
 const mapped = new Set(Object.values(byShape));
-const dropMissing = db.filter((r) => r.drop && !mapped.has(r.code));
+
+// 제도가 걸릴 수 있는 지역은 전부 도형이 있어야 한다. 없으면 API는 그 지역을 활성으로
+// 반환하는데 지도에는 그릴 도형이 없어 조용히 사라진다.
+//   - 인구감소지역: 숙박세일처럼 is_population_drop 기준으로 거는 제도가 있다
+//   - 지원 시드에 코드가 직접 적힌 지역: 관광주민증 52곳, 반값여행 차수 등
+// 둘을 합친 것이 "제도가 걸릴 수 있는 범위"다.
+const supportSeed = fs.readFileSync(SUPPORT_SEED, "utf8");
+const seededCodes = new Set([...supportSeed.matchAll(/'(\d{5})'/g)].map((m) => m[1]));
+const dropCodes = db.filter((r) => r.drop).map((r) => r.code);
+const reachable = new Set([...dropCodes, ...seededCodes]);
+const nameOf = new Map(db.map((r) => [r.code, `${r.sido} ${r.name}`]));
+const missing = [...reachable].filter((c) => !mapped.has(c)).sort();
 
 console.log(`도형 ${all.features.length}개 → 매칭 ${Object.keys(byShape).length}개`);
 if (unmatched.length) {
-  console.log(`\n매칭 실패 ${unmatched.length}개 (지원 대상이 아니면 무시해도 된다):`);
+  console.log(`\n도형에 대응하는 DB 지역이 없는 것 ${unmatched.length}개:`);
   for (const u of unmatched) console.log(`  sgg=${u.sgg} sido=${u.sidoCode} ${u.name}`);
 }
-console.log(
-  `\n인구감소지역 ${db.filter((r) => r.drop).length}곳 중 대응표에 없는 곳: ${dropMissing.length}`,
-);
-for (const r of dropMissing) console.log(`  ${r.code} ${r.sido} ${r.name}`);
 
-// 지원 대상이 될 수 있는 지역이 빠지면 지도에서 영영 색칠되지 않으므로 실패로 본다
-if (dropMissing.length) {
-  console.error("\n인구감소지역이 대응표에서 빠졌다. 이름 표기나 도형 데이터를 확인할 것.");
+// 도형이 없는 DB 지역은 실패로 보지 않는다. 대부분 행정구(수원시 장안구 등)라
+// 지도가 시 단위로 병합한 결과이고, 제도가 그 단위로 걸리지는 않는다.
+// 다만 몇 곳인지는 남겨서, 늘어나면 눈에 띄게 한다.
+const noShape = db.filter((r) => !mapped.has(r.code));
+console.log(`\nDB 지역 ${db.length}곳 중 도형이 없는 곳 ${noShape.length}곳 (행정구·개편 신설구)`);
+
+console.log(
+  `제도가 걸릴 수 있는 지역 ${reachable.size}곳` +
+    ` (인구감소지역 ${dropCodes.length} + 지원 시드 명시 ${seededCodes.size})` +
+    ` 중 도형 없는 곳: ${missing.length}`,
+);
+for (const c of missing) console.log(`  ${c} ${nameOf.get(c) ?? "(region_seed에 없는 코드)"}`);
+
+if (missing.length) {
+  console.error(
+    "\n제도가 걸릴 수 있는 지역이 대응표에서 빠졌다." +
+      " 그 지역은 API가 활성으로 반환해도 지도에 그려지지 않는다." +
+      " 이름 표기나 도형 데이터를 확인할 것.",
+  );
   process.exit(1);
 }
 

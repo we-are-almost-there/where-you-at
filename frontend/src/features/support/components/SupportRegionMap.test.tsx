@@ -3,7 +3,7 @@
 // 활성 지역 조회가 실패했을 때의 동작만 본다.
 // 지도 도형·배지 배치는 이 테스트의 관심사가 아니라 최소 도형만 흘려보낸다.
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SupportRegionMap } from "./SupportRegionMap";
 import { fetchActiveRegionCodes } from "../supportApi";
@@ -46,7 +46,8 @@ const STATIC_FILES: Record<string, unknown> = {
   },
   "/region-index.json": {
     byShape: { "36590": "12780", "36600": "12790" },
-    names: { "12780": "가군", "12790": "나군" },
+    // 41111은 도형이 없는 지역(행정구)을 흉내낸다 — 이름은 있지만 byShape에 없다
+    names: { "12780": "가군", "12790": "나군", "41111": "다시 라구" },
     supportRegions: ["12780"],
   },
 };
@@ -57,10 +58,18 @@ const activeSidoNames = () =>
     .filter((b) => !(b as HTMLButtonElement).disabled)
     .map((b) => b.textContent!.replace("›", "").trim());
 
+/** 지도가 URL을 바꾸는지 보려면 라우터의 현재 위치를 읽어야 한다 */
+function LocationProbe() {
+  return <div data-testid="location-search">{useLocation().search}</div>;
+}
+
+const currentSearch = () => screen.getByTestId("location-search").textContent;
+
 function renderMap() {
   return render(
     <MemoryRouter>
       <SupportRegionMap />
+      <LocationProbe />
     </MemoryRouter>,
   );
 }
@@ -149,6 +158,37 @@ describe("SupportRegionMap — 활성 지역 조회 실패", () => {
 
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
     expect(activeSidoNames()).toEqual([]);
+  });
+
+  it("그릴 도형이 없는 활성 지역이 와도 지도는 정상 동작한다", async () => {
+    // 지도는 시군구 단위 도형만 가진다(#64에서 행정구를 시 단위로 병합). 지원 제도도
+    // 시군구 단위로만 걸리므로 이런 응답은 나올 수 없고, 시드에 그런 코드를 넣으면
+    // build 전 check:region-index가 막는다. 여기서는 그래도 지도가 깨지지 않는지만 본다.
+    mockedFetchActive.mockResolvedValue(["12780", "41111"]);
+
+    renderMap();
+
+    // 그릴 수 있는 지역은 정상 색칠되고, 나머지는 조용히 빠진다(콘솔에는 남는다)
+    await waitFor(() => expect(activeSidoNames()).toEqual(["가도"]));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("지역 배지를 누르면 그 지역 패널이 열린다", async () => {
+    mockedFetchActive.mockResolvedValue(["12780"]);
+
+    renderMap();
+
+    await waitFor(() => expect(activeSidoNames()).toEqual(["가도"]));
+    const badge = screen.getByRole("button", { name: /가도/ });
+    badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    // 시도 하나뿐이라 드릴다운하면 그 안의 시군구가 보이고, 눌러야 ?region= 이 붙는다
+    await waitFor(() => expect(screen.getByRole("button", { name: /가군/ })).toBeTruthy());
+    screen
+      .getByRole("button", { name: /가군/ })
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    await waitFor(() => expect(currentSearch()).toBe("?region=12780"));
   });
 
   it("다시 시도가 또 실패하면 안내와 폴백 색칠을 유지한다", async () => {

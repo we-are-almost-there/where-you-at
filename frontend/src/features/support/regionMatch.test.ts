@@ -113,6 +113,20 @@ describe("region-index.json + 실제 지도 도형", () => {
     expect(index.supportRegions.filter((c) => !drawnCodes.has(c))).toEqual([]);
   });
 
+  it("지원 시드가 제도를 거는 지역이 전부 도형에 연결된다", () => {
+    // /api/support/regions는 인구감소지역으로 제한되지 않는다. support_region에 걸린
+    // 지역이면 무엇이든 반환하므로, 시드가 코드를 직접 적어 거는 지역도 도형이 있어야 한다.
+    // 없으면 API는 활성으로 주는데 지도에서는 조용히 빠진다.
+    const supportSeed = fs.readFileSync(
+      path.resolve(HERE, "../../../../backend/sql/03_support_seed.sql"),
+      "utf8",
+    );
+    const seeded = [...new Set([...supportSeed.matchAll(/'(\d{5})'/g)].map((m) => m[1]))];
+
+    expect(seeded.length).toBeGreaterThan(50); // 파싱이 깨지면 통과해버리는 걸 막는다
+    expect(seeded.filter((c) => !drawnCodes.has(c))).toEqual([]);
+  });
+
   it("도형에 연결된 지역은 이름을 갖는다", () => {
     // 이름이 없으면 우측 패널 제목에 지역 코드가 그대로 노출된다
     const nameless = [...drawnCodes].filter((c) => !index.names[c!]);

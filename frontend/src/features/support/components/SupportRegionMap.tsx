@@ -211,6 +211,27 @@ export function SupportRegionMap() {
   const regions = mapData?.regions ?? null;
   const sido = mapData?.sido ?? null;
 
+  // 지도는 시군구 단위 도형만 가진다(#64에서 행정구를 시 단위로 병합). 지원 제도도
+  // 시군구 단위로만 걸리므로 그릴 수 없는 활성 지역은 나올 수 없다.
+  //
+  // 그 계약은 빌드 때 강제된다. support_region에 쓰는 경로는 03_support_seed.sql
+  // 하나뿐이고, scripts/build-region-index.mjs가 시드에 적힌 지역이 전부 도형에
+  // 있는지 검사해 없으면 build를 실패시킨다.
+  //
+  // 그래도 DB를 직접 고치면 검사를 지나칠 수 있어, 그때 조용히 사라지지 않도록 로그만 남긴다.
+  useEffect(() => {
+    if (active.status !== "ready" || !regions) return;
+    const drawable = new Set(regions.map((r) => r.regionCode).filter(Boolean));
+    const missing = [...active.codes].filter((code) => !drawable.has(code));
+    if (missing.length) {
+      console.warn(
+        `[지원금 지도] 활성 지역 ${missing.length}곳에 대응하는 도형이 없습니다.` +
+          ` 지도는 시군구 단위라, 제도가 행정구 단위로 걸렸는지 확인하세요:`,
+        missing,
+      );
+    }
+  }, [active, regions]);
+
   // SVG가 실제로 몇 CSS px로 그려지는지 추적한다.
   // foreignObject 안의 px는 viewBox 단위라 화면 축소 배율만큼 같이 작아지는데,
   // 배지 글자는 지도와 같이 작아지면 안 되므로 이 값으로 역보정한다.
