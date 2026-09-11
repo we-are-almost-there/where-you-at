@@ -3,7 +3,7 @@ import { Home } from "./features/home";
 import { CourseExplore, CourseDetail } from "./features/map";
 import { Support } from "./features/support";
 import { Race } from "./features/race";
-import HelpPage from "./components/help/HelpPage";
+import { HelpPage } from "./features/help";
 import PlaceholderPage from "./components/layout/PlaceholderPage";
 
 function App() {
