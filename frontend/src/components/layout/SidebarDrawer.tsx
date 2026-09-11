@@ -59,7 +59,7 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
             어디까지왔니
           </h2>
           <p className="mt-1.5 text-[12px] leading-relaxed text-caption">
-            인구감소지역과 함께 걷고 달리는 여행
+            코스 탐색부터 지원혜택까지, 걷고 달리는 여행
           </p>
         </div>
 
@@ -166,14 +166,7 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
         <div className="px-6 py-4">
           <div className="mb-2.5 h-px bg-divider" />
           <div className="flex items-center justify-between">
-            <Link
-              to="/help"
-              onClick={onClose}
-              className="text-[11px] text-caption transition-colors hover:text-accent"
-            >
-              고객지원
-            </Link>
-            <p className="text-[11px] tracking-wide text-caption">© 2026 WHERE YOU AT</p>
+            <p className="text-[11px] tracking-wide text-caption">Copyright © 2026 거의 다왔어</p>
           </div>
         </div>
       </aside>

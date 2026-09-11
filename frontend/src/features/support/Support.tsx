@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { useSearchParams } from "react-router";
 import { SupportRegionMap } from "./components/SupportRegionMap";
 import { SupportRegionView } from "./components/SupportRegionView";
@@ -12,16 +11,9 @@ export function Support() {
   const region = searchParams.get("region");
   const supportId = searchParams.get("support"); // 제도 상세 ID
 
-  // Race와 동일한 이유 — 콘텐츠 길이에 따라 스크롤 유무가 갈려 이 페이지에서만
-  // scrollbar-gutter: stable을 켠다.
-  useEffect(() => {
-    document.documentElement.classList.add("scrollbar-gutter-stable");
-    return () => document.documentElement.classList.remove("scrollbar-gutter-stable");
-  }, []);
-
   return (
     <>
-      <AppHeader variant="wide" />
+      <AppHeader />
       <div className="relative">
         {/* 바다는 뷰포트에 고정한다. 콘텐츠 높이에 붙이면 지역마다 우측 패널 높이가
             달라질 때 배경이 위아래로 늘었다 줄었다 한다.
@@ -30,10 +22,9 @@ export function Support() {
           <SeaBackdrop />
         </div>
 
-        {/* 폭은 max-w-6xl(72rem)로 — AppHeader.tsx(wide variant)의 좌우 padding 계산식과
+        {/* 폭은 max-w-6xl(72rem)로 — AppHeader.tsx의 좌우 padding 계산식과
             Home.tsx의 BannerCarousel(banners.tsx)이 쓰는 max-w-6xl 기준을 그대로 따른 것.
-            기준이 다르면 페이지를 옮길 때마다 헤더·본문 좌우 끝이 미묘하게 어긋나 보인다
-            (콘텐츠 길이에 따른 스크롤 유무 오차는 위 useEffect의 scrollbar-gutter-stable로 처리).
+            기준이 다르면 페이지를 옮길 때마다 헤더·본문 좌우 끝이 미묘하게 어긋나 보인다.
             z-10은 위의 고정 배경(-z-10) 위로 콘텐츠를 올리기 위한 것. */}
         <div className="relative z-10 mx-auto w-full max-w-6xl px-4 py-4">
           {/* 모바일은 패널이 지도 아래로 쌓이므로 간격을 조금 더 준다 (md+는 좌우 배치라 그대로) */}

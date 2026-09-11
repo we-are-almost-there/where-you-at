@@ -295,7 +295,7 @@ const effectiveRegion = effectiveSubregionCode || region;
 
   return (
     <>
-      <AppHeader variant="wide" />
+      <AppHeader />
       <div className="px-[max(1rem,calc((100%-72rem)/2+1rem))] pt-4 pb-4">
         <h1 className="mb-3 text-xl font-bold text-gray-900">자전거 대여소</h1>
 

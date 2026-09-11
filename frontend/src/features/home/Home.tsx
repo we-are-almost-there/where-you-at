@@ -545,7 +545,7 @@ export default function Home() {
         정렬됐을 때의 여백과 동일한 수식(max(1rem,calc((100%-72rem)/2+1rem)))을 쓴다
         (AppHeader.tsx) — 화면 폭과 무관하게 로고 시작·CTA 끝이 본문·배너 좌우 끝과
         항상 정확히 일치한다. */}
-      <AppHeader variant="wide" />
+      <AppHeader />
 
       <section className="w-full pt-3">
         <BannerCarousel onOpenGallery={() => setIsGalleryOpen(true)} />
