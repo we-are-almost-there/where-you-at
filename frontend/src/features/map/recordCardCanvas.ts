@@ -94,11 +94,11 @@ interface Stat {
 
 /** 카드에 찍히는 세 수치. 그리기와 끌기 판정이 같은 문자열을 봐야 폭이 어긋나지 않는다. */
 function statValues(record: TrackingRecord, routeType: RouteType): Stat[] {
-  // 카드에는 값 옆에 단위를 붙일 자리가 없다. 거리 칸이 캡션에 "Km"를 쓰듯,
+  // 카드에는 값 옆에 단위를 붙일 자리가 없다. 거리 칸이 캡션에 "km"를 쓰듯,
   // 단위가 있는 종목은 캡션 자리에 단위를 쓴다.
   const pace = paceStat(record.paceSecPerKm, routeType);
   return [
-    { value: formatDistance(record.distanceKm), caption: "Km" },
+    { value: formatDistance(record.distanceKm), caption: "km" },
     { value: pace.value, caption: pace.unit || pace.caption },
     { value: formatDuration(record.durationMs), caption: "시간" },
   ];
@@ -420,7 +420,7 @@ export function draw(canvas: HTMLCanvasElement, options: DrawOptions): boolean {
     ctx.fillText(formatDistance(record.distanceKm), statsBox.left, statsBox.top + statsBox.hero);
     ctx.font = `500 ${Math.round(statsBox.hero * 0.26)}px ${FONTS[0].family}`;
     ctx.globalAlpha = 0.75;
-    ctx.fillText("Km", statsBox.left, statsBox.top + statsBox.hero + Math.round(statsBox.hero * 0.38));
+    ctx.fillText("km", statsBox.left, statsBox.top + statsBox.hero + Math.round(statsBox.hero * 0.38));
     ctx.globalAlpha = 1;
     drawStatRow(
       ctx,

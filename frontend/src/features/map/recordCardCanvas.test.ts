@@ -12,6 +12,7 @@ import {
   statsBoxAt,
   statsHitBox,
   statsLayout,
+  type Template,
 } from "./recordCardCanvas";
 import type { RouteType } from "./types";
 
@@ -134,7 +135,7 @@ describe("statsHitBox", () => {
 
 describe("종목별 페이스 표기", () => {
   // 캔버스가 없는 환경이라 그린 글자만 모아 확인한다.
-  function drawnTexts(routeType: RouteType): string[] {
+  function drawnTexts(routeType: RouteType, template: Template = "top"): string[] {
     const texts: string[] = [];
     const ctx = {
       measureText: (text: string) => ({ width: text.length * 20 }),
@@ -155,7 +156,7 @@ describe("종목별 페이스 표기", () => {
         image: null,
         transform: { scale: 1, offsetX: 0, offsetY: 0 },
         routePoints: [],
-        template: "top",
+        template,
         textColor: "white",
         fontChoice: "pretendard",
         textScale: 1,
@@ -179,6 +180,13 @@ describe("종목별 페이스 표기", () => {
     expect(texts).toContain("20.0");
     expect(texts).toContain("km/h");
     expect(texts).not.toContain("평균 페이스");
+  });
+
+  // 거리를 크게 쓰는 center는 캡션을 따로 그리므로 두 경로를 모두 본다. 옆 칸 km/h와 대소문자를 맞춘다.
+  it.each(["top", "center"] as const)("%s 배치의 거리 캡션은 km로 쓴다", (template) => {
+    const texts = drawnTexts("자전거", template);
+    expect(texts).toContain("km");
+    expect(texts).not.toContain("Km");
   });
 });
 
