@@ -1,14 +1,20 @@
 import type { Feature, FeatureCollection, Geometry, Position } from "geojson";
 
 /**
- * 시군구 도형(korea-all-regions.json)을 시도·지원지역과 이어 붙인다.
+ * 시군구 도형(korea-all-regions.json)에 시도 코드와 DB 지역 코드를 붙인다.
  *
- * 세 파일의 코드 체계가 서로 다르다.
+ * 파일마다 코드 체계가 다르다.
  *  - korea-all-regions.json : 통계청(KOSTAT) 시군구 코드 (강진군 36590)
- *  - support-regions-geo.json / DB : 법정동 기반 프로젝트 코드 (강진군 12780)
- *  - korea-sido.json : 시도 코드 (전남광주통합특별시 12)
- * 그래서 코드로 잇지 못하고, 도형 안에 점이 들어가는지로(point-in-polygon) 맞춘다.
- * 지원지역 88건 전부 이름까지 일치하는 것을 확인했다.
+ *  - DB region 테이블       : 법정동 기반 프로젝트 코드 (강진군 12780)
+ *  - korea-sido.json        : 시도 코드 (전남광주통합특별시 12)
+ *
+ * 시도는 도형 안에 점이 들어가는지로(point-in-polygon) 맞춘다.
+ * 지역 코드는 미리 만들어 둔 대응표(region-index.json)를 쓴다 — 전국 시군구를
+ * 모두 담고 있어서, 어떤 지역에 제도가 새로 생겨도 색칠 대상이 될 수 있다.
+ * 대응표는 scripts/build-region-index.mjs가 같은 규칙으로 생성한다.
+ *
+ * "어느 지역이 지원 대상인가"는 여기서 정하지 않는다. 그건 API 응답이냐 정적 파일이냐에
+ * 따라 달라지고 재조회로 바뀔 수도 있어서, 도형 계산과 분리해 호출부가 정하게 둔다.
  */
 
 export type RegionEntry = {
@@ -17,8 +23,30 @@ export type RegionEntry = {
   name: string;
   /** 이 시군구가 속한 시도 코드. 드릴다운 필터에 쓴다. */
   sidoCode: string | null;
-  /** 지원 대상이면 프로젝트 지역 코드, 아니면 null */
-  supportCode: string | null;
+  /** 이 시군구의 DB 지역 코드. 대응표에 없으면 null (행정 개편 전 도형 등) */
+  regionCode: string | null;
+};
+
+/** KOSTAT 시군구 코드 → DB 지역 코드 */
+export type RegionCodeMap = Readonly<Record<string, string>>;
+
+/**
+ * public/region-index.json. scripts/build-region-index.mjs가 만든다.
+ * 지역 코드·이름·지원 대상 목록을 한 파일에 담아, 762KB짜리 지원지역 GeoJSON을
+ * 받지 않고도 지도 색칠과 패널 제목을 채울 수 있게 한다.
+ */
+export type RegionIndex = {
+  /** 도형(sgg_code) → DB 지역 코드 */
+  byShape: RegionCodeMap;
+  /**
+   * DB 지역 코드 → 지역명. 시도명이 앞에 붙는다('전라남도 완도군').
+   * '서구'·'동구'처럼 여러 도에 같은 이름이 있어, 시군구 이름만으로는 패널 제목이
+   * 어디를 가리키는지 알 수 없기 때문이다. 시도와 이름이 같은 세종은 붙이지 않는다.
+   * 지도 배지는 이 값이 아니라 도형 파일의 이름을 쓴다.
+   */
+  names: Readonly<Record<string, string>>;
+  /** 지원 대상이 될 수 있는 지역(인구감소지역). 활성 지역 조회 실패 시 폴백 */
+  supportRegions: readonly string[];
 };
 
 type BBox = [number, number, number, number]; // minX, minY, maxX, maxY
@@ -105,15 +133,18 @@ function interiorPoint(geom: Geometry): Position {
 }
 
 /**
- * 시군구마다 시도 코드와 지원지역 코드를 붙인 목록을 만든다.
- * 데이터가 바뀌지 않는 한 결과가 같으므로 호출부에서 한 번만 계산해 재사용한다.
+ * 시군구마다 시도 코드와 DB 지역 코드를 붙인 목록을 만든다.
+ *
+ * 도형 계산(point-in-polygon)이 들어 있어 값싸지 않다. 입력이 전부 정적 파일이라
+ * 결과가 바뀌지 않으므로 호출부에서 한 번만 계산해 재사용한다.
+ * 지원 대상 여부는 여기서 정하지 않으므로, 활성 지역을 다시 조회해도 이 계산은
+ * 다시 돌 필요가 없다.
  */
 export function buildRegionIndex(
   allRegions: FeatureCollection,
   sido: FeatureCollection,
-  support: FeatureCollection,
+  codeMap: RegionCodeMap,
 ): RegionEntry[] {
-  const regionBoxes = allRegions.features.map((f) => bboxOf(f.geometry));
   const regionPoints = allRegions.features.map((f) => interiorPoint(f.geometry));
   const sidoBoxes = sido.features.map((f) => bboxOf(f.geometry));
 
@@ -142,23 +173,11 @@ export function buildRegionIndex(
     return nearest;
   });
 
-  // 2) 지원지역 → 시군구 (지원지역 쪽 내부점이 어느 도형에 들어가는지)
-  const supportCodes: (string | null)[] = new Array(allRegions.features.length).fill(null);
-  for (const f of support.features) {
-    const p = interiorPoint(f.geometry);
-    for (let i = 0; i < allRegions.features.length; i++) {
-      if (!inBBox(p, regionBoxes[i])) continue;
-      if (inGeometry(p, allRegions.features[i].geometry)) {
-        supportCodes[i] = String(f.properties?.region_code);
-        break;
-      }
-    }
-  }
-
+  // 2) 시군구 → DB 지역 코드 (대응표 조회)
   return allRegions.features.map((feature, i) => ({
     feature,
     name: String(feature.properties?.name ?? ""),
     sidoCode: sidoCodes[i],
-    supportCode: supportCodes[i],
+    regionCode: codeMap[String(feature.properties?.sgg_code)] ?? null,
   }));
 }
