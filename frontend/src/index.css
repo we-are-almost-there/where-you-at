@@ -45,9 +45,8 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 정렬 일관성이 실제로 필요한 페이지(Race, Support, Bicycle등) 만
-   이 클래스를 붙여 켠다. 다른 페이지는 기본값(auto)이라 애초에 이 트레이드오프가
-   필요 없다. */
+/* 스크롤바 유무에 따른 본문 너비 변화를 막아야 하는 페이지에서 선택 적용한다.
+   현재 BicycleExplore에서 사용하며, AppHeader의 헤더 내부 정렬 보정과는 별개다. */
 html.scrollbar-gutter-stable {
   scrollbar-gutter: stable;
 }
