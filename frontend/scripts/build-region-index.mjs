@@ -100,6 +100,70 @@ const bboxOf = (g) => {
 
 const read = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
 
+/**
+ * 생성물 자체가 쓸 수 있는 모양인지 본다. 시드가 없는 환경에서도 반드시 통과해야 하는
+ * 최소 조건이다 — "파일이 없어서 검사를 건너뛰었다"가 "검사에 통과했다"가 되면 안 된다.
+ */
+function assertIndexUsable() {
+  if (!fs.existsSync(OUT)) {
+    throw new Error(`public/region-index.json이 없다. \`npm run generate:region-index\` 실행 후 커밋할 것.`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(OUT, "utf8"));
+  } catch (e) {
+    throw new Error(`public/region-index.json이 올바른 JSON이 아니다: ${e.message}`);
+  }
+  const { byShape, names, supportRegions } = parsed ?? {};
+
+  // 값 타입까지 본다. 지역 코드가 숫자로 들어가면 API가 주는 문자열 코드와 안 맞아
+  // 색칠이 통째로 빠지고, 이름이 문자열이 아니면 패널 제목 렌더링이 깨진다.
+  const isRecord = (v) => v != null && typeof v === "object" && !Array.isArray(v);
+  const bad = [];
+  if (!isRecord(byShape) || !Object.keys(byShape).length) bad.push("byShape가 비어 있거나 객체가 아님");
+  if (!isRecord(names) || !Object.keys(names).length) bad.push("names가 비어 있거나 객체가 아님");
+  if (!Array.isArray(supportRegions) || !supportRegions.length) bad.push("supportRegions가 비어 있거나 배열이 아님");
+  if (bad.length) throw new Error(`public/region-index.json: ${bad.join(", ")}`);
+
+  const notString = (pairs, label) =>
+    pairs.filter(([, v]) => typeof v !== "string").slice(0, 5).map(([k]) => `${label}[${k}]`);
+  const wrong = [
+    ...notString(Object.entries(byShape), "byShape"),
+    ...notString(Object.entries(names), "names"),
+    ...notString(supportRegions.map((v, i) => [i, v]), "supportRegions"),
+  ];
+  if (wrong.length) {
+    throw new Error(`public/region-index.json의 값이 문자열이 아니다: ${wrong.join(", ")}`);
+  }
+
+  // 도형이 가리키는 코드는 이름을 가져야 패널 제목이 코드로 노출되지 않는다
+  const nameless = [...new Set(Object.values(byShape))].filter((c) => !names[c]);
+  if (nameless.length) {
+    throw new Error(`이름이 없는 지역 코드 ${nameless.length}건: ${nameless.slice(0, 5).join(", ")}`);
+  }
+  return parsed;
+}
+
+// 이 스크립트는 backend/sql/의 시드를 읽는다. 저장소 전체가 있는 환경(로컬·CI)에서는
+// 문제가 없지만, frontend/만 빌드 컨텍스트로 복사하는 배포에서는 파일이 없다.
+// 그때도 생성물 검사는 반드시 하고, 시드와 대조하는 검사만 건너뛴다.
+//
+// 검사를 통째로 테스트로 옮기지 않은 이유: 테스트는 배포 경로에 없다. npm run build가
+// 이걸 먼저 돌리기 때문에 낡은 인덱스가 배포로 나가는 걸 여기서만 막을 수 있다.
+// 시드가 없다고 build 자체를 세우면 그 배포가 아예 안 되므로, 없을 때는 할 수 있는
+// 검사(생성물 자체)만 하고 넘어간다.
+if (!fs.existsSync(SEED) || !fs.existsSync(SUPPORT_SEED)) {
+  if (!CHECK_ONLY) {
+    throw new Error(`시드를 찾을 수 없어 인덱스를 생성할 수 없다: ${SEED}`);
+  }
+  assertIndexUsable();
+  console.warn(
+    "생성물 검사만 통과했다. backend/sql이 없어 시드 대조는 건너뛴다." +
+      " 시드와 일치하는지는 저장소 전체에서 `npm run check:region-index` 또는 `npm test`로 확인할 것.",
+  );
+  process.exit(0);
+}
+
 const seedText = fs.readFileSync(SEED, "utf8");
 const db = [];
 for (const m of seedText.matchAll(/\('(\d+)',\s*'([^']+)',\s*'([^']+)',\s*(true|false)\)/g)) {
@@ -159,12 +223,29 @@ const supportSeed = fs.readFileSync(SUPPORT_SEED, "utf8");
 const seededCodes = new Set([...supportSeed.matchAll(/'(\d{5})'/g)].map((m) => m[1]));
 const dropCodes = db.filter((r) => r.drop).map((r) => r.code);
 const reachable = new Set([...dropCodes, ...seededCodes]);
-const nameOf = new Map(db.map((r) => [r.code, `${r.sido} ${r.name}`]));
+// 지역을 사람에게 보여줄 이름. 이 파일에서 이름을 적는 곳은 아래 진단 출력과
+// index.names 둘뿐이고, 규칙이 갈라지면 검사 로그와 화면이 다른 이름을 부른다.
+//
+// 시도명을 앞에 붙인다. 우측 패널 제목에 쓰이는데 '서구'는 DB에 4곳, '동구'는 5곳이라
+// 시군구 이름만으로는 어디인지 알 수 없다. 공유 링크로 바로 들어온 사용자는 특히 그렇다.
+// 지도 배지는 도형 파일의 이름을 따로 쓰므로 여기 바꿔도 길어지지 않는다.
+// 세종특별자치시처럼 시도와 지역 이름이 같으면 겹쳐 적지 않는다.
+const displayName = (r) => (r.sido === r.name ? r.name : `${r.sido} ${r.name}`);
+
+// 이름은 DB에 있는 지역 전부를 담는다. 도형이 없는 지역도 목록 제목에는 나올 수 있다.
+const nameOf = new Map(db.map((r) => [r.code, displayName(r)]));
 const missing = [...reachable].filter((c) => !mapped.has(c)).sort();
 
 console.log(`도형 ${all.features.length}개 → 매칭 ${Object.keys(byShape).length}개`);
+// 미매칭은 실패로 보지 않는다. 지금 3건은 전부 인천의 옛 경계다 — DB는 중구·동구를
+// 제물포구·영종구로, 서구를 서해구·검단구로 나눈 개편을 반영했는데 도형 파일은 개편
+// 전이다. 셋 다 인구감소지역이 아니고 어느 시드에도 없어 제도가 걸릴 수 없다.
+// 걸리게 되면 아래 reachable 검사가 빌드를 세운다.
 if (unmatched.length) {
-  console.log(`\n도형에 대응하는 DB 지역이 없는 것 ${unmatched.length}개:`);
+  console.log(
+    `\n도형에 대응하는 DB 지역이 없는 것 ${unmatched.length}개` +
+      ` (개편 전 경계로 보인다 — 제도가 걸리면 아래 검사가 막는다):`,
+  );
   for (const u of unmatched) console.log(`  sgg=${u.sgg} sido=${u.sidoCode} ${u.name}`);
 }
 
@@ -190,23 +271,18 @@ if (missing.length) {
   process.exit(1);
 }
 
-// 이름은 DB에 있는 지역 전부를 담는다. 도형이 없는 지역도 목록 제목에는 나올 수 있다.
-const names = {};
-for (const r of db) names[r.code] = r.name;
-
 const index = {
   byShape,
-  names,
+  names: Object.fromEntries(nameOf),
   supportRegions: db.filter((r) => r.drop).map((r) => r.code),
 };
 const serialized = JSON.stringify(index) + "\n";
 
 if (CHECK_ONLY) {
+  assertIndexUsable();
   // 줄끝은 무시하고 내용만 본다. core.autocrlf=true인 환경에서 체크아웃하면
   // 이 파일이 CRLF로 풀려서, 내용이 같은데도 검사가 실패한다.
-  const saved = fs.existsSync(OUT)
-    ? fs.readFileSync(OUT, "utf8").replace(/\r\n/g, "\n")
-    : null;
+  const saved = fs.readFileSync(OUT, "utf8").replace(/\r\n/g, "\n");
   if (saved !== serialized) {
     console.error(
       "\npublic/region-index.json이 최신이 아니다. `npm run generate:region-index`를 돌리고 커밋할 것.",
@@ -218,7 +294,7 @@ if (CHECK_ONLY) {
   fs.writeFileSync(OUT, serialized);
   console.log(
     `\n생성: public/region-index.json (${fs.statSync(OUT).size} bytes)` +
-      ` — 도형 ${Object.keys(byShape).length} / 이름 ${Object.keys(names).length}` +
+      ` — 도형 ${Object.keys(byShape).length} / 이름 ${nameOf.size}` +
       ` / 지원 대상 ${index.supportRegions.length}`,
   );
 }

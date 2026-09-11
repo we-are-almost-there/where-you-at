@@ -136,9 +136,16 @@ describe("region-index.json + 실제 지도 도형", () => {
   it("옹진군이 코드·시도·이름 모두 바르게 잡힌다", () => {
     const ongjin = entries.find((e) => e.regionCode === "28720");
     expect(ongjin).toBeDefined();
+    // 지도 배지는 도형 파일의 짧은 이름을 쓴다
     expect(ongjin!.name).toBe("옹진군");
     expect(ongjin!.sidoCode).toBe("28");
-    expect(index.names["28720"]).toBe("옹진군");
+    // 패널 제목은 시도를 앞에 붙인다 — '서구'가 4곳, '동구'가 5곳이라 구분이 필요하다
+    expect(index.names["28720"]).toBe("인천광역시 옹진군");
+  });
+
+  it("패널용 이름에 시도를 붙이되 시도명과 같으면 겹쳐 적지 않는다", () => {
+    expect(index.names["26140"]).toBe("부산광역시 서구");
+    expect(index.names["36110"]).toBe("세종특별자치시");
   });
 
   it("한 지역 코드에 도형이 둘 이상 붙지 않는다", () => {

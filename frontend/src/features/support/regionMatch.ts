@@ -38,7 +38,12 @@ export type RegionCodeMap = Readonly<Record<string, string>>;
 export type RegionIndex = {
   /** 도형(sgg_code) → DB 지역 코드 */
   byShape: RegionCodeMap;
-  /** DB 지역 코드 → 지역명 */
+  /**
+   * DB 지역 코드 → 지역명. 시도명이 앞에 붙는다('전라남도 완도군').
+   * '서구'·'동구'처럼 여러 도에 같은 이름이 있어, 시군구 이름만으로는 패널 제목이
+   * 어디를 가리키는지 알 수 없기 때문이다. 시도와 이름이 같은 세종은 붙이지 않는다.
+   * 지도 배지는 이 값이 아니라 도형 파일의 이름을 쓴다.
+   */
   names: Readonly<Record<string, string>>;
   /** 지원 대상이 될 수 있는 지역(인구감소지역). 활성 지역 조회 실패 시 폴백 */
   supportRegions: readonly string[];
