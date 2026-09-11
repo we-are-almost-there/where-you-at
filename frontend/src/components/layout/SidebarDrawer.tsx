@@ -59,7 +59,7 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
             어디까지왔니
           </h2>
           <p className="mt-1.5 text-[12px] leading-relaxed text-caption">
-            코스 탐색부터 지원혜택까지, 걷고 달리는 여행
+            코스 탐색부터 지원혜택까지, 인구감소지역 여행
           </p>
         </div>
 
