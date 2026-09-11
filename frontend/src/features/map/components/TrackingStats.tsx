@@ -1,3 +1,5 @@
+import type { PaceStat } from "../trackingRecord";
+
 // 큰 수치 + 작은 단위 + 하단 캡션. 카드 폭에 반응하도록 cqi 기반 유체 크기를 쓴다.
 // 세 칸이 한 줄에 서므로 계수가 작다 — 폴드(칸당 64px)에서 숫자와 단위, 캡션이 모두 들어가야 한다.
 function Stat({ value, unit, caption }: { value: string; unit?: string; caption: string }) {
@@ -26,8 +28,8 @@ export function TrackingStats({
   progress: number;
   remainingKm: number;
   eta: string;
-  /** 이미 표기까지 마친 평균 페이스. 낼 수 없으면 자리만 채운 문자열이 온다. */
-  pace: string;
+  /** 이미 표기까지 마친 페이스. 종목마다 값과 이름이 달라 한 덩어리로 받는다. */
+  pace: PaceStat;
 }) {
   const percent = Math.round(progress);
   return (
@@ -54,7 +56,7 @@ export function TrackingStats({
       <div className="mt-4 grid grid-cols-3 gap-2">
         <Stat value={remainingKm.toFixed(1)} unit="km" caption="남은 거리" />
         <Stat value={eta} caption="예상 종료" />
-        <Stat value={pace} caption="평균 페이스" />
+        <Stat value={pace.value} unit={pace.unit} caption={pace.caption} />
       </div>
     </div>
   );

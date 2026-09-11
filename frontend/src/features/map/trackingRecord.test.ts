@@ -4,6 +4,8 @@ import {
   formatDistance,
   formatDuration,
   formatPace,
+  formatSpeedKmh,
+  paceStat,
   summarize,
   type RecordPoint,
 } from "./trackingRecord";
@@ -151,5 +153,29 @@ describe("포맷", () => {
     [0, "0:00"],
   ])("시간 %ims를 표기한다", (ms, expected) => {
     expect(formatDuration(ms)).toBe(expected);
+  });
+
+  it.each([
+    [180, "20.0"],
+    [190, "18.9"], // 소수 둘째 자리에서 반올림한다
+    [null, "--.-"],
+    [0, "--.-"], // 0으로 나눠 Infinity가 나오면 안 된다
+  ])("속도 %s초/km를 km/h로 표기한다", (sec, expected) => {
+    expect(formatSpeedKmh(sec)).toBe(expected);
+  });
+});
+
+describe("종목별 페이스 표기", () => {
+  it("도보는 분/km 그대로 쓴다", () => {
+    expect(paceStat(379, "도보")).toEqual({ value: "6'19\"", unit: "", caption: "평균 페이스" });
+  });
+
+  it("자전거는 km/h로 뒤집어 쓴다", () => {
+    expect(paceStat(180, "자전거")).toEqual({ value: "20.0", unit: "km/h", caption: "평균 속도" });
+  });
+
+  it("값이 없어도 종목별 자리 채움과 이름은 유지한다", () => {
+    expect(paceStat(null, "도보").value).toBe("--'--\"");
+    expect(paceStat(null, "자전거")).toEqual({ value: "--.-", unit: "km/h", caption: "평균 속도" });
   });
 });

@@ -16,7 +16,7 @@ import { useEndpointAddresses } from "./endpointAddress";
 import { DirectionSelector } from "./components/DirectionSelector";
 import { TrackingStats } from "./components/TrackingStats";
 import { RecordCard } from "./components/RecordCard";
-import { formatPace, type TrackingRecord } from "./trackingRecord";
+import { paceStat, type TrackingRecord } from "./trackingRecord";
 import SidebarDrawer from "../../components/layout/SidebarDrawer";
 import AppHeader from "../../components/layout/AppHeader";
 import { parseRouteTypeParam, setRouteTypeParam, parseInfoTabParam, setInfoTabParam, parseCategoryParam, setCategoryParam } from "./courseUrlState";
@@ -206,7 +206,8 @@ export function CourseDetail() {
   const [offCourseGuidePoint, setOffCourseGuidePoint] = useState<LatLng | null>(null); // 유도선이 향할 코스 위 지점
   const wasOffCourseRef = useRef(false); // 이탈 진입 순간(아님→이탈)에만 음성이 나가도록 직전 상태 보관
   const wasFinishedRef = useRef(false); // 완주 안내도 같은 이유로 직전 상태를 본다
-  const [record, setRecord] = useState<TrackingRecord | null>(null); // null이 아니면 종료 후 기록 카드
+  // null이 아니면 종료 후 기록 카드. 카드가 열린 뒤 종목을 바꿔도 같은 기록이 달라지지 않게 종료 시점의 종목·경로를 함께 붙잡아 둔다.
+  const [record, setRecord] = useState<{ summary: TrackingRecord; routeType: RouteType; routePoints: LatLng[] } | null>(null);
 
   const nearbyRef = useRef<NearbyHandle>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -386,7 +387,7 @@ export function CourseDetail() {
   // "너무 멂" 안내로도 추적이 멈추지만, 그건 따라가기를 마친 게 아니다.
   const handleStopTracking = () => {
     const summary = stopTracking();
-    if (summary && summary.distanceKm >= MIN_RECORD_KM) setRecord(summary);
+    if (summary && summary.distanceKm >= MIN_RECORD_KM) setRecord({ summary, routeType, routePoints: waypoints });
   };
 
   // 안내를 닫을 때 추적을 정리한다(clearWatch는 부수효과라 렌더 중엔 못 부른다).
@@ -798,7 +799,7 @@ export function CourseDetail() {
                       progress={progress}
                       remainingKm={remainingKm}
                       eta={eta}
-                      pace={formatPace(livePace)}
+                      pace={paceStat(livePace, routeType)}
                     />
                   ))}
 
@@ -895,7 +896,12 @@ export function CourseDetail() {
         </section>
       </main>
       {record && (
-        <RecordCard record={record} routePoints={waypoints} onClose={() => setRecord(null)} />
+        <RecordCard
+          record={record.summary}
+          routeType={record.routeType}
+          routePoints={record.routePoints}
+          onClose={() => setRecord(null)}
+        />
       )}
       <SidebarDrawer isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
     </div>
