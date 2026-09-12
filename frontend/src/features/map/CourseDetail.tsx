@@ -208,8 +208,10 @@ export function CourseDetail() {
   const wasFinishedRef = useRef(false); // 완주 안내도 같은 이유로 직전 상태를 본다
   // null이 아니면 종료 후 기록 카드. 카드가 열린 뒤 종목을 바꿔도 같은 기록이 달라지지 않게 종료 시점의 종목·경로를 함께 붙잡아 둔다.
   const [record, setRecord] = useState<{ summary: TrackingRecord; routeType: RouteType; routePoints: LatLng[] } | null>(null);
-  const startButtonRef = useRef<HTMLButtonElement>(null); // 카드를 닫은 뒤 포커스를 돌려놓을 자리
-  const recordWasOpenRef = useRef(false); // 열려 있다 닫힌 순간에만 되돌린다 — 첫 렌더에도 record는 null이다
+  const startButtonRef = useRef<HTMLButtonElement>(null); // 모달을 닫은 뒤 포커스를 돌려놓을 자리
+  const nearbyTabRef = useRef<HTMLButtonElement>(null); // 주변 정보에서 연 기록 카드는 선택된 탭으로 돌아간다
+  const modalWasOpenRef = useRef(false); // 열려 있다 닫힌 순간에만 되돌린다 — 첫 렌더에도 모달은 닫혀 있다
+  const modalReturnTargetRef = useRef<"start" | "nearby-tab">("start");
 
   const nearbyRef = useRef<NearbyHandle>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -495,17 +497,22 @@ export function CourseDetail() {
   // 두 모달이 함께 뜨는 경우는 없으므로 플래그 하나로 뒤쪽 형제 전체를 잠근다.
   const modalOpen = record != null || (tooFarMeters != null && isTracking);
 
-  // 카드를 열게 한 종료 버튼은 사라진 뒤라 그 자리를 대신하는 따라가기 버튼으로 포커스를 돌린다.
-  // 닫히는 렌더에서 부른다 — onClose 시점에는 버튼이 아직 inert 안이라 focus가 먹지 않는다.
+  // 모달을 연 버튼이 사라지므로 현재 흐름에서 계속 쓸 수 있는 요소로 포커스를 돌린다.
+  // 코스 정보와 안내 팝업은 따라가기 버튼, 주변 정보에서 연 기록 카드는 선택된 탭이 대상이다.
+  // 닫히는 렌더에서 부른다 — onClose 시점에는 대상이 아직 inert 안이라 focus가 먹지 않는다.
   useEffect(() => {
-    if (record) {
-      recordWasOpenRef.current = true;
+    if (modalOpen) {
+      if (!modalWasOpenRef.current) {
+        modalReturnTargetRef.current = record != null && infoTab === "nearby" ? "nearby-tab" : "start";
+      }
+      modalWasOpenRef.current = true;
       return;
     }
-    if (!recordWasOpenRef.current) return;
-    recordWasOpenRef.current = false;
-    startButtonRef.current?.focus(); // 주변 정보 탭에서는 버튼이 없다
-  }, [record]);
+    if (!modalWasOpenRef.current) return;
+    modalWasOpenRef.current = false;
+    const target = modalReturnTargetRef.current === "nearby-tab" ? nearbyTabRef.current : startButtonRef.current;
+    target?.focus();
+  }, [modalOpen, record, infoTab]);
 
   // 안내 팝업은 할 수 있는 일이 닫기 하나뿐이라 Escape로도 닫는다.
   // (기록 카드는 편집하던 사진·배치·글꼴이 확인 없이 사라지므로 넣지 않는다)
@@ -705,6 +712,7 @@ export function CourseDetail() {
                       <button
                         key={key}
                         type="button"
+                        ref={key === "nearby" ? nearbyTabRef : undefined}
                         role="tab"
                         aria-selected={active}
                         onClick={() => changeInfoTab(key)}
