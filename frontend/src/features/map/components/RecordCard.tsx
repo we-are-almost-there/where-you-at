@@ -117,6 +117,7 @@ export function RecordCard({
   onClose: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   // 공유는 사용자 제스처 안에서 동기적으로 불러야 iOS에서 막히지 않는다.
   // 조작이 멎으면 미리 만들어 두고, 버튼에서는 그대로 넘긴다.
   const blobRef = useRef<Blob | null>(null);
@@ -427,14 +428,23 @@ export function RecordCard({
     }
   }, []);
 
+  // 열리면 포커스를 카드 안으로 들인다. 뒤쪽은 CourseDetail이 inert로 잠그므로 여기서 시작하지 않으면
+  // 키보드로는 카드에 닿을 수 없다. 컨테이너를 잡아 aria-label("기록 카드")이 먼저 읽히게 한다.
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
+
   // 화면 전체를 차지하는 모달이라 부모 박스(바텀시트 컨테이너)에 묶이지 않게 fixed로 띄우고,
   // 사이드바 드로어(z-50)까지 덮도록 그 위에 둔다.
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label="기록 카드"
-      className="fixed inset-0 z-[60] flex flex-col bg-black/85"
+      // 컨테이너 자체는 Tab 순서에 넣지 않고 프로그램으로만 포커스를 준다.
+      tabIndex={-1}
+      className="fixed inset-0 z-[60] flex flex-col bg-black/85 outline-none"
     >
       {/* 미리보기가 남는 높이를 전부 가져간다 — 조작 결과를 스크롤 없이 바로 확인하기 위해서 */}
       <div ref={slotRef} className="flex min-h-0 flex-1 items-center justify-center px-5 py-4">
