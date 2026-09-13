@@ -29,7 +29,7 @@ export default function DocumentPage({ title, children }: Props) {
 
   return (
     <div className="flex min-h-dvh flex-col bg-white">
-      <AppHeader variant="wide" />
+      <AppHeader />
 
       {/* 본문 폭은 720px로, 헤더가 기준으로 삼는 max-w-6xl(72rem)보다 좁게 둔다.
         헤더와 좌우 끝을 맞추는 다른 페이지와 달리 여기는 긴 글을 읽는 페이지라 한 줄이

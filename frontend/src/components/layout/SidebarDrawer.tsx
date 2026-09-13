@@ -4,6 +4,8 @@ import { X } from "lucide-react";
 interface SidebarDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  /** 모달이 떠 있는 동안 잠근다. 닫힌 드로어도 계속 마운트되어 있어 Tab에 잡힌다. */
+  inert?: boolean;
 }
 
 interface NavItem {
@@ -18,10 +20,10 @@ const NAV_ITEMS: NavItem[] = [
   { label: "코스 탐색", eyebrow: "COURSE", description: "걷기·자전거 코스 둘러보기", to: "/courses" },
   { label: "대회 행사", eyebrow: "EVENT", description: "가까운 대회 일정 확인", to: "/races" },
   { label: "방문 혜택", eyebrow: "SUPPORT", description: "지역별 방문 혜택 확인", to: "/support" },
-  { label: "자전거 대여", eyebrow: "RENTAL", description: "인근 자전거 대여소 찾기", to: null },
+  { label: "자전거 대여", eyebrow: "RENTAL", description: "인근 자전거 대여소 찾기", to: "/bicycle-facilities" },
 ];
 
-export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
+export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerProps) {
   const location = useLocation();
 
   return (
@@ -32,6 +34,7 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         onClick={onClose}
+        inert={inert}
       />
 
       {/* 드로어 본체 */}
@@ -39,6 +42,7 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
         className={`fixed inset-y-0 left-0 z-50 flex w-[320px] flex-col overflow-hidden bg-white transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
+        inert={inert}
       >
         <div className="flex items-center justify-between px-6 pt-6">
           <span className="text-[13px] font-semibold tracking-[0.15em] text-caption">
@@ -59,7 +63,7 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
             어디까지왔니
           </h2>
           <p className="mt-1.5 text-[12px] leading-relaxed text-caption">
-            인구감소지역과 함께 걷고 달리는 여행
+            코스 탐색부터 지원혜택까지, 인구감소지역 여행
           </p>
         </div>
 
@@ -166,14 +170,7 @@ export default function SidebarDrawer({ isOpen, onClose }: SidebarDrawerProps) {
         <div className="px-6 py-4">
           <div className="mb-2.5 h-px bg-divider" />
           <div className="flex items-center justify-between">
-            <Link
-              to="/help"
-              onClick={onClose}
-              className="text-[11px] text-caption transition-colors hover:text-accent"
-            >
-              고객지원
-            </Link>
-            <p className="text-[11px] tracking-wide text-caption">© 2026 WHERE YOU AT</p>
+            <p className="text-[11px] tracking-wide text-caption">Copyright © 2026 거의 다왔어</p>
           </div>
         </div>
       </aside>

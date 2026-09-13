@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { calculateRefund } from "../supportApi";
 import type { CalculateResponse, CalculationBasisItem } from "../support.types";
-import { toUserError, type UserError } from "../supportError";
+import { toUserError, type UserError } from "../../../components/error/userError";
 import { SupportErrorText } from "./SupportErrorText";
 
 type Props = {

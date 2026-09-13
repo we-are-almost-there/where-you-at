@@ -6,6 +6,8 @@ import { fetchRaceList } from "./raceApi";
 import { EVENT_TYPE_COLOR, EVENT_TYPE_LABEL, type EventType, type Race as RaceType } from "./types";
 import AppHeader from "../../components/layout/AppHeader";
 import Footer from "../../components/layout/Footer";
+import { ErrorNotice } from "../../components/error/ErrorNotice";
+import { toUserError, type UserError } from "../../components/error/userError";
 
 type ViewMode = "list" | "calendar";
 
@@ -14,13 +16,16 @@ export default function Race() {
   const [selectedRace, setSelectedRace] = useState<RaceType | null>(null);
   const [races, setRaces] = useState<RaceType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UserError | null>(null);
   const [activeType, setActiveType] = useState<EventType | null>(null);
 
-  // 헤더 정렬이 어긋나지 않도록 이 페이지에서만 scrollbar-gutter: stable을 켠다.
+  // 스크롤바 유무로 본문 폭이 흔들리지 않도록 opt-in으로 처리한다.
+  // (index.css의 scrollbar-gutter-stable 참고)
   useEffect(() => {
     document.documentElement.classList.add("scrollbar-gutter-stable");
-    return () => document.documentElement.classList.remove("scrollbar-gutter-stable");
+    return () => {
+      document.documentElement.classList.remove("scrollbar-gutter-stable");
+    };
   }, []);
 
   useEffect(() => {
@@ -31,7 +36,7 @@ export default function Race() {
         if (!ignore) setRaces(data);
       })
       .catch((err) => {
-        if (!ignore) setError(err instanceof Error ? err.message : "대회 목록을 불러오지 못했습니다.");
+        if (!ignore) setError(toUserError(err, "대회 목록을 불러오지 못했어요"));
       })
       .finally(() => {
         if (!ignore) setIsLoading(false);
@@ -49,12 +54,11 @@ export default function Race() {
 
   return (
     <>
-      <AppHeader variant="wide" />
+      <AppHeader />
       {/* 콘텐츠가 화면 전체 폭을 그대로 쓰면 넓은 화면에서 왼쪽에만 쏠려 보여 max-w로 가운데 정렬한다.
-        폭은 max-w-6xl(72rem)로 — AppHeader.tsx(wide variant)의 좌우 padding 계산식과
+        폭은 max-w-6xl(72rem)로 — AppHeader.tsx의 좌우 padding 계산식과
         Home.tsx의 BannerCarousel(banners.tsx)이 쓰는 max-w-6xl 기준을 그대로 따른 것.
-        기준이 다르면 페이지를 옮길 때마다 헤더·본문 좌우 끝이 미묘하게 어긋나 보인다
-        (콘텐츠 길이에 따른 스크롤 유무 오차는 위 useEffect의 scrollbar-gutter-stable로 처리). */}
+        기준이 다르면 페이지를 옮길 때마다 헤더·본문 좌우 끝이 미묘하게 어긋나 보인다. */}
       <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-4">
         {/* selectedRace가 없으면(좌측 블록만 있을 때) md:justify-center로 그 블록을
           컨테이너 가운데로. 상세가 열리면 좌+우 두 블록이 나란히 있어야 하니 기본 정렬로 되돌림. */}
@@ -131,7 +135,7 @@ export default function Race() {
             </div>
 
             {isLoading && <p className="py-10 text-center text-sm text-gray-400">불러오는 중...</p>}
-            {error && <p className="py-10 text-center text-sm text-red-500">{error}</p>}
+            {error && <ErrorNotice title={error.title} description={error.description} />}
 
             {!isLoading && !error && (
               viewMode === "list" ? (

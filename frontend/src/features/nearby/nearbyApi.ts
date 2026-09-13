@@ -1,6 +1,9 @@
 import type { NearbySpot, SpotCategory } from "./types";
+import { HttpError } from "../../components/error/userError";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+// ??가 아니라 ||인 이유: .env에 VITE_API_BASE_URL=처럼 빈 값으로 두면 ??는 ""를
+// 그대로 통과시켜 요청이 상대경로로 나가고 404가 된다. 빈 값도 폴백으로 보낸다.
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 interface ApiNearbySpot {
   id: string;
@@ -26,14 +29,11 @@ export interface NearbySpotsPage {
 
 export const PAGE_SIZE = 20;
 
+// 사용자 문구로 바꾸지 않는다. 네트워크 실패는 fetch의 TypeError를 그대로 두고,
+// HTTP 오류는 HttpError로 던진다. 화면 문구 변환은 컴포넌트가 toUserError로 한다.
 export async function apiGet<T>(path: string): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}${path}`);
-  } catch {
-    throw new Error("서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.");
-  }
-  if (!res.ok) throw new Error(`불러오지 못했어요 (${res.status})`);
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) throw new HttpError(res.status, `불러오지 못했어요 (${res.status})`);
   return res.json();
 }
 

@@ -14,7 +14,14 @@ def get_db_connection():
             database=os.getenv("DB_NAME"),
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASSWORD"),
-            port=os.getenv("DB_PORT")
+            port=os.getenv("DB_PORT"),
+            # 연결 거부(포트 닫힘)는 즉시 실패하지만, 패킷이 드롭되는 상황
+            # (Supabase 일시정지·방화벽 변경·네트워크 분리)에서는 SYN 재시도로
+            # 리눅스 기준 130초쯤 블록한다. 이 함수를 부르는 readiness와 get_db가
+            # sync라 그동안 anyio 스레드풀(기본 40) 슬롯을 하나씩 물고 있고,
+            # 슬롯이 다 차면 DB를 쓰지 않는 /health까지 스케줄되지 못해
+            # liveness가 실패한다 — 헬스체크를 나눠서 막으려던 바로 그 상황이다.
+            connect_timeout=3,
         )
         return conn
     except Exception as e:

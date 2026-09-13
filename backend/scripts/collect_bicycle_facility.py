@@ -30,7 +30,9 @@ DB_USER = os.environ["DB_USER"]
 DB_PASSWORD = os.environ["DB_PASSWORD"]
 
 SERVICE_URL = "https://api.data.go.kr/openapi/tn_pubr_public_bcycl_lend_api"
-SERVICE_KEY = os.environ["BICYCLE_SERVICE_KEY"]  # 디코딩된 키 사용 권장
+# 공공데이터포털 일반 인증키(디코딩). 계정당 하나라 TourAPI 수집과 같은 키를 쓴다.
+# params로 넘기면 requests가 인코딩하므로 디코딩된 값이어야 한다.
+SERVICE_KEY = os.environ["TOUR_API_KEY"]
 
 NUM_OF_ROWS = 1000
 REQUEST_INTERVAL_SEC = 0.3

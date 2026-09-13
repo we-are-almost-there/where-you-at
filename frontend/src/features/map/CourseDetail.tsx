@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { CircleAlert, CircleCheck } from "lucide-react";
 import { KakaoMap } from "./KakaoMap";
-import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "./components/ErrorNotice";
+import { ErrorNotice } from "../../components/error/ErrorNotice";
+import { HttpError, toUserError, type UserError } from "../../components/error/userError";
 import { getCourseDetail, getCourseGpx } from "./coursesApi";
 import type { CourseDetail as CourseDetailData, LatLng, RouteDetail, RouteType } from "./types";
 import { Nearby } from "../nearby";
@@ -16,7 +17,7 @@ import { useEndpointAddresses } from "./endpointAddress";
 import { DirectionSelector } from "./components/DirectionSelector";
 import { TrackingStats } from "./components/TrackingStats";
 import { RecordCard } from "./components/RecordCard";
-import { formatPace, type TrackingRecord } from "./trackingRecord";
+import { paceStat, type TrackingRecord } from "./trackingRecord";
 import SidebarDrawer from "../../components/layout/SidebarDrawer";
 import AppHeader from "../../components/layout/AppHeader";
 import { parseRouteTypeParam, setRouteTypeParam, parseInfoTabParam, setInfoTabParam, parseCategoryParam, setCategoryParam } from "./courseUrlState";
@@ -150,6 +151,11 @@ function PausedControls({
   );
 }
 
+// 404는 다시 시도해도 같은 결과라 다른 조회 실패와 화면을 나눈다.
+type DetailError =
+  | { kind: "not-found" }
+  | { kind: "request"; value: UserError };
+
 export function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -158,7 +164,7 @@ export function CourseDetail() {
 
   const [detail, setDetail] = useState<CourseDetailData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<DetailError | null>(null);
   const routeType = parseRouteTypeParam(searchParams);
   const infoTab = parseInfoTabParam(searchParams);
   const [descExpanded, setDescExpanded] = useState(false);
@@ -206,7 +212,12 @@ export function CourseDetail() {
   const [offCourseGuidePoint, setOffCourseGuidePoint] = useState<LatLng | null>(null); // 유도선이 향할 코스 위 지점
   const wasOffCourseRef = useRef(false); // 이탈 진입 순간(아님→이탈)에만 음성이 나가도록 직전 상태 보관
   const wasFinishedRef = useRef(false); // 완주 안내도 같은 이유로 직전 상태를 본다
-  const [record, setRecord] = useState<TrackingRecord | null>(null); // null이 아니면 종료 후 기록 카드
+  // null이 아니면 종료 후 기록 카드. 카드가 열린 뒤 종목을 바꿔도 같은 기록이 달라지지 않게 종료 시점의 종목·경로를 함께 붙잡아 둔다.
+  const [record, setRecord] = useState<{ summary: TrackingRecord; routeType: RouteType; routePoints: LatLng[] } | null>(null);
+  const startButtonRef = useRef<HTMLButtonElement>(null); // 모달을 닫은 뒤 포커스를 돌려놓을 자리
+  const nearbyTabRef = useRef<HTMLButtonElement>(null); // 주변 정보에서 연 기록 카드는 선택된 탭으로 돌아간다
+  const modalWasOpenRef = useRef(false); // 열려 있다 닫힌 순간에만 되돌린다 — 첫 렌더에도 모달은 닫혀 있다
+  const modalReturnTargetRef = useRef<"start" | "nearby-tab">("start");
 
   const nearbyRef = useRef<NearbyHandle>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -224,7 +235,15 @@ export function CourseDetail() {
         setDetail(d);
         setError(null);
       })
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "코스를 불러오지 못했어요"))
+      .catch(
+        (e) =>
+          !cancelled &&
+          setError(
+            e instanceof HttpError && e.status === 404
+              ? { kind: "not-found" }
+              : { kind: "request", value: toUserError(e, "코스를 불러오지 못했어요") },
+          ),
+      )
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -386,14 +405,15 @@ export function CourseDetail() {
   // "너무 멂" 안내로도 추적이 멈추지만, 그건 따라가기를 마친 게 아니다.
   const handleStopTracking = () => {
     const summary = stopTracking();
-    if (summary && summary.distanceKm >= MIN_RECORD_KM) setRecord(summary);
+    if (summary && summary.distanceKm >= MIN_RECORD_KM) setRecord({ summary, routeType, routePoints: waypoints });
   };
 
   // 안내를 닫을 때 추적을 정리한다(clearWatch는 부수효과라 렌더 중엔 못 부른다).
-  const dismissTooFar = () => {
+  // useCallback: Escape 처리 effect가 이 함수를 보므로, 매 렌더 새로 만들면 리스너를 다시 걸게 된다.
+  const dismissTooFar = useCallback(() => {
     setTooFarMeters(null);
     stopTracking();
-  };
+  }, [stopTracking]);
 
   // 방향 선택은 추적 시작 전에만 노출되고, 시작 시 진행률이 어차피 0으로 초기화된다.
   const toggleDirection = () => setDirection((d) => (d === "forward" ? "reverse" : "forward"));
@@ -487,12 +507,44 @@ export function CourseDetail() {
   const mapBottomInset = isNarrow ? Math.round(sheetHeight) : 0;
   const mapLeftInset = isNarrow ? 0 : panelInset;
 
+  // 모달이 떠 있는 동안 뒤쪽은 키보드로도 닿지 않아야 한다 — aria-modal은 Tab을 막아 주지 않는다.
+  // 두 모달이 함께 뜨는 경우는 없으므로 플래그 하나로 뒤쪽 형제 전체를 잠근다.
+  const modalOpen = record != null || (tooFarMeters != null && isTracking);
+
+  // 모달을 연 버튼이 사라지므로 현재 흐름에서 계속 쓸 수 있는 요소로 포커스를 돌린다.
+  // 코스 정보와 안내 팝업은 따라가기 버튼, 주변 정보에서 연 기록 카드는 선택된 탭이 대상이다.
+  // 닫히는 렌더에서 부른다 — onClose 시점에는 대상이 아직 inert 안이라 focus가 먹지 않는다.
+  useEffect(() => {
+    if (modalOpen) {
+      if (!modalWasOpenRef.current) {
+        modalReturnTargetRef.current = record != null && infoTab === "nearby" ? "nearby-tab" : "start";
+      }
+      modalWasOpenRef.current = true;
+      return;
+    }
+    if (!modalWasOpenRef.current) return;
+    modalWasOpenRef.current = false;
+    const target = modalReturnTargetRef.current === "nearby-tab" ? nearbyTabRef.current : startButtonRef.current;
+    target?.focus();
+  }, [modalOpen, record, infoTab]);
+
+  // 안내 팝업은 할 수 있는 일이 닫기 하나뿐이라 Escape로도 닫는다.
+  // (기록 카드는 편집하던 사진·배치·글꼴이 확인 없이 사라지므로 넣지 않는다)
+  useEffect(() => {
+    if (tooFarMeters == null || !isTracking) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") dismissTooFar();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [tooFarMeters, isTracking, dismissTooFar]);
+
   return (
     // 모바일: 지도 풀블리드 + 하단 바텀시트 / md+: 상단바 + 지도 풀블리드 위 좌측 플로팅 패널
     <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-white">
       {/* 데스크톱 전용 상단바 — CourseExplore와 같이 레이아웃 최상단에 전체 폭으로 둔다.
         모바일은 지도 위 플로팅 버튼(KakaoMap)이 이 역할을 대신하므로 md 미만에서는 렌더되지 않는다. */}
-      <div className="hidden md:block">
+      <div className="hidden md:block" inert={modalOpen}>
         <AppHeader isSidebarOpen={isSidebarOpen} onSidebarOpenChange={setIsSidebarOpen} />
       </div>
 
@@ -523,6 +575,8 @@ export function CourseDetail() {
             </p>
             <button
               type="button"
+              // 뒤쪽이 inert라 팝업 안에서 포커스가 시작되어야 키보드로 닫을 수 있다.
+              autoFocus
               onClick={dismissTooFar}
               className="mt-5 h-12 w-full cursor-pointer rounded-[14px] bg-accent text-[15px] font-bold text-lavender"
             >
@@ -534,7 +588,7 @@ export function CourseDetail() {
 
       {/* 상단바 아래 본문. 지도와 패널이 여기를 기준으로 자리를 잡으므로,
         모바일(상단바 없음)에서는 이 영역이 곧 화면 전체가 된다. */}
-      <main ref={layoutRef} className="relative flex min-h-0 flex-1">
+      <main ref={layoutRef} inert={modalOpen} className="relative flex min-h-0 flex-1">
         {/* 지도 (z-0으로 stacking context를 가둬 Kakao 내부 레이어가 시트를 덮지 않게 함)
           폭에 상관없이 본문 전체를 채운다 — 패널은 어느 폭에서든 지도 위에 뜬다. */}
         <div className="absolute inset-0 z-0">
@@ -613,19 +667,20 @@ export function CourseDetail() {
             <ErrorNotice
               title="잘못된 코스예요"
               description="존재하지 않는 코스 주소예요."
-              onBack={() => navigate(-1)}
+              onBack={() => navigate("/courses")}
             />
-          ) : error ? (
+          ) : error?.kind === "not-found" ? (
+            // 없는 코스(404) — 다시 시도해도 같으니 목록으로만
+            <ErrorNotice title="코스를 찾을 수 없어요" onBack={() => navigate("/courses")} />
+          ) : error?.kind === "request" ? (
             // 조회 실패(연결/서버) — 재시도 + 목록으로
             <ErrorNotice
-              title={CONNECTION_ERROR_TITLE}
-              description={CONNECTION_ERROR_DESC}
+              title={error.value.title}
+              description={error.value.description}
               onRetry={retry}
-              onBack={() => navigate(-1)}
+              onBack={() => navigate("/courses")}
             />
-          ) : !detail ? (
-            <ErrorNotice title="코스를 찾을 수 없어요" onBack={() => navigate(-1)} />
-          ) : (
+          ) : !detail ? null : (
             <>
               {/* 스크롤 영역 (모바일은 콘텐츠 높이에 맞춰 시트가 줄어 따라가기 버튼과 붙는다)
                 추적 중에는 모바일에서만 숨겨 지도를 넓게 쓴다. 데스크톱은 지도와 나란히 놓여
@@ -672,6 +727,7 @@ export function CourseDetail() {
                       <button
                         key={key}
                         type="button"
+                        ref={key === "nearby" ? nearbyTabRef : undefined}
                         role="tab"
                         aria-selected={active}
                         onClick={() => changeInfoTab(key)}
@@ -798,7 +854,7 @@ export function CourseDetail() {
                       progress={progress}
                       remainingKm={remainingKm}
                       eta={eta}
-                      pace={formatPace(livePace)}
+                      pace={paceStat(livePace, routeType)}
                     />
                   ))}
 
@@ -835,6 +891,7 @@ export function CourseDetail() {
                 ) : (
                 <button
                   type="button"
+                  ref={startButtonRef}
                   onClick={isTracking ? handleStopTracking : handleStartTracking}
                   disabled={!activeRoute}
                   aria-pressed={isTracking}
@@ -895,9 +952,18 @@ export function CourseDetail() {
         </section>
       </main>
       {record && (
-        <RecordCard record={record} routePoints={waypoints} onClose={() => setRecord(null)} />
+        <RecordCard
+          record={record.summary}
+          routeType={record.routeType}
+          routePoints={record.routePoints}
+          onClose={() => setRecord(null)}
+        />
       )}
-      <SidebarDrawer isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      <SidebarDrawer
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        inert={modalOpen}
+      />
     </div>
   );
 }

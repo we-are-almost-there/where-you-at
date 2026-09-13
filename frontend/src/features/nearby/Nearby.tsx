@@ -4,6 +4,7 @@ import { SpotCard } from "./components/SpotCard";
 import { SpotDetailSheet } from "./components/SpotDetailSheet";
 import { getNearbySpots } from "./nearbyApi";
 import type { NearbySpot, SpotCategory } from "./types";
+import { toUserError, type UserError } from "../../components/error/userError";
 
 interface NearbyProps {
   courseId: number;
@@ -104,7 +105,7 @@ function SpotList({ courseId, category, routeType, onSelect, onSpotsChange }: Sp
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UserError | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   // key로 courseId/category/routeType이 바뀌면 이 컴포넌트가 리마운트되므로,
@@ -120,7 +121,7 @@ function SpotList({ courseId, category, routeType, onSelect, onSpotsChange }: Sp
       })
       .catch((e) => {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : "주변 정보를 불러오지 못했어요");
+        setError(toUserError(e, "주변 정보를 불러오지 못했어요"));
         setLoading(false);
       });
     return () => {
@@ -165,7 +166,15 @@ function SpotList({ courseId, category, routeType, onSelect, onSpotsChange }: Sp
   const hasMore = spots.length < totalCount;
 
   if (loading) return <p className="pt-10 text-center text-[13px] text-caption">불러오는 중…</p>;
-  if (error) return <p className="pt-10 text-center text-[13px] text-caption">{error}</p>;
+  if (error) {
+    return (
+      <p className="whitespace-pre-line pt-10 text-center text-[13px] text-caption">
+        {error.title}
+        {"\n"}
+        {error.description}
+      </p>
+    );
+  }
   if (spots.length === 0) return <p className="pt-10 text-center text-[13px] text-caption">주변 정보가 없어요</p>;
 
   return (

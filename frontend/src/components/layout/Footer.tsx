@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useState } from "react";
 import { Link } from "react-router";
 
 // 공공데이터 출처. 항목명과 제공처를 나눠 dl로 그린다.
@@ -36,19 +36,9 @@ function SourceList({ items }: { items: [string, string][] }) {
 }
 
 export default function Footer() {
-  // 위치 안내와 데이터 출처는 좁은 화면에서만 접는다. details는 열림 상태가 DOM에
-  // 있어서 md 이상에서 강제로 펼치려면 CSS만으로는 안 되고(닫힌 details의 내용은
-  // UA가 슬롯 단위로 감춘다) open을 직접 넘겨야 한다.
-  const [isOpen, setIsOpen] = useState(
-    () => window.matchMedia("(min-width: 768px)").matches,
-  );
-
-  useEffect(() => {
-    const query = window.matchMedia("(min-width: 768px)");
-    const sync = () => setIsOpen(query.matches);
-    query.addEventListener("change", sync);
-    return () => query.removeEventListener("change", sync);
-  }, []);
+  // 위치 안내와 데이터 출처는 화면 폭과 관계없이 접어 두고, 요약 문구의 접기/보기만
+  // 바꾸려고 열림 상태를 들고 있는다.
+  const [isOpen, setIsOpen] = useState(false);
 
   // mt-auto: 홈처럼 부모가 flex 세로 컬럼(min-h-dvh)이면 내용이 짧아도 바닥에 붙는다.
   // 부모가 flex가 아닌 페이지에서는 auto 마진이 0으로 계산돼 아무 영향이 없다.
@@ -89,7 +79,7 @@ export default function Footer() {
           onToggle={(e) => setIsOpen(e.currentTarget.open)}
           className="mt-5"
         >
-          <summary className="cursor-pointer list-none text-[13px] text-caption underline decoration-caption/40 underline-offset-4 md:hidden">
+          <summary className="cursor-pointer list-none text-[13px] text-caption underline decoration-caption/40 underline-offset-4">
             위치 정보 안내와 데이터 출처 {isOpen ? "접기" : "보기"}
           </summary>
 

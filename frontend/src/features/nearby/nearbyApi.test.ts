@@ -12,6 +12,7 @@
 //   - getBicycleFacilityDetail, getTourSpotDetail
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { HttpError } from "../../components/error/userError";
 import { getNearbySpots } from "./nearbyApi";
 
 describe("getNearbySpots", () => {
@@ -25,7 +26,10 @@ describe("getNearbySpots", () => {
       vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }),
     );
 
-    await expect(getNearbySpots(999999, "attraction")).rejects.toThrow("불러오지 못했어요 (404)");
+    const err = await getNearbySpots(999999, "attraction").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpError);
+    expect((err as HttpError).status).toBe(404);
+    expect((err as HttpError).message).toBe("불러오지 못했어요 (404)");
   });
 
   it("코스는 있지만 주변 시설이 없으면 빈 배열을 반환한다", async () => {

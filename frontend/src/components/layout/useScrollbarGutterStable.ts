@@ -11,8 +11,8 @@ import { useEffect } from "react";
  * index.css의 html에 상시로 걸지 않는 이유는 코스 탐색·코스 상세처럼 문서 스크롤이
  * 아예 없는 페이지에서는 쓰지도 않는 빈 띠만 남기 때문이다.
  *
- * Race.tsx와 Support.tsx가 같은 처리를 각자 useEffect로 갖고 있다. 그 두 파일은 지금
- * 다른 브랜치에서 작업 중이라 이번에는 건드리지 않았고, 정리할 때 이 훅으로 모으면 된다.
+ * Race.tsx, Support.tsx, BicycleExplore.tsx가 같은 처리를 각자 useEffect로 갖고 있다.
+ * 고객지원 작업 범위 밖이라 이번에는 건드리지 않았고, 정리할 때 이 훅으로 모으면 된다.
  */
 export function useScrollbarGutterStable() {
   useEffect(() => {
