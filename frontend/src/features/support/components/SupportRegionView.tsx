@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import type { RegionIndex } from "../regionMatch";
 import { BADGE_CLASS, BADGE_LABEL, type SupportListItem } from "../support.types";
 import { fetchSupportList } from "../supportApi";
-import { toUserError, type UserError } from "../supportError";
+import { toUserError, type UserError } from "../../../components/error/userError";
 import { SupportCalculator } from "./SupportCalculator";
 import { SupportErrorText } from "./SupportErrorText";
 

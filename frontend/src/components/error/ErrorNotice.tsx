@@ -1,11 +1,6 @@
 // 조회 실패/에러 상태 공용 쿠션. 목록·상세가 함께 쓴다.
 // 위계: 제목(굵고 짙게) + 설명(얇고 연하게), 넉넉한 수직 여백, 모바일 터치 영역 확보.
 
-// 연결 실패 시 표준 문구 (여러 화면에서 동일하게 사용)
-export const CONNECTION_ERROR_TITLE = "서버에 연결할 수 없어요";
-export const CONNECTION_ERROR_DESC =
-  "일시적인 통신 문제로 정보를 불러오지 못했습니다.\n잠시 후 다시 시도해 주세요.";
-
 interface Props {
   title: string;
   description?: string;

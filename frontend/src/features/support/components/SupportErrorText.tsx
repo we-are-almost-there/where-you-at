@@ -1,4 +1,4 @@
-import type { UserError } from "../supportError";
+import type { UserError } from "../../../components/error/userError";
 
 type Props = {
   error: UserError;

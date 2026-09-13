@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { SupportDetail as SupportDetailType } from "../support.types";
 import { fetchSupportDetail } from "../supportApi";
-import { toUserError, type UserError } from "../supportError";
+import { toUserError, type UserError } from "../../../components/error/userError";
 import { SupportErrorText } from "./SupportErrorText";
 
 const STORAGE_KEY = (id: number) => `support_checklist_${id}`;

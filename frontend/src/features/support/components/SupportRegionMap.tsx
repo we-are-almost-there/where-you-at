@@ -8,7 +8,7 @@ import {
   type RegionIndex,
 } from "../regionMatch";
 import { fetchActiveRegionCodes } from "../supportApi";
-import { toUserError, type UserError } from "../supportError";
+import { toUserError, type UserError } from "../../../components/error/userError";
 import { SupportErrorText } from "./SupportErrorText";
 
 // viewBox는 고정하지 않고 그리는 대상의 비율에 맞춰 뷰마다 계산한다.

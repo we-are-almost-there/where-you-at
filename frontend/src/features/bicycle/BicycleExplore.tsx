@@ -3,7 +3,8 @@ import { useSearchParams } from "react-router";
 import { BicycleList } from "./components/BicycleList";
 import { BicycleTabs, type DataSourceTab } from "./components/BicycleTabs";
 import { Pagination } from "../map/components/Pagination";
-import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "../map/components/ErrorNotice";
+import { ErrorNotice } from "../../components/error/ErrorNotice";
+import { CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "../../components/error/userError";
 import {
   getBicycleFacilities,
   getBicycleRegions,
