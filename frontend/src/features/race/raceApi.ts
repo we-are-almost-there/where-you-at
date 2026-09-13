@@ -95,15 +95,37 @@ export interface NearbyAccommodation {
   map_y: number | null;
 }
 
-// TODO: 대회 상세 화면에 주변 숙박 섹션 재도입 시 사용 예정.
-// 백엔드 엔드포인트(GET /api/races/{id}/nearby-accommodations)는 이미 구현되어 있음.
+const ACCOMMODATION_CACHE_TTL_MS = 5 * 60 * 1000;
+const accommodationCache = new Map<string, {
+  data: NearbyAccommodation[];
+  expiresAt: number;
+}>();
+
+// 성공한 결과(빈 목록 포함)는 대회·반경별로 5분간 메모리에 보관한다.
 export async function fetchNearbyAccommodations(
   eventId: number,
-  radiusKm: number = 5
+  radiusKm: number = 5,
+  signal?: AbortSignal
 ): Promise<NearbyAccommodation[]> {
+  signal?.throwIfAborted();
+  const cacheKey = `${eventId}:${radiusKm}`;
+  const now = Date.now();
+  for (const [key, entry] of accommodationCache) {
+    if (entry.expiresAt <= now) accommodationCache.delete(key);
+  }
+  const cached = accommodationCache.get(cacheKey);
+  if (cached) return cached.data;
+
   const res = await fetch(
-    `${API_BASE}/api/races/${eventId}/nearby-accommodations?radius_km=${radiusKm}`
+    `${API_BASE}/api/races/${eventId}/nearby-accommodations?radius_km=${radiusKm}`,
+    { signal }
   );
   if (!res.ok) throw new HttpError(res.status, `주변 숙박 조회 실패 (${res.status})`);
-  return res.json();
+  const data: NearbyAccommodation[] = await res.json();
+  signal?.throwIfAborted();
+  accommodationCache.set(cacheKey, {
+    data,
+    expiresAt: Date.now() + ACCOMMODATION_CACHE_TTL_MS,
+  });
+  return data;
 }

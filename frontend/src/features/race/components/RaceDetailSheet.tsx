@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Race } from "../types";
 import { EVENT_TYPE_COLOR, EVENT_TYPE_LABEL } from "../types";
 import RaceMap from "./RaceMap";
+import RaceAccommodations from "./RaceAccommodations";
 import { formatDateRange } from "../dateUtils";
 
 interface RaceDetailSheetProps {
@@ -122,6 +123,9 @@ export default function RaceDetailSheet({ race, onClose, backLabel, inline = fal
               )}
             </div>
           )}
+          <div className={inline ? "col-span-full min-w-0" : "min-w-0"}>
+            <RaceAccommodations key={`${race.event_id}-${hasMap}`} eventId={race.event_id} hasLocation={hasMap} />
+          </div>
         </div>
       </div>
     </>
