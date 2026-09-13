@@ -53,8 +53,8 @@ const DATA_SOURCE_TO_TAB: Record<string, DataSourceTab> = {
 };
 
 export function BicycleExplore() {
-  // Race/Support와 동일한 이유 — 필터·탭에 따라 목록 길이가 달라져 스크롤
-  // 유무가 갈리는 페이지라, 여기서만 scrollbar-gutter: stable을 켠다.
+  // 필터·탭에 따라 스크롤바가 나타나거나 사라져도 본문 너비를 유지한다.
+  // AppHeader의 보정은 헤더 내부에만 적용되므로 본문 정렬을 위해 opt-in을 유지한다.
   useEffect(() => {
     document.documentElement.classList.add("scrollbar-gutter-stable");
     return () => document.documentElement.classList.remove("scrollbar-gutter-stable");
@@ -326,7 +326,7 @@ export function BicycleExplore() {
 
   return (
     <>
-      <AppHeader variant="wide" />
+      <AppHeader />
       <div className="px-[max(1rem,calc((100%-72rem)/2+1rem))] pt-4 pb-4">
         <h1 className="mb-3 text-xl font-bold text-gray-900">자전거 대여소</h1>
 
