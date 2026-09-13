@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import SidebarDrawer from "./SidebarDrawer";
 
@@ -15,10 +15,6 @@ const NAV_ITEMS: NavItem[] = [
   { label: "자전거 대여", to: "/bicycle-facilities" },
 ];
 
-interface BaseProps {
-  variant?: "wide" | "compact";
-}
-
 // 이 페이지가 이미 자체 SidebarDrawer를 렌더링하고 있으면(예: CourseDetail의
 // 모바일 지도 위 플로팅 메뉴 버튼) 이 두 prop을 넘겨 상태를 공유시킨다.
 // 넘기면 AppHeader는 자신의 <SidebarDrawer>를 렌더링하지 않고 햄버거 클릭도
@@ -29,24 +25,9 @@ type ControlledSidebarProps =
   | { isSidebarOpen?: undefined; onSidebarOpenChange?: undefined }
   | { isSidebarOpen: boolean; onSidebarOpenChange: (open: boolean) => void };
 
-type Props = BaseProps & ControlledSidebarProps;
+type Props = ControlledSidebarProps;
 
-// 좌우 여백·로고-nav 간격·nav 아이템 간격을 전부 고정 px(md:px-32 등)가 아니라
-// clamp()로 화면 폭에 비례하게 둔다. 이전엔 md 기준으로 값이 뚝 끊겨 있어서
-// 창을 줄이면 로고(왼쪽)는 늘 같은 자리에 못박혀 있고, 오른쪽 CTA·고객지원만
-// ml-auto/justify-end 때문에 홀로 눌리며 움직이는 것처럼 보였다. clamp로
-// 바꾸면 좌우 여백과 내부 간격이 폭에 맞춰 다 같이 부드럽게 줄어든다.
-//
-// nav ↔ 햄버거 전환 기준도 wide/compact가 서로 다르다. wide는 헤더가 화면 전체 폭을
-// 쓰지만, compact(코스 탐색/코스 상세)는 헤더가 좌측 패널(전체 화면의 약 44~46%)
-// 안에서만 렌더된다. 그래서 둘 다 같은 md(768px) "화면" 기준을 쓰면, compact는
-// 실제 사용 가능한 폭이 그 절반도 안 되는데 화면은 768px를 넘었다고 판단해 nav를
-// 보여주려다 잘린다(고객지원·CTA와 자전거 대여 항목이 겹침). Tailwind 표준
-// 브레이크포인트 lg(1024px)로 한 차례 올렸으나, 이후 nav 간격(gap)을 넓히면서
-// 1024~1280px 구간에서 다시 로고와 nav가 겹치는 문제가 재발해 xl(1280px)로 재조정했다.
-// gap·px 값이 앞으로 또 바뀌면 이 브레이크포인트도 재측정이 필요하다.
 export default function AppHeader({
-  variant = "compact",
   isSidebarOpen: controlledOpen,
   onSidebarOpenChange,
 }: Props) {
@@ -57,95 +38,111 @@ export default function AppHeader({
 
   const location = useLocation();
   const navigate = useNavigate();
-  const isWide = variant === "wide";
+  // /courses 및 그 하위 경로(예: /courses/:id)에서는 CTA를 숨긴다.
+  const normalizedPath = location.pathname.replace(/\/+$/, "");
+  const hideCourseCta = normalizedPath === "/courses" || normalizedPath.startsWith("/courses/");
+  const headerRef = useRef<HTMLElement>(null);
+  const alignmentRef = useRef<HTMLDivElement>(null);
 
-  // 좌우 패딩: wide는 본문(max-w-6xl = 72rem)이 가운데 정렬됐을 때의 여백과 정확히
-  // 같은 수식(BannerCarousel과 동일)을 써서, 로고 시작·CTA 끝이 배너·본문 섹션들의
-  // 좌우 끝과 한 줄에 맞게 한다. compact(코스 탐색/코스 상세 좌측 패널)는 화면 폭이
-  // 아니라 패널 폭만큼만 쓸 수 있어서 이 수식이 안 맞는다 — 계속 작은 고정값 유지.
-  const sidePadding = isWide
-    ? "px-[max(1rem,calc((100%-72rem)/2+1rem))]"
-    : "px-3";
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    const alignment = alignmentRef.current;
+    if (!header || !alignment) return;
+
+    // 환경별 스크롤바 너비를 측정한다. 오버레이 스크롤바 환경에서는 0이다.
+    const probe = document.createElement("div");
+    probe.style.cssText =
+      "position:fixed;top:0;left:0;width:100px;height:100px;overflow:scroll;visibility:hidden;pointer-events:none;";
+    probe.setAttribute("aria-hidden", "true");
+    document.body.appendChild(probe);
+
+    const updateAlignment = () => {
+      const scrollbarWidth = probe.offsetWidth - probe.clientWidth;
+      // 실제 헤더 폭으로 계산해 이미 확보된 stable 공간도 중복 보정하지 않는다.
+      const reservedWidth = Math.max(0, window.innerWidth - header.getBoundingClientRect().width);
+      alignment.style.paddingRight = `${Math.max(0, scrollbarWidth - reservedWidth)}px`;
+    };
+
+    updateAlignment();
+    const observer = new ResizeObserver(updateAlignment);
+    observer.observe(header);
+    window.addEventListener("resize", updateAlignment);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateAlignment);
+      probe.remove();
+      alignment.style.paddingRight = "";
+    };
+  }, [location.pathname]);
+
+  const sidePadding = "px-[max(1rem,calc((100%-72rem)/2+1rem))]";
 
   return (
-    <header className="sticky top-0 z-50 shrink-0 border-b border-divider bg-white">
-      <div className={sidePadding}>
-        <div className="hidden justify-end gap-4 pt-1.5 text-[11px] text-caption md:flex">
-          <Link to="/help" className="cursor-pointer hover:text-ink">
-            고객지원
-          </Link>
-        </div>
+    <header ref={headerRef} className="sticky top-0 z-50 shrink-0 border-b border-divider bg-white">
+      <div ref={alignmentRef}>
+        <div className={sidePadding}>
+          <div className="flex h-16 items-center gap-3 md:h-auto md:py-5">
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(true)}
+              aria-label="메뉴"
+              className="cursor-pointer text-[20px] leading-none text-ink md:hidden"
+            >
+              ☰
+            </button>
 
-        <div className="flex h-14 items-center gap-3 md:h-auto md:pb-3.5 md:pt-2.5">
-          <button
-            type="button"
-            onClick={() => setIsSidebarOpen(true)}
-            aria-label="메뉴"
-            className={`cursor-pointer text-[20px] leading-none text-ink ${
-              isWide ? "md:hidden" : "xl:hidden"
-            }`}
-          >
-            ☰
-          </button>
+            <Link
+              to="/"
+              className="shrink-0 font-bold text-accent text-[24px] leading-8 tracking-tight md:text-[22px]"
+            >
+              어디까지왔니
+            </Link>
 
-          <Link
-            to="/"
-            className="shrink-0 font-bold text-accent text-[22px] tracking-tight md:text-[20px]"
-          >
-            어디까지왔니
-          </Link>
+            <nav
+              className="hidden min-w-0 flex-1 items-center justify-center md:flex gap-[clamp(1rem,4vw,7rem)] px-[clamp(1rem,4vw,2rem)]"
+            >
+              {NAV_ITEMS.map((item) => {
+                const isActive = item.to !== null && location.pathname === item.to;
+                const isDisabled = item.to === null;
 
-          {/* 로고-nav 간격·아이템 간격 모두 고정값 대신 반응형으로. wide는 화면 폭 기준 clamp로
-            같이 부드럽게 줄어들게 하고, compact(코스 탐색/코스 상세 좌측 패널)는 패널 폭이 화면의
-            절반 이하라 vw 기준 clamp를 쓰면 여유가 과하게 잡혀 nav가 잘렸다 — 좌우 padding은
-            작은 고정값(pl-4 pr-12, nav 그룹을 로고 쪽으로 당기기 위해 비대칭)으로, gap도 더 좁은
-            범위의 clamp로 별도 처리. nav↔햄버거 전환 시점도 위 이유로 wide/compact가
-            다르다(md vs xl, Tailwind 표준 브레이크포인트) */}
-          <nav
-            className={`hidden min-w-0 flex-1 items-center justify-center ${
-              isWide
-                ? "md:flex gap-[clamp(1rem,4vw,7rem)] px-[clamp(1rem,4vw,2rem)]"
-                : "xl:flex gap-[clamp(0.75rem,3vw,2.25rem)] pl-4 pr-12"
-            }`}
-          >
-            {NAV_ITEMS.map((item) => {
-              const isActive = item.to !== null && location.pathname === item.to;
-              const isDisabled = item.to === null;
+                if (isDisabled) {
+                  return (
+                    <span
+                      key={item.label}
+                      className="cursor-not-allowed whitespace-nowrap text-[16px] font-medium leading-8 text-caption opacity-50"
+                    >
+                      {item.label}
+                    </span>
+                  );
+                }
 
-              if (isDisabled) {
                 return (
-                  <span
+                  <Link
                     key={item.label}
-                    className="cursor-not-allowed whitespace-nowrap text-[14px] text-caption opacity-50"
+                    to={item.to as string}
+                    className={`whitespace-nowrap text-[16px] leading-8 transition-colors ${
+                      isActive ? "font-bold text-ink" : "font-medium text-ink/70 hover:text-ink"
+                    }`}
                   >
                     {item.label}
-                  </span>
+                  </Link>
                 );
-              }
+              })}
+            </nav>
 
-              return (
-                <Link
-                  key={item.label}
-                  to={item.to as string}
-                  className={`whitespace-nowrap text-[14px] transition-colors ${
-                    isActive ? "font-bold text-ink" : "text-ink/70 hover:text-ink"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-
-          {isWide && (
+            {/* CTA 공간을 유지해 코스 탐색에서도 메뉴 위치가 달라지지 않게 한다. */}
             <button
               type="button"
               onClick={() => navigate("/courses")}
-              className="ml-auto hidden shrink-0 cursor-pointer whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:bg-accent/90 md:block"
+              disabled={hideCourseCta}
+              aria-hidden={hideCourseCta || undefined}
+              tabIndex={hideCourseCta ? -1 : undefined}
+              className={`ml-auto hidden shrink-0 cursor-pointer whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:bg-accent/90 md:block ${hideCourseCta ? "invisible" : ""}`}
             >
               코스 둘러보기
             </button>
-          )}
+          </div>
         </div>
       </div>
 

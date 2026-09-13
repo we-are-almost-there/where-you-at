@@ -18,7 +18,7 @@ const LINKS: HelpLink[] = [
 export default function HelpPage() {
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-white">
-      <AppHeader variant="wide" />
+      <AppHeader />
       <div className="mx-auto w-full max-w-[720px] flex-1 overflow-y-auto px-4 py-10 md:py-16">
         <h1 className="font-bold text-ink text-[20px] md:text-[26px]">고객지원</h1>
 
