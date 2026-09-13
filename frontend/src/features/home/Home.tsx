@@ -539,9 +539,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-dvh flex-col">
-      {/* variant 생략 시 기본값이 compact(코스 탐색 전용 좁은 헤더)라
-        wide 페이지인 홈에서는 명시적으로 지정해야 메뉴가 화면 가장자리에 붙지 않고
-        코스 둘러보기 CTA도 노출된다. 헤더 좌우 여백은 본문(max-w-6xl=72rem)이 가운데
+      {/* 헤더 좌우 여백은 본문(max-w-6xl=72rem)이 가운데
         정렬됐을 때의 여백과 동일한 수식(max(1rem,calc((100%-72rem)/2+1rem)))을 쓴다
         (AppHeader.tsx) — 화면 폭과 무관하게 로고 시작·CTA 끝이 본문·배너 좌우 끝과
         항상 정확히 일치한다. */}
