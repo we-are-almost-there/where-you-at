@@ -1,12 +1,13 @@
 // helpApi 테스트 (vitest, fetch mock).
 //
-// 테스트 범위: 요청 주소와 에러 종류 보존에 한정한다.
+// 테스트 범위: 요청 주소·본문과 에러 종류 보존에 한정한다.
 //   - 목록은 page·per_page를 쿼리로 보낸다 (서버 쿼리 이름은 per_page, 화면 쪽 이름은 perPage)
 //   - 404면 status가 담긴 HttpError (공지 상세가 "찾을 수 없어요"를 고르는 근거)
 //   - fetch가 TypeError로 실패하면 그대로 TypeError (toUserError가 연결 실패로 판별하는 근거)
+//   - 문의 접수는 JSON으로 POST하고, 429면 status가 담긴 HttpError (문의 폼이 안내를 고르는 근거)
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../../components/error/userError";
-import { fetchFaqs, fetchNotice, fetchNotices } from "./helpApi";
+import { createInquiry, fetchFaqs, fetchNotice, fetchNotices } from "./helpApi";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -45,5 +46,36 @@ describe("fetchFaqs", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
 
     await expect(fetchFaqs()).rejects.toBeInstanceOf(TypeError);
+  });
+});
+
+describe("createInquiry", () => {
+  const body = {
+    category: "코스 탐색" as const,
+    email: "user@example.com",
+    content: "코스 경로가 실제 길과 달라요.",
+    agreed: true,
+    website: "",
+  };
+
+  it("본문을 JSON으로 /api/inquiries에 POST한다", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({ received: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createInquiry(body)).resolves.toEqual({ received: true });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(new URL(String(url)).pathname).toBe("/api/inquiries");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(init.body)).toEqual(body);
+  });
+
+  it("너무 자주 보내 429면 status가 담긴 HttpError를 throw한다", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 429, json: async () => ({}) }));
+
+    const err = await createInquiry(body).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpError);
+    expect((err as HttpError).status).toBe(429);
   });
 });
