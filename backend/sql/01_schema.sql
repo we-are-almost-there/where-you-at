@@ -91,6 +91,19 @@ create table support_schedule (
 -- 인덱스 생성
 create index idx_support_schedule_region on support_schedule (region_id);
 
+-- 행 수준 보안(RLS)
+-- Supabase Data API(anon·authenticated 키)로는 테이블을 읽거나 쓰지 못하게 막는다.
+-- 정책(policy)은 일부러 만들지 않는다. 백엔드와 수집 스크립트는 postgres 역할(테이블 소유자)로
+-- Postgres에 직접 접속해 RLS가 적용되지 않으므로 동작이 바뀌지 않는다.
+-- force row level security는 쓰지 않는다. 소유자에게도 RLS가 걸려 백엔드 조회가 빈 결과가 된다.
+-- 새 테이블을 추가하면 그 섹션의 이 목록에도 한 줄 추가한다.
+alter table region           enable row level security;
+alter table support          enable row level security;
+alter table support_region   enable row level security;
+alter table refund_rule      enable row level security;
+alter table checklist_item   enable row level security;
+alter table support_schedule enable row level security;
+
 
 -- ============================================
 -- 어디까지왔니 — 지도/코스 테이블 (지도/코스)
@@ -142,6 +155,12 @@ create table course_route (
   unique (course_id, route_type),
   check (route_type in ('trail', 'bicycle'))
 );
+
+-- 행 수준 보안(RLS)
+-- 이유와 주의사항은 지원금/환급 섹션 끝의 RLS 주석 참고. 새 테이블을 추가하면 여기에도 한 줄 추가한다.
+alter table course          enable row level security;
+alter table course_waypoint enable row level security;
+alter table course_route    enable row level security;
 
 
 -- ============================================
@@ -306,3 +325,13 @@ create index idx_race_start on race (start_date);
 create index idx_race_end on race (end_date);
 create index idx_race_geom on race using gist (geom);
 create index idx_race_region on race (region_code);
+
+-- 행 수준 보안(RLS)
+-- 이유와 주의사항은 지원금/환급 섹션 끝의 RLS 주석 참고. 새 테이블을 추가하면 여기에도 한 줄 추가한다.
+alter table tour_spot        enable row level security;
+alter table attraction       enable row level security;
+alter table accommodation    enable row level security;
+alter table restaurant       enable row level security;
+alter table bicycle_facility enable row level security;
+alter table nearby_spot      enable row level security;
+alter table race             enable row level security;
