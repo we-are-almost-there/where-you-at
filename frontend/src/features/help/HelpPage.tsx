@@ -15,6 +15,8 @@ const LINKS: HelpLink[] = [
   { label: "1:1 문의", to: "/contact" },
 ];
 
+// 고객지원 첫 화면의 목록은 원래 형식(넉넉한 간격, 넓은 화면에서 커지는 글자, 화살표 아이콘)을 유지한다.
+// 공지·FAQ 같은 하위 화면의 목록만 대회 목록 형식에 맞춘다. 페이지 제목의 크기·위치는 둘이 같다 (DocumentPage 참고).
 export default function HelpPage() {
   return (
     <DocumentPage title="고객지원">
