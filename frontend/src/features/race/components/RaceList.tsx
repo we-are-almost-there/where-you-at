@@ -68,7 +68,7 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
           ) / 86_400_000) + 1;
           const isEnded = end < today;
           const color = race.event_type ? EVENT_TYPE_COLOR[race.event_type] : "#9CA3AF";
-          const location = race.location_name?.replace(/\s*·\s*/, " | ");
+          const location = race.location_name?.replace(/\s*·\s*/g, " | ");
 
           return (
             <div

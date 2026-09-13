@@ -23,10 +23,31 @@ export default function Race() {
   const [races, setRaces] = useState<RaceType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<UserError | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
   const [activeType, setActiveType] = useState<EventType | null>(null);
   const [upcomingOnly, setUpcomingOnly] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia("(min-width: 768px)").matches);
+
+
+  // React 공식 문서의 "Adjusting state during render" 패턴을 쓴다 — 이전 값을
+  // state로 들고 있다가 렌더링 중에 비교해서 다르면 그 자리에서 setState한다.
+  // (커밋 전에 즉시 재렌더되어 화면 깜빡임 없이 반영된다.)
+  const [prevRaces, setPrevRaces] = useState(races);
+  const [prevLinkedEventId, setPrevLinkedEventId] = useState(linkedEventId);
+  if (races !== prevRaces || linkedEventId !== prevLinkedEventId) {
+    setPrevRaces(races);
+    setPrevLinkedEventId(linkedEventId);
+    setSelectedRace(races.find((race) => race.event_id === linkedEventId) ?? null);
+    // linkedEventId가 바뀌었을 때만(races만 새로 로드된 경우는 제외) 필터를 초기화한다.
+    // 그래야 다른 대회 링크로 들어왔을 때 이전 필터에 가려 목록에 안 보이는 일이 없다.
+    if (linkedEventId !== prevLinkedEventId) {
+      setViewMode("list");
+      setActiveType(null);
+      setKeyword("");
+      setUpcomingOnly(false);
+    }
+  }
 
   useEffect(() => {
     const query = window.matchMedia("(min-width: 768px)");
@@ -44,6 +65,10 @@ export default function Race() {
     };
   }, []);
 
+  // 목록은 페이지 진입 시 한 번만 가져온다. eventId 쿼리 파라미터가 바뀌어도
+  // (뒤로가기, 다른 링크 진입 등) 다시 fetch하지 않고 위쪽 렌더링 중 비교 로직에서
+  // 이미 가진 races 중에서 선택만 갱신한다 — 그래야 재요청 도중 필터·검색어가
+  // 리셋되지 않는다.
   useEffect(() => {
     let ignore = false;
 
@@ -52,11 +77,6 @@ export default function Race() {
         if (!ignore) {
           setError(null);
           setRaces(data);
-          setSelectedRace(data.find((race) => race.event_id === linkedEventId) ?? null);
-          setViewMode("list");
-          setActiveType(null);
-          setKeyword("");
-          setUpcomingOnly(false);
         }
       })
       .catch((err) => {
@@ -69,7 +89,7 @@ export default function Race() {
     return () => {
       ignore = true;
     };
-  }, [linkedEventId]);
+  }, [retryTick]);
 
   useEffect(() => {
     if (isLoading || !isDesktop || viewMode !== "list" || selectedRace?.event_id !== linkedEventId) return;
@@ -86,7 +106,6 @@ export default function Race() {
     return races.filter((race) => {
       if (activeType && race.event_type !== activeType) return false;
       if (search && !race.race_title.toLowerCase().includes(search)) return false;
-      // 종료일이 오늘인 대회와 여러 날에 걸쳐 진행 중인 대회도 포함한다.
       return viewMode === "calendar" || !upcomingOnly || parseLocalDate(race.end_date ?? race.start_date) >= today;
     });
   }, [races, activeType, upcomingOnly, keyword, viewMode]);
@@ -109,15 +128,8 @@ export default function Race() {
   return (
     <>
       <AppHeader />
-      {/* 콘텐츠가 화면 전체 폭을 그대로 쓰면 넓은 화면에서 왼쪽에만 쏠려 보여 max-w로 가운데 정렬한다.
-        폭은 max-w-6xl(72rem)로 — AppHeader.tsx의 좌우 padding 계산식과
-        Home.tsx의 BannerCarousel(banners.tsx)이 쓰는 max-w-6xl 기준을 그대로 따른 것.
-        기준이 다르면 페이지를 옮길 때마다 헤더·본문 좌우 끝이 미묘하게 어긋나 보인다. */}
       <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-4">
-        {/* selectedRace가 없으면(좌측 블록만 있을 때) md:justify-center로 그 블록을
-          컨테이너 가운데로. 상세가 열리면 좌+우 두 블록이 나란히 있어야 하니 기본 정렬로 되돌림. */}
         <div className={`flex flex-col gap-4 md:flex-row ${!selectedRace ? "md:justify-center" : ""}`}>
-          {/* 목록 상세는 항목 아래에 펼치고, 달력 상세는 옆 패널로 표시한다. */}
           <div className={`w-full min-w-0 transition-all duration-500 ${selectedRace && viewMode === "calendar" ? "md:w-2/3" : ""}`}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <h1 className="font-bold text-ink text-[20px]">대회·행사 일정</h1>
@@ -128,7 +140,6 @@ export default function Race() {
               )}
             </div>
 
-            {/* 카테고리 필터 */}
             <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-gray-100">
               <button
                 type="button"
@@ -165,7 +176,6 @@ export default function Race() {
               })}
             </div>
 
-            {/* 세그먼트 토글 */}
             <div className="mb-4 flex rounded-lg bg-gray-100 p-1">
               <button
                 type="button"
@@ -212,7 +222,7 @@ export default function Race() {
             </div>}
 
             {isLoading && <p className="py-10 text-center text-sm text-gray-400">불러오는 중...</p>}
-            {error && <ErrorNotice title={error.title} description={error.description} />}
+            {error && <ErrorNotice title={error.title} description={error.description} onRetry={() => {setIsLoading(true); setError(null); setRetryTick((t) => t + 1)}} />}
             {!isLoading && !error && linkedEventId && !races.some((race) => race.event_id === linkedEventId) && (
               <p role="status" className="mb-4 rounded-lg bg-gray-50 p-3 text-sm text-gray-500">선택한 대회를 찾을 수 없어요. 다른 대회를 확인해 주세요.</p>
             )}
