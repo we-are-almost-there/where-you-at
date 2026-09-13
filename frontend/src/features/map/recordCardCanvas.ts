@@ -321,6 +321,24 @@ function drawRoute(
   ctx.restore();
 }
 
+/** 한 줄에 나란히 놓일 값들을 열 폭 안에 들어가게 줄인 글자 크기. */
+function fitValueSize(
+  ctx: CanvasRenderingContext2D,
+  values: string[],
+  font: string,
+  weight: number,
+  valueSize: number,
+): number {
+  const columnWidth = (CANVAS_W - PADDING * 2) / values.length;
+
+  // 값의 길이는 기록에 따라 달라진다("42:10" vs "10:24:31"). 열 폭을 넘으면 옆 칸을 침범하므로
+  // 넘치는 만큼만 줄여 그린다 — 슬라이더는 희망 크기이고, 최종 크기는 여기서 안전하게 잘린다.
+  ctx.font = `${weight} ${valueSize}px ${font}`;
+  const widest = Math.max(...values.map((value) => ctx.measureText(value).width));
+  const room = columnWidth - COLUMN_GAP;
+  return widest > room ? Math.floor(valueSize * (room / widest)) : valueSize;
+}
+
 /** 수치 3열. */
 function drawStatRow(
   ctx: CanvasRenderingContext2D,
@@ -333,13 +351,13 @@ function drawStatRow(
   valueSize: number,
 ) {
   const columnWidth = (CANVAS_W - PADDING * 2) / stats.length;
-
-  // 값의 길이는 기록에 따라 달라진다("42:10" vs "10:24:31"). 열 폭을 넘으면 옆 칸을 침범하므로
-  // 넘치는 만큼만 줄여 그린다 — 슬라이더는 희망 크기이고, 최종 크기는 여기서 안전하게 잘린다.
-  ctx.font = `${weight} ${valueSize}px ${font}`;
-  const widest = Math.max(...stats.map((stat) => ctx.measureText(stat.value).width));
-  const room = columnWidth - COLUMN_GAP;
-  const size = widest > room ? Math.floor(valueSize * (room / widest)) : valueSize;
+  const size = fitValueSize(
+    ctx,
+    stats.map((stat) => stat.value),
+    font,
+    weight,
+    valueSize,
+  );
   const captionSize = Math.round(size * 0.42);
 
   stats.forEach((stat, index) => {
