@@ -620,7 +620,7 @@ export default function Home() {
             return (
               <li key={race.id}>
                 <Link
-                  to="/races"
+                  to={`/races?eventId=${race.id}`}
                   className="flex items-center gap-3 rounded-xl border border-divider p-3 transition-shadow hover:shadow-md"
                 >
                   {/* 1순위: 언제 — 날짜 블록을 채워서 가장 먼저 눈에 들어오게 */}

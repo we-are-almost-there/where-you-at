@@ -153,7 +153,7 @@ export interface UpcomingRace {
 
 /** 가까운 날짜순 대회. 백엔드가 upcoming_only + start_date ASC로 이미 걸러 준다 */
 export async function fetchUpcomingRaces(limit = 3): Promise<UpcomingRace[]> {
-  const races = await fetchRaceList({ per_page: limit });
+  const races = await fetchRaceList({ page: 1, per_page: limit, upcoming_only: true });
 
   return races.map((race) => ({
     id: race.event_id,

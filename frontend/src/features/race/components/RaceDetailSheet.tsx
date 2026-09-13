@@ -8,6 +8,7 @@ interface RaceDetailSheetProps {
   race: Race;
   onClose: () => void;
   backLabel?: string;
+  inline?: boolean;
 }
 
 // TourAPI eventhomepage가 &amp; 같은 HTML 엔티티를 이스케이프하지 않은 채로
@@ -18,7 +19,7 @@ function decodeHtmlEntities(text: string): string {
   return el.value;
 }
 
-export default function RaceDetailSheet({ race, onClose, backLabel }: RaceDetailSheetProps) {
+export default function RaceDetailSheet({ race, onClose, backLabel, inline = false }: RaceDetailSheetProps) {
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
 
   const decodedHomepageUrl = race.homepage_url ? decodeHtmlEntities(race.homepage_url) : null;
@@ -31,11 +32,12 @@ export default function RaceDetailSheet({ race, onClose, backLabel }: RaceDetail
   return (
     <>
       {/* 배경 딤 처리 - SpotDetailSheet와 동일하게 클릭 시 닫힘 (모바일 전용, 데스크톱은 인라인 패널이라 불필요) */}
-      <div className="fixed inset-0 z-40 bg-black/30 md:hidden" onClick={onClose} />
+      {!inline && <div className="fixed inset-0 z-40 bg-black/30 md:hidden" onClick={onClose} />}
 
       {/* 바텀시트 본체 - 모바일: 하단에서 fixed로 표시(거의 풀스크린) / 데스크톱(md+): static으로 부모 컬럼에 인라인 배치 */}
-      <div className="fixed inset-x-0 bottom-0 top-2 z-50 overflow-y-auto rounded-t-2xl bg-white shadow-xl md:static md:inset-auto md:z-auto md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none">
-        <div className="flex flex-col gap-5 p-5 md:px-4 md:py-4">
+      <div className={inline ? "border-t border-[#ebe8f7] bg-[#f8f9fa]" : "fixed inset-x-0 bottom-0 top-2 z-50 overflow-y-auto rounded-t-2xl bg-white shadow-xl md:static md:inset-auto md:z-auto md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none"}>
+        <div className={inline ? "grid grid-cols-[minmax(0,1fr)_minmax(240px,32%)] items-start gap-x-8 gap-y-4 p-5 pl-24" : "flex flex-col gap-5 p-5 md:px-4 md:py-4"}>
+          {!inline && <>
           {/* 드래그 핸들 (모바일 전용) */}
           <div className="mx-auto -mb-2 h-1 w-10 rounded-full bg-gray-200 md:hidden" />
 
@@ -57,8 +59,9 @@ export default function RaceDetailSheet({ race, onClose, backLabel }: RaceDetail
           )}
 
           <h2 className="text-xl font-bold text-gray-900">{race.race_title}</h2>
+          </>}
 
-          <dl className="flex flex-col gap-3 text-sm">
+          <dl className="flex min-w-0 flex-col gap-3 text-sm [&_dd]:min-w-0 [&_dd]:break-words">
             <div className="flex gap-3">
               <dt className="w-16 shrink-0 text-gray-400">일정</dt>
               <dd className="text-gray-700">{formatDateRange(race.start_date, race.end_date)}</dd>
@@ -71,7 +74,7 @@ export default function RaceDetailSheet({ race, onClose, backLabel }: RaceDetail
             )}
             {race.contact && (
               <div className="flex gap-3">
-                <dt className="w-16 shrink-0 text-gray-400">문의</dt>
+                <dt className="w-16 shrink-0 text-gray-400">주최</dt>
                 <dd className="text-gray-700">{race.contact}</dd>
               </div>
             )}
@@ -82,7 +85,7 @@ export default function RaceDetailSheet({ race, onClose, backLabel }: RaceDetail
               href={homepageHref}
               target="_blank"
               rel="noreferrer"
-              className="rounded-lg py-3 text-center text-sm font-semibold text-white"
+              className={`rounded-lg py-3 text-center text-sm font-semibold text-white ${inline ? "col-start-1 w-fit px-5" : ""}`}
               style={{ backgroundColor: EVENT_TYPE_COLOR.running }}
             >
               대회 홈페이지 바로가기
@@ -91,8 +94,9 @@ export default function RaceDetailSheet({ race, onClose, backLabel }: RaceDetail
 
           {/* 지도 - 주소는 dl이 아니라 지도 캡션으로 표시 (텍스트 라벨 방식) */}
           {race.map_x != null && race.map_y != null && (
-            <div>
+            <div className={inline ? "col-start-2 row-start-1 row-span-2 min-w-0" : ""}>
               <RaceMap
+                compact={inline}
                 raceTitle={race.race_title}
                 lat={race.map_y}
                 lng={race.map_x}

@@ -6,6 +6,7 @@ interface RaceMapProps {
   raceTitle: string;
   lat: number;
   lng: number;
+  compact?: boolean;
   onAddressResolved?: (address: string | null) => void; //주소
 }
 
@@ -18,15 +19,63 @@ function pinImageSrc(color: string, size: number): { src: string; height: number
 const RACE_MARKER_COLOR = EVENT_TYPE_COLOR.running; // 대회 위치 강조 (러닝 accent 재사용)
 
 
-export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, }: RaceMapProps) {
+export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, compact = false }: RaceMapProps) {
   const [sdkReady, setSdkReady] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const [map, setMap] = useState<kakao.maps.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (typeof kakao === "undefined") return;
-    kakao.maps.load(() => setSdkReady(true));
-  }, []);
+    let active = true;
+    let requested = false;
+    let retryScript: HTMLScriptElement | null = null;
+    const timeout = window.setTimeout(() => {
+      active = false;
+      window.clearInterval(poll);
+      setLoadFailed(true);
+    }, 10_000);
+    const loadSdk = () => {
+      if (!active || requested || typeof kakao === "undefined" || !kakao.maps?.load) return;
+      requested = true;
+      try {
+        kakao.maps.load(() => {
+          if (!active) return;
+          window.clearTimeout(timeout);
+          window.clearInterval(poll);
+          setSdkReady(true);
+        });
+      } catch {
+        window.clearTimeout(timeout);
+        window.clearInterval(poll);
+        active = false;
+        setLoadFailed(true);
+      }
+    };
+    const poll = window.setInterval(loadSdk, 200);
+    // 최초 SDK 요청 자체가 실패했다면 같은 설정으로 스크립트를 다시 요청한다.
+    // 이미 준비된 전역 SDK와 다른 지도에서 사용하는 스크립트는 유지한다.
+    if (retryCount > 0 && (typeof kakao === "undefined" || !kakao.maps?.load)) {
+      const originalScript = document.querySelector<HTMLScriptElement>('script[src*="dapi.kakao.com/v2/maps/sdk.js"]');
+      if (originalScript) {
+        retryScript = document.createElement("script");
+        retryScript.src = originalScript.src;
+        retryScript.async = true;
+        retryScript.onload = loadSdk;
+        document.head.appendChild(retryScript);
+      }
+    }
+    loadSdk();
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      window.clearInterval(poll);
+      if (retryScript) {
+        retryScript.onload = null;
+        retryScript.remove();
+      }
+    };
+  }, [retryCount]);
 
   // KakaoMap.tsx와 동일한 이유: 바텀시트/인라인 패널 애니메이션 도중 지도가 마운트되면
   // 카카오맵 SDK가 그 순간의(아직 확정 안 된) 컨테이너 크기를 캐싱해버려 지도가
@@ -65,15 +114,31 @@ export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, }: Rac
     };
   }, [sdkReady, lat, lng, onAddressResolved]);
 
+  if (loadFailed) {
+    return (
+      <div className={`${compact ? "h-40" : "h-64"} flex w-full flex-col items-center justify-center gap-3 rounded-t-lg bg-gray-100 px-4 text-center`}>
+        <p role="status" className="text-sm text-gray-500">지도를 불러오지 못했어요.</p>
+        <button type="button" onClick={() => {
+          setLoadFailed(false);
+          setSdkReady(false);
+          setMap(null);
+          setRetryCount((count) => count + 1);
+        }} className="rounded-lg border border-divider bg-white px-3 py-2 text-xs text-ink focus-visible:outline-2 focus-visible:outline-accent">
+          지도 다시 불러오기
+        </button>
+      </div>
+    );
+  }
+
   if (!sdkReady) {
-    return <div className="h-64 w-full animate-pulse rounded-t-lg bg-gray-100" />;
+    return <div role="status" aria-label="지도 불러오는 중" className={`${compact ? "h-40" : "h-64"} w-full animate-pulse rounded-t-lg bg-gray-100`} />;
   }
 
   const racePinSize = 32;
   const racePin = pinImageSrc(RACE_MARKER_COLOR, racePinSize);
 
   return (
-    <div ref={mapContainerRef} className="h-64 w-full overflow-hidden rounded-t-lg">
+    <div ref={mapContainerRef} className={`${compact ? "h-40" : "h-64"} w-full overflow-hidden rounded-t-lg`}>
       <Map
         center={{ lat, lng }}
         style={{ width: "100%", height: "100%" }}

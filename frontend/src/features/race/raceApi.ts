@@ -71,6 +71,8 @@ export async function fetchRaceList(query: RaceListQuery = {}): Promise<Race[]> 
   return allItems;
 }
 
+// TODO: 대회 상세 페이지에서 목록 API 응답이 아닌 단건 조회가 필요해지면 사용.
+// 현재 상세 화면은 목록에서 선택한 Race 객체를 그대로 재사용하고 있어 아직 미사용.
 export async function fetchRaceDetail(eventId: number): Promise<Race> {
   if (USE_MOCK) {
     const found = raceMock.find((r) => r.event_id === eventId);
