@@ -56,7 +56,7 @@ class TestGetCourseNearby(unittest.TestCase):
         self.assertEqual(res.status_code, 404)
         mock_exists.assert_called_once_with(unittest.mock.ANY, 999999)
 
-    @patch("app.api.routers.courses.nearby_crud.list_nearby_spots", return_value=(0, []))
+    @patch("app.api.routers.courses.nearby_crud.list_nearby_spots", return_value=(0, [], "test-version"))
     @patch("app.api.routers.courses.crud.course_exists", return_value=True)
     def test_course_exists_but_no_spots_returns_200_empty(self, mock_exists, mock_list):
         res = self.client.get(
@@ -64,7 +64,14 @@ class TestGetCourseNearby(unittest.TestCase):
             params={"category": "attraction"},
         )
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json(), {"total_count": 0, "spots": []})
+        self.assertEqual(
+            res.json(),
+            {
+                "total_count": 0,
+                "spots": [],
+                "list_version": "test-version",
+            },
+        )
 
     @patch(
         "app.api.routers.courses.nearby_crud.list_nearby_spots",
@@ -83,6 +90,7 @@ class TestGetCourseNearby(unittest.TestCase):
                     "duration_minutes": 7,
                 }
             ],
+            "test-version",
         ),
     )
     @patch("app.api.routers.courses.crud.course_exists", return_value=True)
@@ -96,6 +104,7 @@ class TestGetCourseNearby(unittest.TestCase):
         self.assertEqual(body["total_count"], 1)
         self.assertEqual(len(body["spots"]), 1)
         self.assertEqual(body["spots"][0]["name"], "테스트 관광지")
+        self.assertEqual(body["list_version"], "test-version")
 
     def test_missing_required_category_returns_422(self):
         # category는 필수 쿼리 파라미터 — 없으면 FastAPI validation이 422

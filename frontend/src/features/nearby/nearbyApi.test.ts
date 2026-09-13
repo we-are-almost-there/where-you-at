@@ -39,13 +39,41 @@ describe("getNearbySpots", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: async () => ({ total_count: 0, spots: [] }),
+        json: async () => ({
+          total_count: 0,
+          spots: [],
+          list_version: "test-version",
+        }),
       }),
     );
 
     const result = await getNearbySpots(1, "attraction");
     expect(result.totalCount).toBe(0);
     expect(result.spots).toEqual([]);
+    expect(result.listVersion).toBe("test-version");
+  });
+
+  it("응답이 지연되면 타임아웃으로 처리한다", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        (_url, { signal }: { signal: AbortSignal }) =>
+          new Promise((_, reject) => {
+            signal.addEventListener("abort", () => {
+              reject(new DOMException("Aborted", "AbortError"));
+            });
+          }),
+      ),
+    );
+
+    const promise = getNearbySpots(1, "attraction");
+    const assertion = expect(promise).rejects.toThrow("서버에 연결할 수 없어요");
+
+    await vi.advanceTimersByTimeAsync(10000);
+    await assertion;
+
+    vi.useRealTimers();
   });
 
   it("응답에 spots가 없어 변환 중 난 TypeError는 NetworkError로 바뀌지 않는다", async () => {

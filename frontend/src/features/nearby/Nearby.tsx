@@ -1,10 +1,10 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { CategoryFilter } from "./components/CategoryFilter";
 import { SpotCard } from "./components/SpotCard";
 import { SpotDetailSheet } from "./components/SpotDetailSheet";
 import { getNearbySpots } from "./nearbyApi";
 import type { NearbySpot, SpotCategory } from "./types";
-import { toUserError, type UserError } from "../../components/error/userError";
+import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "../map/components/ErrorNotice";
 
 interface NearbyProps {
   courseId: number;
@@ -17,6 +17,7 @@ interface NearbyProps {
   onSpotsChange?: (spots: NearbySpot[]) => void;
   /** 선택된(상세 시트가 열린) 스팟이 바뀔 때마다 호출 (지도 마커 강조용). */
   onSelectedChange?: (spot: NearbySpot | null) => void;
+  onBack?: () => void;
 }
 
 export interface NearbyHandle {
@@ -25,7 +26,7 @@ export interface NearbyHandle {
 }
 
 export const Nearby = forwardRef<NearbyHandle, NearbyProps>(function Nearby(
-  { courseId, routeType = "trail", category, onCategoryChange, onSpotsChange, onSelectedChange },
+  { courseId, routeType = "trail", category, onCategoryChange, onSpotsChange, onSelectedChange, onBack },
   ref
 ) {
   const [selected, setSelected] = useState<NearbySpot | null>(null);
@@ -58,6 +59,13 @@ export const Nearby = forwardRef<NearbyHandle, NearbyProps>(function Nearby(
     onSelectedChange?.(null);
   };
 
+  // 목록이 초기화될 때(버전 불일치 자동 재조회 등) 상세 시트도 같이 닫는다.
+  // 단순한 다음 페이지 추가(loadMore 성공)에서는 호출되지 않아 선택 상태가 유지된다.
+  const handleReset = () => {
+    setSelected(null);
+    onSelectedChange?.(null);
+  };
+
   // 카테고리 전환 시 이전 카테고리의 스팟이 지도에 남아있지 않도록 비운다.
   // (SpotList가 key로 리마운트되면서 새 목록을 다시 알려줄 때까지의 공백 구간)
   const handleCategoryChange = (next: SpotCategory) => {
@@ -81,6 +89,8 @@ export const Nearby = forwardRef<NearbyHandle, NearbyProps>(function Nearby(
           routeType={routeType}
           onSelect={handleSelect}
           onSpotsChange={handleSpotsChange}
+          onBack={onBack}
+          onReset={handleReset}
         />
       </div>
 
@@ -97,97 +107,342 @@ interface SpotListProps {
   routeType: "trail" | "bicycle";
   onSelect: (spot: NearbySpot) => void;
   onSpotsChange: (spots: NearbySpot[]) => void;
+  onReset: () => void;
+  onBack?: () => void;
 }
 
-function SpotList({ courseId, category, routeType, onSelect, onSpotsChange }: SpotListProps) {
-  const [spots, setSpots] = useState<NearbySpot[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<UserError | null>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+interface SpotListState {
+  spots: NearbySpot[];
+  totalCount: number;
+  page: number;
+  listVersion: string | null;
+  loading: boolean;
+  loadingMore: boolean;
+  exhausted: boolean;
+  error: string | null;
+}
 
-  // key로 courseId/category/routeType이 바뀌면 이 컴포넌트가 리마운트되므로,
-  // 여기 있는 useState 초기값(spots: [], loading: true 등)이 이미 "초기화된 상태"다.
-  useEffect(() => {
-    let cancelled = false;
-    getNearbySpots(courseId, category, routeType, 1)
-      .then((result) => {
-        if (cancelled) return;
-        setSpots(result.spots);
-        setTotalCount(result.totalCount);
-        setLoading(false);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(toUserError(e, "주변 정보를 불러오지 못했어요"));
-        setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+const MAX_AUTO_RESTARTS = 3;
+
+function uniqueSpots(spots: NearbySpot[]): NearbySpot[] {
+  const seen = new Set<string>();
+
+  return spots.filter((spot) => {
+    if (seen.has(spot.id)) return false;
+    seen.add(spot.id);
+    return true;
+  });
+}
+
+function SpotList({
+  courseId,
+  category,
+  routeType,
+  onSelect,
+  onSpotsChange,
+  onReset,
+  onBack,
+}: SpotListProps) {
+  const [state, setState] = useState<SpotListState>({
+    spots: [],
+    totalCount: 0,
+    page: 1,
+    listVersion: null,
+    loading: true,
+    loadingMore: false,
+    exhausted: false,
+    error: null,
+  });
+
+  // 비동기 콜백에서도 최신 페이지·버전·종료 상태를 확인한다.
+  const stateRef = useRef(state);
+  const generationRef = useRef(0);
+  const inFlightRef = useRef(false);
+  const autoRestartsRef = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const updateState = useCallback((patch: Partial<SpotListState>) => {
+    const next = { ...stateRef.current, ...patch };
+    stateRef.current = next;
+    setState(next); 
   }, []);
 
-  // spots가 바뀔 때마다(최초 로드 + loadMore로 이어붙일 때마다) 부모에 알림
+  const loadFirstPage = useCallback(async () => {
+    const generation = ++generationRef.current;
+    inFlightRef.current = true;
+
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    onReset();
+
+    updateState({
+      spots: [],
+      totalCount: 0,
+      page: 1,
+      listVersion: null,
+      loading: true,
+      loadingMore: false,
+      exhausted: false,
+      error: null,
+    });
+
+    try {
+      const result = await getNearbySpots(
+        courseId,
+        category,
+        routeType,
+        1,
+        controller.signal,
+      );
+
+      if (generation !== generationRef.current) return;
+
+      if (!result.listVersion) {
+        throw new Error("목록 버전을 확인하지 못했어요. 다시 시도해 주세요.");
+      }
+
+      const spots = uniqueSpots(result.spots);
+
+      updateState({
+        spots,
+        totalCount: result.totalCount,
+        page: 1,
+        listVersion: result.listVersion,
+        exhausted:
+          result.spots.length === 0 ||
+          spots.length >= result.totalCount,
+      });
+    } catch (error) {
+      if (generation !== generationRef.current) return;
+      if (error instanceof DOMException && error.name === "AbortError") return;
+
+      updateState({
+        error:
+          error instanceof Error
+            ? error.message
+            : "주변 정보를 불러오지 못했어요.",
+      });
+    } finally {
+      if (generation === generationRef.current) {
+        inFlightRef.current = false;
+        updateState({ loading: false, loadingMore: false });
+      }
+    }
+  }, [courseId, category, routeType, updateState, onReset]);
+
   useEffect(() => {
-    onSpotsChange(spots);
+    autoRestartsRef.current = 0;
+    void loadFirstPage();
+
+    return () => {
+      // 언마운트 또는 effect 재실행 이전의 응답을 무효화한다.
+      generationRef.current += 1;
+      inFlightRef.current = false;
+      abortControllerRef.current?.abort();
+    };
+  }, [loadFirstPage]);
+
+  // 목록 초기화와 추가 로딩 모두 지도에 반영한다.
+  useEffect(() => {
+    onSpotsChange(state.spots);
+    // 부모 콜백의 참조 변경만으로 알림을 반복하지 않는다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spots]);
+  }, [state.spots]);
 
-  const loadMore = () => {
-    if (loadingMore || spots.length >= totalCount) return;
-    const nextPage = page + 1;
-    setLoadingMore(true);
-    getNearbySpots(courseId, category, routeType, nextPage)
-      .then((result) => {
-        setSpots((prev) => [...prev, ...result.spots]);
-        setPage(nextPage);
-      })
-      .catch(() => {})
-      .finally(() => setLoadingMore(false));
-  };
+  const loadMore = useCallback(async () => {
+    const current = stateRef.current;
+
+    if (
+      inFlightRef.current ||
+      current.loading ||
+      current.error !== null ||
+      current.exhausted ||
+      current.listVersion === null ||
+      current.spots.length >= current.totalCount
+    ) {
+      return;
+    }
+
+    const generation = generationRef.current;
+    const expectedVersion = current.listVersion;
+    const nextPage = current.page + 1;
+
+    inFlightRef.current = true;
+    updateState({ loadingMore: true });
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const result = await getNearbySpots(
+        courseId,
+        category,
+        routeType,
+        nextPage,
+        controller.signal,
+      );
+
+      if (generation !== generationRef.current) return;
+
+      if (!result.listVersion) {
+        throw new Error("목록 버전을 확인하지 못했어요. 다시 시도해 주세요.");
+      }
+
+      if (result.listVersion !== expectedVersion) {
+        if (autoRestartsRef.current >= MAX_AUTO_RESTARTS) {
+          updateState({
+            error: "목록이 계속 변경되고 있어요. 다시 불러와 주세요.",
+          });
+          return;
+        }
+
+        autoRestartsRef.current += 1;
+        await loadFirstPage();
+        return;
+      }
+
+      autoRestartsRef.current = 0;
+
+      const merged = uniqueSpots([
+        ...stateRef.current.spots,
+        ...result.spots,
+      ]);
+
+      updateState({
+        spots: merged,
+        totalCount: result.totalCount,
+        page: nextPage,
+        exhausted:
+          result.spots.length === 0 ||
+          merged.length >= result.totalCount,
+      });
+    } catch (error) {
+      if (generation !== generationRef.current) return;
+      if (error instanceof DOMException && error.name === "AbortError") return;
+
+      updateState({
+        error:
+          error instanceof Error
+            ? error.message
+            : "주변 정보를 더 불러오지 못했어요.",
+      });
+    } finally {
+      if (generation === generationRef.current) {
+        inFlightRef.current = false;
+        updateState({ loadingMore: false });
+      }
+    }
+  }, [
+    courseId,
+    category,
+    routeType,
+    loadFirstPage,
+    updateState,
+  ]);
+
+  const hasMore =
+    !state.exhausted &&
+    state.spots.length < state.totalCount;
 
   useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
+    if (
+      state.loading ||
+      state.loadingMore ||
+      state.error !== null ||
+      !hasMore
+    ) {
+      return;
+    }
+
+    const element = sentinelRef.current;
+    if (!element) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) loadMore();
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadMore();
+        }
       },
-      { rootMargin: "200px" }
+      { rootMargin: "200px" },
     );
-    observer.observe(el);
+
+    observer.observe(element);
+
     return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spots, totalCount, page, loadingMore]);
+  }, [
+    hasMore,
+    state.loading,
+    state.loadingMore,
+    state.error,
+    state.page,
+    loadMore,
+  ]);
 
-  const hasMore = spots.length < totalCount;
+  const retry = () => {
+    if (inFlightRef.current) return;
 
-  if (loading) return <p className="pt-10 text-center text-[13px] text-caption">불러오는 중…</p>;
-  if (error) {
+    autoRestartsRef.current = 0;
+    void loadFirstPage();
+  };
+
+  if (state.loading) {
     return (
-      <p className="whitespace-pre-line pt-10 text-center text-[13px] text-caption">
-        {error.title}
-        {"\n"}
-        {error.description}
+      <p className="pt-10 text-center text-[13px] text-caption">
+        불러오는 중…
       </p>
     );
   }
-  if (spots.length === 0) return <p className="pt-10 text-center text-[13px] text-caption">주변 정보가 없어요</p>;
+
+  if (state.spots.length === 0 && state.error === null) {
+    return (
+      <p className="pt-10 text-center text-[13px] text-caption">
+        주변 정보가 없어요
+      </p>
+    );
+  }
 
   return (
     <div className="mt-3">
       <div className="grid grid-cols-2 gap-3">
-        {spots.map((spot) => (
-          <SpotCard key={spot.id} spot={spot} routeType={routeType} onSelect={onSelect} />
+        {state.spots.map((spot) => (
+          <SpotCard
+            key={spot.id}
+            spot={spot}
+            routeType={routeType}
+            onSelect={onSelect}
+          />
         ))}
       </div>
-      {hasMore && (
-        <div ref={sentinelRef} className="py-4 text-center text-[12px] text-caption">
-          {loadingMore ? "더 불러오는 중…" : ""}
+
+      {state.error !== null ? (
+        <div role="alert">
+          <ErrorNotice
+            title={
+              state.error === `${CONNECTION_ERROR_TITLE}. 잠시 후 다시 시도해 주세요.`
+                ? CONNECTION_ERROR_TITLE
+                : "주변 정보를 불러오지 못했어요"
+            }
+            description={
+              state.error === `${CONNECTION_ERROR_TITLE}. 잠시 후 다시 시도해 주세요.`
+                ? CONNECTION_ERROR_DESC
+                : state.error
+            }
+            onRetry={retry}
+            onBack={onBack}
+          />
         </div>
+      ) : (
+        hasMore && (
+          <div
+            ref={sentinelRef}
+            className="py-4 text-center text-[12px] text-caption"
+          >
+            {state.loadingMore ? "더 불러오는 중…" : ""}
+          </div>
+        )
       )}
     </div>
   );
