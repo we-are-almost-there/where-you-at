@@ -4,6 +4,7 @@
 
 import type { Race } from "./types";
 import { mockRaces as raceMock } from "./raceMock";
+import { HttpError } from "../../components/error/userError";
 
 // ??가 아니라 ||인 이유: .env에 VITE_API_BASE_URL=처럼 빈 값으로 두면 ??는 ""를
 // 그대로 통과시켜 요청이 상대경로로 나가고 404가 된다. 빈 값도 폴백으로 보낸다.
@@ -47,13 +48,8 @@ export async function fetchRaceList(query: RaceListQuery = {}): Promise<Race[]> 
   };
 
   const fetchPage = async (page: number): Promise<ApiRaceListResponse> => {
-    let res: Response;
-    try {
-      res = await fetch(`${API_BASE}/api/races?${buildParams(page)}`);
-    } catch {
-      throw new Error("서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.");
-    }
-    if (!res.ok) throw new Error(`대회 목록 조회 실패 (${res.status})`);
+    const res = await fetch(`${API_BASE}/api/races?${buildParams(page)}`);
+    if (!res.ok) throw new HttpError(res.status, `대회 목록 조회 실패 (${res.status})`);
     return res.json();
   };
 
@@ -75,8 +71,6 @@ export async function fetchRaceList(query: RaceListQuery = {}): Promise<Race[]> 
   return allItems;
 }
 
-// TODO: 대회 상세 페이지에서 목록 API 응답이 아닌 단건 조회가 필요해지면 사용.
-// 현재 상세 화면은 목록에서 선택한 Race 객체를 그대로 재사용하고 있어 아직 미사용.
 export async function fetchRaceDetail(eventId: number): Promise<Race> {
   if (USE_MOCK) {
     const found = raceMock.find((r) => r.event_id === eventId);
@@ -85,7 +79,7 @@ export async function fetchRaceDetail(eventId: number): Promise<Race> {
   }
 
   const res = await fetch(`${API_BASE}/api/races/${eventId}`);
-  if (!res.ok) throw new Error(`대회 상세 조회 실패 (${res.status})`);
+  if (!res.ok) throw new HttpError(res.status, `대회 상세 조회 실패 (${res.status})`);
   return res.json();
 }
 
@@ -108,6 +102,6 @@ export async function fetchNearbyAccommodations(
   const res = await fetch(
     `${API_BASE}/api/races/${eventId}/nearby-accommodations?radius_km=${radiusKm}`
   );
-  if (!res.ok) throw new Error(`주변 숙박 조회 실패 (${res.status})`);
+  if (!res.ok) throw new HttpError(res.status, `주변 숙박 조회 실패 (${res.status})`);
   return res.json();
 }

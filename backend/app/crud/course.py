@@ -6,11 +6,12 @@ _WAYPOINT_BATCH = 500
 _THUMBNAIL_POINTS = 40  # 썸네일 1개당 추출할 대략적인 좌표 수
 
 # sort 파라미터: ORDER BY 절 화이트리스트 (상수만 들어가므로 SQL injection 안전)
+# 뒤의 c.id는 보조 정렬: 값이 같은 코스끼리 페이지 요청마다 순서가 바뀌면 중복 노출이나 누락이 생긴다.
 _SORT_COLUMNS = {
-    "distance_asc": "cr.distance ASC",
-    "distance_desc": "cr.distance DESC",
-    "time_asc": "cr.estimated_time ASC",
-    "time_desc": "cr.estimated_time DESC",
+    "distance_asc": "cr.distance ASC, c.id",
+    "distance_desc": "cr.distance DESC, c.id",
+    "time_asc": "cr.estimated_time ASC, c.id",
+    "time_desc": "cr.estimated_time DESC, c.id",
 }
 
 
@@ -125,10 +126,10 @@ def list_courses(
     if sort == "nearest" and lat is not None and lng is not None:
         # 시작점까지 근사 거리(제곱). 경도 차이는 위도로 보정한다(고위도일수록 경도 1도가 짧다).
         # 값은 파라미터 바인딩이라 SQL injection 안전. NULLS LAST: 좌표 없는 코스가
-        # '가장 가까운' 자리로 잘못 올라오지 않게 뒤로 민다.
+        # '가장 가까운' 자리로 잘못 올라오지 않게 뒤로 민다. c.id는 _SORT_COLUMNS와 같은 보조 정렬.
         order_sql = (
             "(power(cr.start_lat - %s, 2) + "
-            "power((cr.start_lng - %s) * cos(radians(%s)), 2)) ASC NULLS LAST"
+            "power((cr.start_lng - %s) * cos(radians(%s)), 2)) ASC NULLS LAST, c.id"
         )
         order_params = [lat, lng, lat]
     else:

@@ -12,7 +12,8 @@ import { CourseGroupPicker } from "./components/CourseGroupPicker";
 import { CourseList } from "./components/CourseList";
 import { CourseTabs } from "./components/CourseTabs";
 import { Pagination } from "./components/Pagination";
-import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "./components/ErrorNotice";
+import { ErrorNotice } from "../../components/error/ErrorNotice";
+import { toUserError, type UserError } from "../../components/error/userError";
 import { buildCourseQuery, DEFAULT_PAGE_SIZE } from "./coursesMock";
 import { getCourses, getRegions } from "./coursesApi";
 import { buildRegionOptions, type RegionSelectItem } from "./regionOptions";
@@ -109,7 +110,7 @@ export function CourseExplore() {
   );
   const [res, setRes] = useState<CourseListResponse>(EMPTY_RES);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UserError | null>(null);
   const [retryTick, setRetryTick] = useState(0); // '다시 시도' 트리거
 
   // 쿼리 변경 시 재조회. stale-while-revalidate: 새 응답이 올 때까지 기존 목록을 유지한다.
@@ -121,7 +122,7 @@ export function CourseExplore() {
         setRes(r);
         setError(null);
       })
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "코스를 불러오지 못했어요"))
+      .catch((e) => !cancelled && setError(toUserError(e, "코스를 불러오지 못했어요")))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -332,8 +333,8 @@ export function CourseExplore() {
             </div>
             {error ? (
               <ErrorNotice
-                title={CONNECTION_ERROR_TITLE}
-                description={CONNECTION_ERROR_DESC}
+                title={error.title}
+                description={error.description}
                 onRetry={retry}
               />
             ) : loading ? (

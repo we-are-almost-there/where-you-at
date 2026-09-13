@@ -1,5 +1,5 @@
 import { haversineMeters } from "./courseProgress";
-import type { LatLng } from "./types";
+import type { LatLng, RouteType } from "./types";
 
 /** 추적 중 쌓아 둔 위치 표본. 진행률과 달리 "실제 이동한 궤적"이라 시각도 함께 보관한다. */
 export interface RecordPoint extends LatLng {
@@ -91,6 +91,31 @@ export function formatPace(secPerKm: number | null): string {
   if (secPerKm == null || !Number.isFinite(secPerKm)) return "--'--\"";
   const total = Math.round(secPerKm);
   return `${Math.floor(total / 60)}'${String(total % 60).padStart(2, "0")}"`;
+}
+
+/** 19.0 — km/h. 페이스의 역수라 같은 기록을 뒤집어 읽은 값이다. 값이 없으면 자리만 채운다. */
+export function formatSpeedKmh(secPerKm: number | null): string {
+  if (secPerKm == null || !Number.isFinite(secPerKm) || secPerKm <= 0) return "--.-";
+  return (3600 / secPerKm).toFixed(1);
+}
+
+export interface PaceStat {
+  /** 칸에 크게 찍히는 값. */
+  value: string;
+  /** 값 옆에 붙는 단위. 도보는 기호가 값 안에 들어 있어 비어 있다. */
+  unit: string;
+  /** 수치 아래 이름. */
+  caption: string;
+}
+
+/**
+ * 종목마다 읽는 관례가 다르다 — 도보는 1km에 몇 분, 자전거는 시속 몇 km.
+ * 값과 이름이 함께 바뀌므로 한 곳에서 같이 정한다. 부르는 쪽에서 따로 고르면 짝이 어긋난다.
+ */
+export function paceStat(secPerKm: number | null, routeType: RouteType): PaceStat {
+  return routeType === "자전거"
+    ? { value: formatSpeedKmh(secPerKm), unit: "km/h", caption: "평균 속도" }
+    : { value: formatPace(secPerKm), unit: "", caption: "평균 페이스" };
 }
 
 /** 33:23 / 1:01:28 — 한 시간을 넘을 때만 시간 자리를 붙인다. */

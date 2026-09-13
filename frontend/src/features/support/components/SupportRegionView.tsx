@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import type { Feature } from "geojson";
+import type { RegionIndex } from "../regionMatch";
 import { BADGE_CLASS, BADGE_LABEL, type SupportListItem } from "../support.types";
 import { fetchSupportList } from "../supportApi";
-import { toUserError, type UserError } from "../supportError";
+import { toUserError, type UserError } from "../../../components/error/userError";
 import { SupportCalculator } from "./SupportCalculator";
 import { SupportErrorText } from "./SupportErrorText";
 
@@ -16,20 +16,19 @@ function formatAmount(amount: number | null): string {
   return `최대 ${amount.toLocaleString()}원`;
 }
 
-// 지역코드 → 지역명. 지역을 바꿀 때마다 762KB짜리 GeoJSON을 다시 받으면
-// 이름이 늦게 채워지며 헤더가 코드→이름으로 깜빡인다. 한 번만 받아 재사용한다.
+// 지역코드 → 지역명. 지역을 바꿀 때마다 다시 받으면 이름이 늦게 채워지며
+// 헤더가 코드→이름으로 깜빡인다. 한 번만 받아 재사용한다.
+//
+// 예전에는 support-regions-geo.json(762KB)에서 이름을 꺼냈는데, 그 파일은 지원지역
+// 88곳만 담고 있어 거기 없는 지역은 헤더에 코드가 그대로 노출됐다(옹진군 등).
+// region-index.json은 DB의 지역 전체를 담고 크기도 10KB다.
 let regionNamesPromise: Promise<Map<string, string>> | null = null;
 function loadRegionNames(): Promise<Map<string, string>> {
-  regionNamesPromise ??= fetch("/support-regions-geo.json")
+  regionNamesPromise ??= fetch("/region-index.json")
     .then((r) => r.json())
     .then(
-      (geo: { features: Feature[] }) =>
-        new Map<string, string>(
-          geo.features.map((f): [string, string] => [
-            String(f.properties?.region_code),
-            String(f.properties?.name ?? ""),
-          ]),
-        ),
+      (index: RegionIndex) =>
+        new Map<string, string>(Object.entries(index.names)),
     )
     .catch((err) => {
       // 실패한 Promise를 그대로 두면 ??=가 "이미 값이 있다"고 보고 재요청하지 않는다.
@@ -41,16 +40,50 @@ function loadRegionNames(): Promise<Map<string, string>> {
   return regionNamesPromise;
 }
 
+/**
+ * region-index.json의 이름을 마지막 한 칸에서 갈라 '전남광주통합특별시' + '담양군'으로 만든다.
+ *
+ * 그 이름은 '{시도} {시군구}'라 최장 13자인데, md에서 패널이 컬럼의 3분의 1이라
+ * 한 줄에 안 들어가고 '담/양군'처럼 시군구 이름 한가운데가 끊긴다. 줄을 나눠 두면
+ * 두 줄을 쓰되 각 줄이 온전한 이름이 된다.
+ * 세종처럼 시도와 이름이 같으면 인덱스가 하나만 담으므로 시도 줄이 없다.
+ *
+ * 앞이 아니라 뒤에서 자른다. 지금 패널에 뜰 수 있는 226곳은 전부 공백이 하나라
+ * 결과가 같지만, 인덱스에는 '경기도 수원시 장안구'처럼 공백이 둘인 행정구 이름도
+ * 39건 있다(지도가 시 단위로 병합해 클릭으로는 닿지 않는다). 그때도 제목은 잎인
+ * '장안구'여야 하고 그 위 경로 전체가 윗줄로 가야 계층이 일관된다.
+ */
+function splitRegionName(full: string): { sido: string | null; name: string } {
+  const at = full.lastIndexOf(" ");
+  if (at < 0) return { sido: null, name: full };
+  return { sido: full.slice(0, at), name: full.slice(at + 1) };
+}
+
 /** 목록을 어느 지역까지 받아왔는지. loading·error는 이 값에서 파생시킨다. */
 type Loaded = { regionCode: string; error: UserError | null };
 
 export function SupportRegionView({ regionCode }: Props) {
-  const [items, setItems] = useState<SupportListItem[]>([]);
+  // 목록도 어느 지역의 것인지 함께 들고 다닌다. 지역을 바꾸는 동안 직전 목록을
+  // 그대로 그리면 새 지역 제목 아래에 남의 제도가 붙고, 그 카드가 눌려서 이 지역과
+  // 무관한 상세로 들어간다. 아래 환급 계산기도 이 목록으로 열리고 닫힌다.
+  const [listed, setListed] = useState<{
+    regionCode: string;
+    items: SupportListItem[];
+  } | null>(null);
+  const items = listed?.regionCode === regionCode ? listed.items : [];
+  // 직전 목록의 내용은 쓸 수 없지만 길이는 쓸 수 있다. 새 목록을 기다리는 동안
+  // 그만큼 자리를 잡아 두면 패널 높이가 한 줄로 줄었다가 다시 늘어나지 않는다.
+  const placeholderCount = listed && listed.regionCode !== regionCode ? listed.items.length : 0;
+
   const [loaded, setLoaded] = useState<Loaded | null>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [regionName, setRegionName] = useState<string>("");
+  // 아래 목록과 같은 규칙 — 어느 지역의 이름인지 함께 들고, 지금 지역의 것일 때만 쓴다.
+  // 이름만 state로 두면 지역을 바꾼 첫 렌더에 직전 지역 이름이 새 목록 위에 남는다
+  // (이펙트는 페인트 뒤에 돈다).
+  const [named, setNamed] = useState<{ regionCode: string; name: string } | null>(null);
+  const regionName = named?.regionCode === regionCode ? named.name : "";
 
   // loading·error를 별도 state로 두면 effect 안에서 setLoading(true)를 동기적으로
   // 호출하게 되고, 지역을 바꿀 때마다 렌더가 한 번 더 돈다
@@ -64,33 +97,29 @@ export function SupportRegionView({ regionCode }: Props) {
     let cancelled = false;
     loadRegionNames()
       .then((names) => {
-        if (!cancelled) setRegionName(names.get(regionCode) ?? "");
+        if (!cancelled) setNamed({ regionCode, name: names.get(regionCode) ?? "" });
       })
       // 이름을 못 받으면 헤더에 지역코드를 그대로 보여준다.
       // .catch가 없으면 unhandled rejection까지 같이 난다.
       .catch(() => {
-        if (!cancelled) setRegionName("");
+        if (!cancelled) setNamed({ regionCode, name: "" });
       });
     return () => {
       cancelled = true;
     };
   }, [regionCode]);
 
-  // stale-while-revalidate: 새 지역을 부르는 동안 이전 목록을 그대로 둔다.
-  // 목록을 비우면 패널 높이가 한 줄짜리 로딩 문구로 줄었다가 다시 늘어나며 요동친다.
   useEffect(() => {
     let cancelled = false;
     fetchSupportList({ region_code: regionCode })
       .then((next) => {
         if (cancelled) return;
-        setItems(next);
+        setListed({ regionCode, items: next });
         setLoaded({ regionCode, error: null });
       })
       .catch((err) => {
         if (cancelled) return;
-        // 실패했을 때만 목록을 비운다. 직전 지역 목록이 에러 문구 아래 남아 있으면
-        // 지금 지역의 제도로 읽힌다.
-        setItems([]);
+        setListed({ regionCode, items: [] });
         setLoaded({ regionCode, error: toUserError(err, "지원 제도를 불러오지 못했어요") });
       });
     return () => {
@@ -98,13 +127,25 @@ export function SupportRegionView({ regionCode }: Props) {
     };
   }, [regionCode]);
 
+  // 이름을 아직 못 받았으면 코드를 그대로 보여준다 (코드에는 공백이 없어 한 줄이 된다)
+  const { sido: headerSido, name: headerName } = splitRegionName(regionName || regionCode);
+
   return (
     <div className="flex flex-col gap-5 md:px-1 md:py-1">
       {/* 지역 헤더 — 닫기는 '뒤로'가 아니라 패널을 없애는 동작이라 우측 X로 둔다
           (주변 정보 상세 시트와 같은 규칙) */}
       <header className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="font-bold text-ink text-[18px]">{regionName || regionCode}</h2>
+          {/* 시도도 지역명의 일부이므로 시군구와 같은 크기·굵기로 둔다. 작은 회색으로
+              깔면 아래 설명문과 같은 층으로 읽혀 제목이 '담양군' 한 줄로 보인다.
+              색만 강조색으로 갈라 어디까지가 상위 지역명인지 알아보게 한다. */}
+          {/* 두 줄로 쪼갠 건 눈으로 읽을 때 이야기다. 스크린 리더가 보는 textContent는
+              '인천광역시옹진군'으로 붙어 버린다(block 경계에 공백을 넣어주는 건 브라우저
+              재량이라 기대면 안 된다). 원래 한 줄짜리 이름을 이름표로 따로 준다. */}
+          <h2 aria-label={regionName || undefined} className="font-bold text-ink text-[18px]">
+            {headerSido && <span className="block text-accent">{headerSido}</span>}
+            {headerName}
+          </h2>
           <p className="mt-1 text-[13px] text-caption">
             이 지역에서 받을 수 있는 지원 혜택이에요.
           </p>
@@ -126,10 +167,29 @@ export function SupportRegionView({ regionCode }: Props) {
       <section>
         <h3 className="mb-2.5 font-bold text-ink text-[15px]">받을 수 있는 지원 제도</h3>
 
-        {/* 첫 로드에만 문구를 띄운다. 이후에는 이전 목록을 흐리게 둔 채 갱신해서
-            패널 높이가 튀지 않게 한다. */}
-        {loading && items.length === 0 && (
+        {/* 첫 로드에는 문구, 지역을 바꾸는 중에는 직전 목록 길이만큼 빈 칸을 둔다.
+            직전 목록 자체를 그리면 남의 제도가 이 지역 것으로 읽히고 눌리기까지 한다. */}
+        {loading && placeholderCount === 0 && (
           <p className="py-6 text-center text-[13px] text-caption">불러오는 중…</p>
+        )}
+        {loading && placeholderCount > 0 && (
+          <>
+            {/* 자리표는 눈으로만 읽히는 신호다. 도형을 aria-hidden으로 감추면
+                보조기기 쪽에는 목록이 통째로 사라진 것처럼 들리므로, 대신
+                무슨 일이 일어나는지 한 줄로 알린다. */}
+            <p role="status" className="sr-only">
+              지원 제도를 불러오는 중이에요.
+            </p>
+            <ul aria-hidden className="flex animate-pulse flex-col gap-3">
+              {Array.from({ length: placeholderCount }, (_, i) => (
+                <li key={i} className="rounded-lg bg-white/50 p-4">
+                  <span className="mb-2 block h-[18px] w-16 rounded-full bg-ink/5" />
+                  <span className="block h-[20px] w-3/4 rounded bg-ink/5" />
+                  <span className="mt-3 block h-[16px] w-1/2 rounded bg-ink/5" />
+                </li>
+              ))}
+            </ul>
+          </>
         )}
         {error && <SupportErrorText error={error} />}
         {!loading && !error && items.length === 0 && (
@@ -138,9 +198,7 @@ export function SupportRegionView({ regionCode }: Props) {
           </p>
         )}
 
-        <ul
-          className={`flex flex-col gap-3 transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}
-        >
+        <ul className="flex flex-col gap-3">
           {items.map((item) => (
             <li key={item.id}>
               <button
