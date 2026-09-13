@@ -9,6 +9,15 @@ describe("toUserError", () => {
     expect(network.title).toBe("서버에 연결할 수 없어요");
   });
 
+  it("응답 변환 중 난 일반 TypeError는 연결 실패가 아니라 화면별 제목으로 바꾼다", () => {
+    const parsing = new TypeError("Cannot read properties of undefined");
+
+    expect(toUserError(parsing, "주변 정보를 불러오지 못했어요")).toEqual({
+      title: "주변 정보를 불러오지 못했어요",
+      description: "잠시 후 다시 시도해 주세요.",
+    });
+  });
+
   it("HttpError는 상태 코드 없이 화면별 제목으로 바꾼다", () => {
     const err = new HttpError(500, "불러오지 못했어요 (500)");
     const result = toUserError(err, "코스를 불러오지 못했어요");
