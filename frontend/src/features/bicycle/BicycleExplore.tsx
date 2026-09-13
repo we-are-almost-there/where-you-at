@@ -349,11 +349,13 @@ export function BicycleExplore() {
               placeholder={
                 !region
                   ? "지역을 먼저 선택"
-                  : effectiveSubregionsReady &&
-                      !subregionsErrorForCurrent &&
-                      subregionOptions.length === 0
-                    ? "세부 지역 없음"
-                    : "전체 세부 지역"
+                  : subregionsErrorForCurrent
+                    ? "불러오기 실패"
+                    : !effectiveSubregionsReady
+                      ? "불러오는 중"
+                      : subregionOptions.length === 0
+                        ? "세부 지역 없음"
+                        : "전체 세부 지역"
               }
               disabled={
                 !region ||
