@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useSearchParams } from "react-router";
 import { SupportRegionMap } from "./components/SupportRegionMap";
 import { SupportRegionView } from "./components/SupportRegionView";
@@ -10,6 +11,15 @@ export function Support() {
   const [searchParams] = useSearchParams();
   const region = searchParams.get("region");
   const supportId = searchParams.get("support"); // 제도 상세 ID
+
+  // 스크롤바 유무로 본문 폭이 흔들리지 않도록 opt-in으로 처리한다.
+  // (index.css의 scrollbar-gutter-stable 참고)
+  useEffect(() => {
+    document.documentElement.classList.add("scrollbar-gutter-stable");
+    return () => {
+      document.documentElement.classList.remove("scrollbar-gutter-stable");
+    };
+  }, []);
 
   return (
     <>

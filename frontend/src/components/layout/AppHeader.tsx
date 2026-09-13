@@ -38,7 +38,9 @@ export default function AppHeader({
 
   const location = useLocation();
   const navigate = useNavigate();
-  const hideCourseCta = location.pathname.replace(/\/+$/, "") === "/courses";
+  // /courses 및 그 하위 경로(예: /courses/:id)에서는 CTA를 숨긴다.
+  const normalizedPath = location.pathname.replace(/\/+$/, "");
+  const hideCourseCta = normalizedPath === "/courses" || normalizedPath.startsWith("/courses/");
   const headerRef = useRef<HTMLElement>(null);
   const alignmentRef = useRef<HTMLDivElement>(null);
 

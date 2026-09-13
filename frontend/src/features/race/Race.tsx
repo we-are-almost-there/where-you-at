@@ -17,6 +17,15 @@ export default function Race() {
   const [error, setError] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<EventType | null>(null);
 
+  // 스크롤바 유무로 본문 폭이 흔들리지 않도록 opt-in으로 처리한다.
+  // (index.css의 scrollbar-gutter-stable 참고)
+  useEffect(() => {
+    document.documentElement.classList.add("scrollbar-gutter-stable");
+    return () => {
+      document.documentElement.classList.remove("scrollbar-gutter-stable");
+    };
+  }, []);
+
   useEffect(() => {
     let ignore = false;
 
