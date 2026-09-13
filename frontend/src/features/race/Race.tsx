@@ -6,6 +6,8 @@ import { fetchRaceList } from "./raceApi";
 import { EVENT_TYPE_COLOR, EVENT_TYPE_LABEL, type EventType, type Race as RaceType } from "./types";
 import AppHeader from "../../components/layout/AppHeader";
 import Footer from "../../components/layout/Footer";
+import { ErrorNotice } from "../../components/error/ErrorNotice";
+import { toUserError, type UserError } from "../../components/error/userError";
 
 type ViewMode = "list" | "calendar";
 
@@ -14,7 +16,7 @@ export default function Race() {
   const [selectedRace, setSelectedRace] = useState<RaceType | null>(null);
   const [races, setRaces] = useState<RaceType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UserError | null>(null);
   const [activeType, setActiveType] = useState<EventType | null>(null);
 
   // 헤더 정렬이 어긋나지 않도록 이 페이지에서만 scrollbar-gutter: stable을 켠다.
@@ -31,7 +33,7 @@ export default function Race() {
         if (!ignore) setRaces(data);
       })
       .catch((err) => {
-        if (!ignore) setError(err instanceof Error ? err.message : "대회 목록을 불러오지 못했습니다.");
+        if (!ignore) setError(toUserError(err, "대회 목록을 불러오지 못했어요"));
       })
       .finally(() => {
         if (!ignore) setIsLoading(false);
@@ -131,7 +133,7 @@ export default function Race() {
             </div>
 
             {isLoading && <p className="py-10 text-center text-sm text-gray-400">불러오는 중...</p>}
-            {error && <p className="py-10 text-center text-sm text-red-500">{error}</p>}
+            {error && <ErrorNotice title={error.title} description={error.description} />}
 
             {!isLoading && !error && (
               viewMode === "list" ? (

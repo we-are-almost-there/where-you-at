@@ -3,7 +3,8 @@ import { useSearchParams } from "react-router";
 import { BicycleList } from "./components/BicycleList";
 import { BicycleTabs, type DataSourceTab } from "./components/BicycleTabs";
 import { Pagination } from "../map/components/Pagination";
-import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "../map/components/ErrorNotice";
+import { ErrorNotice } from "../../components/error/ErrorNotice";
+import { toUserError, type UserError } from "../../components/error/userError";
 import {
   getBicycleFacilities,
   getBicycleRegions,
@@ -192,7 +193,7 @@ const effectiveRegion = effectiveSubregionCode || region;
 
   const [res, setRes] = useState<BicycleFacilityListResponse>(EMPTY_RES);
   const [resolvedQueryKey, setResolvedQueryKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UserError | null>(null);
   const [retryTick, setRetryTick] = useState(0);
 
   // queryKey가 마지막으로 반영 완료된 값과 다르면 로딩 중이라는 뜻 — 렌더링 중 계산.
@@ -211,7 +212,7 @@ const effectiveRegion = effectiveSubregionCode || region;
       })
       .catch((e) => {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : "자전거 시설을 불러오지 못했어요");
+        setError(toUserError(e, "자전거 시설을 불러오지 못했어요"));
         // resolvedQueryKey는 갱신하지 않는다. 에러는 이 쿼리를 아직 성공적으로
         // 처리하지 못했다는 뜻이므로, retry() 호출 시 loading이 다시 true가
         // 되어 "불러오는 중..."이 뜨게 한다. 여기서 갱신하면 재시도 중에도
@@ -357,7 +358,7 @@ const effectiveRegion = effectiveSubregionCode || region;
         </p>
 
         {error ? (
-          <ErrorNotice title={CONNECTION_ERROR_TITLE} description={CONNECTION_ERROR_DESC} onRetry={retry} />
+          <ErrorNotice title={error.title} description={error.description} onRetry={retry} />
         ) : loading && res.facilities.length === 0 ? (
           // 데이터가 아예 없을 때만(최초 진입 등) 로딩 문구를 보여준다. 이미 목록이
           // 있는 상태에서 쿼리가 바뀌어 재조회되는 중에는 이전 목록을 그대로 유지해
