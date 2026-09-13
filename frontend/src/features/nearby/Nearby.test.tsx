@@ -132,7 +132,7 @@ afterEach(() => {
 
 describe("Nearby 무한 스크롤", () => {
   it("연결 오류에 공통 안내와 재시도·목록 이동 버튼을 표시한다", async () => {
-    api.mockRejectedValueOnce(new Error("서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요."));
+    api.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     const onBack = vi.fn();
     await act(async () => {
       render(
@@ -216,7 +216,7 @@ describe("Nearby 무한 스크롤", () => {
     await mount();
     await scrollToEnd();
 
-    expect(screen.getByRole("alert").textContent).toContain("재조회 실패");
+    expect(screen.getByRole("alert").textContent).toContain("주변 정보를 불러오지 못했어요");
 
     await act(async () => {
       fireEvent.click(
@@ -300,7 +300,7 @@ describe("Nearby 무한 스크롤", () => {
     await scrollToEnd();
 
     expect(visibleIds()).toEqual(["A"]);
-    expect(screen.getByRole("alert").textContent).toContain("네트워크 오류");
+    expect(screen.getByRole("alert").textContent).toContain("주변 정보를 더 불러오지 못했어요");
 
     await scrollToEnd();
     expect(api).toHaveBeenCalledTimes(2);

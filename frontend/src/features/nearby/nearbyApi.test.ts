@@ -68,10 +68,11 @@ describe("getNearbySpots", () => {
     );
 
     const promise = getNearbySpots(1, "attraction");
-    const assertion = expect(promise).rejects.toThrow("서버에 연결할 수 없어요");
+    const assertion = expect(promise).rejects.toThrow("Request timed out");
 
     await vi.advanceTimersByTimeAsync(10000);
     await assertion;
+    await expect(promise).rejects.toBeInstanceOf(TypeError);
 
     vi.useRealTimers();
   });
