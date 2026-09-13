@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { RotateCw } from "lucide-react";
 import { useSearchParams } from "react-router";
 import { BicycleList } from "./components/BicycleList";
 import { BicycleTabs, type DataSourceTab } from "./components/BicycleTabs";
@@ -74,6 +75,15 @@ export function BicycleExplore() {
   const [regions, setRegions] = useState<BicycleRegionOption[]>([]);
   const [subregions, setSubregions] = useState<BicycleSubregionOption[]>([]);
   const [subregionsReady, setSubregionsReady] = useState(false);
+  // subregionsKey는 지금 subregions가 어느 region/dataSource에 대한 응답인지만
+  // 구분한다 (region이 바뀐 직후 이전 지역의 잔여 데이터를 걸러내기 위함).
+  // 같은 키에 대한 재조회가 진행 중인지는 subregionsReady가 별도로 담당한다
+  // (effect 시작 시 false로 리셋되므로, 재시도 중에는 키가 같아도 false가 된다).
+  const [subregionsKey, setSubregionsKey] = useState<string | null>(null);
+  // 실패한 요청의 {region, dataSource} 키. 다른 지역으로 이동한 뒤 첫 렌더에
+  // 이전 실패가 잠깐 표시되는 것을 막기 위해, 현재 조합과 일치할 때만 에러로 취급한다.
+  const [subregionsErrorKey, setSubregionsErrorKey] = useState<string | null>(null);
+  const [subregionsRetryTick, setSubregionsRetryTick] = useState(0);
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [geoDenied, setGeoDenied] = useState(false);
 
@@ -116,17 +126,27 @@ export function BicycleExplore() {
     // 타이밍 정보라 setState로 직접 표시할 수밖에 없다.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSubregionsReady(false);
+    setSubregionsErrorKey(null);
     getBicycleSubregions(region, dataSource)
       .then((opts) => {
         if (cancelled) return;
         setSubregions(opts);
+        setSubregionsKey(`${region}|${dataSource}`);
         setSubregionsReady(true);
       })
-      .catch((err) => console.error("[BicycleExplore] subregions fetch failed:", err));
+      .catch((err) => {
+        console.error("[BicycleExplore] subregions fetch failed:", err);
+        if (!cancelled) setSubregionsErrorKey(`${region}|${dataSource}`);
+      });
     return () => {
       cancelled = true;
     };
-  }, [region, dataSource]);
+  }, [region, dataSource, subregionsRetryTick]);
+
+  // 세부 지역 조회만 독립적으로 재시도한다. 목록 전체 재시도(retry())와는
+  // 별개 트리거로 둔다 — 세부 지역 API만 실패했을 수 있어 목록 재조회까지
+  // 함께 묶으면 불필요한 재요청이 생긴다.
+  const retrySubregions = () => setSubregionsRetryTick((t) => t + 1);
 
   // 위치 응답을 기다리지 않고 곧바로 기본 순서(ID순)로
   // 먼저 보여준다. 위치가 나중에 도착하면 query가 바뀌어 조용히 재조회되고,
@@ -146,13 +166,14 @@ export function BicycleExplore() {
 
   const regionOptions = useMemo(() => buildBicycleRegionOptions(regions), [regions]);
 
-  // region이 없으면 subregionsReady도 유효하지 않은 것으로 취급한다
-  // (state를 억지로 비우지 않고 렌더링 시점에 계산).
-  const effectiveSubregionsReady = region ? subregionsReady : false;
+  const subregionsMatchCurrent = !!region && subregionsKey === `${region}|${dataSource}`;
+  const effectiveSubregionsReady = subregionsMatchCurrent && subregionsReady;
+  // 에러도 키가 현재 region/dataSource와 일치할 때만 "지금 화면의 에러"로 취급한다.
+  const subregionsErrorForCurrent = !!region && subregionsErrorKey === `${region}|${dataSource}`;
 
   const subregionOptions = useMemo(
-    () => buildBicycleSubregionOptions(region ? subregions : []),
-    [region, subregions],
+    () => buildBicycleSubregionOptions(subregionsMatchCurrent ? subregions : []),
+    [subregionsMatchCurrent, subregions],
   );
 
   // subregionCode가 현재 region의 하위 지역인지 검증한다.
@@ -165,7 +186,7 @@ export function BicycleExplore() {
   const subregionValid =
     !!region && (!effectiveSubregionsReady || subregions.some((s) => s.region_code === subregionCode));
   const effectiveSubregionCode = subregionValid ? subregionCode : "";
-const effectiveRegion = effectiveSubregionCode || region;
+  const effectiveRegion = effectiveSubregionCode || region;
 
   const query = useMemo(() => {
     const q: Record<string, string> = {
@@ -228,6 +249,15 @@ const effectiveRegion = effectiveSubregionCode || region;
   }, [queryKey, retryTick]);
 
   const retry = () => {
+    // 클릭 시점에 현재 지역/탭의 세부 지역 실패까지 확인된 경우에만 함께 재요청한다.
+    // 세부 지역 요청이 아직 진행 중이면 그대로 두고 목록만 재요청한다.
+    // 이후 세부 지역 요청이 실패하면 당시 목록 오류 상태에 따라 전용 아이콘 또는
+    // 목록 재시도로 처리한다. 한 번의 클릭이 이후 도착할 실패까지 처리하거나,
+    // 두 요청의 성공을 보장하는 것은 아니다.
+    if (subregionsErrorForCurrent) {
+      setSubregionsErrorKey(null);
+      retrySubregions();
+    }
     setError(null);
     setRetryTick((t) => t + 1);
   };
@@ -304,7 +334,7 @@ const effectiveRegion = effectiveSubregionCode || region;
           <BicycleTabs value={activeTab} onChange={changeTab} />
         </div>
 
-        <div className="grid grid-cols-2 gap-2 min-[632px]:flex min-[632px]:flex-wrap">
+        <div className="grid grid-cols-2 items-start gap-2 min-[632px]:flex min-[632px]:flex-wrap">
           <BicycleRegionSelect
             value={region}
             onChange={changeRegion}
@@ -312,14 +342,50 @@ const effectiveRegion = effectiveSubregionCode || region;
             className={`${SELECT_CLASS} w-full min-[632px]:w-[140px]`}
           />
 
-          <BicycleRegionSelect
-            value={subregionCode}
-            onChange={changeSubregion}
-            regions={subregionOptions}
-            placeholder={!region ? "지역을 먼저 선택" : subregionOptions.length === 0 ? "세부 지역 없음" : "전체 세부 지역"}
-            disabled={!region || subregionOptions.length === 0}
-            className={`${SELECT_CLASS} w-full min-[632px]:w-[140px] disabled:cursor-not-allowed disabled:opacity-50`}
-          />
+          <div className="relative w-full min-[632px]:w-[140px]">
+            <BicycleRegionSelect
+              value={effectiveSubregionCode}
+              onChange={changeSubregion}
+              regions={subregionOptions}
+              placeholder={
+                !region
+                  ? "지역을 먼저 선택"
+                  : subregionsErrorForCurrent
+                    ? "불러오기 실패"
+                    : !effectiveSubregionsReady
+                      ? "불러오는 중"
+                      : subregionOptions.length === 0
+                        ? "세부 지역 없음"
+                        : "전체 세부 지역"
+              }
+              disabled={
+                !region ||
+                subregionsErrorForCurrent ||
+                !effectiveSubregionsReady ||
+                subregionOptions.length === 0
+              }
+              className={`${SELECT_CLASS} w-full disabled:cursor-not-allowed disabled:opacity-50 ${subregionsErrorForCurrent && !error ? "appearance-none pr-9" : ""}`}
+            />
+            {/* 현재 지역/탭의 세부 지역만 실패하고 목록 오류가 없을 때 아이콘을 표시한다.
+                세부 지역 오류가 먼저 도착하면 아이콘이 보일 수 있으나, 목록 오류도
+                도착하면 숨기고 ErrorNotice의 재시도만 표시한다. 목록 재시도 후 늦게
+                세부 지역 실패가 확인된 경우에도 같은 조건을 적용한다.
+                두 재시도 UI는 동시에 표시하지 않으며, 함께 재요청할지는 retry()의
+                클릭 시점 상태로 결정한다. 목록과 세부 지역이 동시에 실패했을 때 두 버튼을 같이 보여주면,
+                아이콘을 먼저 눌러도 목록 오류는 그대로 남아 ErrorNotice 버튼을 한 번 더 눌러야 한다.
+                그 번거로움을 없애려고 아이콘은 숨기고 ErrorNotice 버튼 하나만 남긴다.*/}
+            {region && subregionsErrorForCurrent && !error && (
+              <button
+                type="button"
+                onClick={retrySubregions}
+                aria-label="세부 지역 다시 불러오기"
+                title="세부 지역 다시 불러오기"
+                className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-caption hover:bg-gray-100 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
+              >
+                <RotateCw size={16} aria-hidden="true" />
+              </button>
+            )}
+          </div>
 
           {dataSource === "standard" && (
             <>
