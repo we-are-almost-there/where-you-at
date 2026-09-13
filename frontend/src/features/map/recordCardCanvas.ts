@@ -229,18 +229,21 @@ export function statsHitBox(
   const { family, weight } = FONTS.find((f) => f.key === fontChoice) ?? FONTS[0];
   const values = statValues(record, routeType);
 
+  // 그리기에서 줄어든 크기로 재야 줄어든 글자 오른쪽 빈 곳이 수치로 잡히지 않는다.
   let width: number;
   if (template === "center") {
     ctx.font = `${weight} ${box.hero}px ${family}`;
     const heroWidth = ctx.measureText(values[0].value).width;
     // 아래 두 열은 열 간격만큼 벌어져 있으므로 두 번째 열의 오른쪽 끝이 전체 폭이 된다.
-    const columnWidth = (CANVAS_W - PADDING * 2) / 2;
-    ctx.font = `${weight} ${box.sub}px ${family}`;
+    const rowValues = values.slice(1).map((stat) => stat.value);
+    const columnWidth = (CANVAS_W - PADDING * 2) / rowValues.length;
+    ctx.font = `${weight} ${fitValueSize(ctx, rowValues, family, weight, box.sub)}px ${family}`;
     const rowWidth = columnWidth + ctx.measureText(values[2].value).width;
     width = Math.max(heroWidth, rowWidth);
   } else {
-    const columnWidth = (CANVAS_W - PADDING * 2) / 3;
-    ctx.font = `${weight} ${box.sub}px ${family}`;
+    const rowValues = values.map((stat) => stat.value);
+    const columnWidth = (CANVAS_W - PADDING * 2) / rowValues.length;
+    ctx.font = `${weight} ${fitValueSize(ctx, rowValues, family, weight, box.sub)}px ${family}`;
     width = columnWidth * 2 + ctx.measureText(values[2].value).width;
   }
   return { ...box, width: Math.min(box.width, width) };
