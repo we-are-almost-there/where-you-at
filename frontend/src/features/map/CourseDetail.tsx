@@ -628,7 +628,7 @@ export function CourseDetail() {
             <ErrorNotice
               title="잘못된 코스예요"
               description="존재하지 않는 코스 주소예요."
-              onBack={() => navigate(-1)}
+              onBack={() => navigate("/courses")}
             />
           ) : error?.kind === "not-found" ? (
             // 없는 코스(404) — 다시 시도해도 같으니 목록으로만
@@ -639,7 +639,7 @@ export function CourseDetail() {
               title={error.value.title}
               description={error.value.description}
               onRetry={retry}
-              onBack={() => navigate(-1)}
+              onBack={() => navigate("/courses")}
             />
           ) : !detail ? null : (
             <>
