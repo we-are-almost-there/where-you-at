@@ -632,7 +632,7 @@ export function CourseDetail() {
             />
           ) : error?.kind === "not-found" ? (
             // 없는 코스(404) — 다시 시도해도 같으니 목록으로만
-            <ErrorNotice title="코스를 찾을 수 없어요" onBack={() => navigate(-1)} />
+            <ErrorNotice title="코스를 찾을 수 없어요" onBack={() => navigate("/courses")} />
           ) : error?.kind === "request" ? (
             // 조회 실패(연결/서버) — 재시도 + 목록으로
             <ErrorNotice
