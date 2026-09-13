@@ -6,6 +6,7 @@ import RaceList from "./components/RaceList";
 import RaceDetailSheet from "./components/RaceDetailSheet";
 import { fetchRaceList } from "./raceApi";
 import { parseLocalDate } from "./dateUtils";
+import { useToday } from "./useToday";
 import { EVENT_TYPE_COLOR, EVENT_TYPE_LABEL, type EventType, type Race as RaceType } from "./types";
 import AppHeader from "../../components/layout/AppHeader";
 import Footer from "../../components/layout/Footer";
@@ -15,6 +16,7 @@ import { toUserError, type UserError } from "../../components/error/userError";
 type ViewMode = "list" | "calendar";
 
 export default function Race() {
+  const today = useToday();
   const [searchParams] = useSearchParams();
   const requestedEventId = Number(searchParams.get("eventId"));
   const linkedEventId = Number.isSafeInteger(requestedEventId) && requestedEventId > 0 ? requestedEventId : null;
@@ -91,24 +93,23 @@ export default function Race() {
     };
   }, [retryTick]);
 
+  const selectedRaceId = selectedRace?.event_id;
   useEffect(() => {
-    if (isLoading || !isDesktop || viewMode !== "list" || selectedRace?.event_id !== linkedEventId) return;
+    if (isLoading || !isDesktop || viewMode !== "list" || selectedRaceId !== linkedEventId) return;
     const frame = requestAnimationFrame(() => {
       document.getElementById(`race-trigger-${linkedEventId}`)?.scrollIntoView({ block: "center" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [isLoading, isDesktop, viewMode, selectedRace, linkedEventId]);
+  }, [isLoading, isDesktop, viewMode, selectedRaceId, linkedEventId]);
 
   const filteredRaces = useMemo(() => {
     const search = viewMode === "list" ? keyword.trim().toLowerCase() : "";
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     return races.filter((race) => {
       if (activeType && race.event_type !== activeType) return false;
       if (search && !race.race_title.toLowerCase().includes(search)) return false;
-      return viewMode === "calendar" || !upcomingOnly || parseLocalDate(race.end_date ?? race.start_date) >= today;
+      return viewMode === "calendar" || !upcomingOnly || parseLocalDate(race.end_date ?? race.start_date).getTime() >= today;
     });
-  }, [races, activeType, upcomingOnly, keyword, viewMode]);
+  }, [races, activeType, upcomingOnly, keyword, viewMode, today]);
 
   const upcomingFilter = (
     <label className="flex h-10 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap text-xs text-ink">
@@ -147,6 +148,7 @@ export default function Race() {
               )}
             </div>
 
+            <fieldset disabled={isLoading} className="min-w-0 disabled:opacity-60">
             {/* 카테고리 필터 */}
             <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-gray-100">
               <button
@@ -213,7 +215,7 @@ export default function Race() {
             </div>
 
             {viewMode === "list" && <div className="mb-4 flex items-center gap-3">
-              {viewMode === "list" && <div className="relative min-w-0 flex-1">
+              <div className="relative min-w-0 flex-1">
                 <Search aria-hidden="true" size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-caption" />
                 <input
                   type="search"
@@ -226,10 +228,11 @@ export default function Race() {
                   }}
                   className="h-10 w-full rounded-lg border border-divider bg-white pl-9 pr-3.5 text-sm text-ink placeholder:text-caption focus:border-accent focus:outline-none"
                 />
-              </div>}
+              </div>
               {upcomingFilter}
             </div>}
 
+            </fieldset>
             {isLoading && <p className="py-10 text-center text-sm text-gray-400">불러오는 중...</p>}
             {error && <ErrorNotice title={error.title} description={error.description} onRetry={() => {setIsLoading(true); setError(null); setRetryTick((t) => t + 1)}} />}
             {!isLoading && !error && linkedEventId && !races.some((race) => race.event_id === linkedEventId) && (
@@ -241,6 +244,7 @@ export default function Race() {
             ) : !isLoading && !error && (
               viewMode === "list" ? (
                 <RaceList
+                  today={today}
                   races={filteredRaces}
                   selectedRaceId={selectedRace?.event_id ?? null}
                   onSelectRace={(race) => setSelectedRace((current) =>

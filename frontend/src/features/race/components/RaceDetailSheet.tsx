@@ -67,6 +67,12 @@ export default function RaceDetailSheet({ race, onClose, backLabel, inline = fal
           </>}
 
           <dl className="flex min-w-0 flex-col gap-3 text-sm [&_dd]:min-w-0 [&_dd]:break-words">
+            {inline && (
+              <div className="flex gap-3">
+                <dt className="w-16 shrink-0 text-gray-400">대회명</dt>
+                <dd className="font-semibold text-ink [overflow-wrap:anywhere]">{race.race_title}</dd>
+              </div>
+            )}
             <div className="flex gap-3">
               <dt className="w-16 shrink-0 text-gray-400">일정</dt>
               <dd className="text-gray-700">{formatDateRange(race.start_date, race.end_date)}</dd>

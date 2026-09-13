@@ -5,23 +5,19 @@ import { parseLocalDate } from "../dateUtils";
 import RaceDetailSheet from "./RaceDetailSheet";
 
 interface RaceListProps {
+  today: number;
   races: Race[];
   selectedRaceId?: number | null;
   onSelectRace: (race: Race) => void;
   isDesktop: boolean;
 }
 
-export default function RaceList({ races, selectedRaceId, onSelectRace, isDesktop }: RaceListProps) {
+export default function RaceList({ races, selectedRaceId, onSelectRace, isDesktop, today }: RaceListProps) {
   const sorted = useMemo(
     () => [...races].sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime()),
     [races]
   );
 
-  const today = useMemo(() => {
-    const t = new Date();
-    t.setHours(0, 0, 0, 0);
-    return t;
-  }, []);
 
   const { monthGroups, showYear } = useMemo(() => {
     const groups = new Map<string, { year: number; month: number; races: Race[] }>();
@@ -52,7 +48,7 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
         <section key={key} aria-labelledby={`race-month-${key}`}>
           <div className="mb-3 flex items-center gap-2 px-1">
             <h2 id={`race-month-${key}`} className="shrink-0 text-base font-bold text-ink">
-              {showYear || group.year !== today.getFullYear() ? `${group.year}년 ` : ""}{group.month}월
+              {showYear || group.year !== new Date(today).getFullYear() ? `${group.year}년 ` : ""}{group.month}월
             </h2>
             <span className="shrink-0 text-[11px] text-gray-500">{group.races.length}개 대회</span>
             <span aria-hidden="true" className="ml-1 flex-1 border-t-2 border-dashed border-divider" />
@@ -66,7 +62,7 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
             Date.UTC(end.getFullYear(), end.getMonth(), end.getDate()) -
             Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())
           ) / 86_400_000) + 1;
-          const isEnded = end < today;
+          const isEnded = end.getTime() < today;
           const color = race.event_type ? EVENT_TYPE_COLOR[race.event_type] : "#9CA3AF";
           const location = race.location_name?.replace(/\s*·\s*/g, " | ");
 
