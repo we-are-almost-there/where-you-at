@@ -29,7 +29,7 @@ _EMPTY_CACHE_LOOKUP_SQL = """
 SELECT 1 FROM nearby_spot
 WHERE base_type = 'course' AND base_id = %(course_id)s AND nearby_type = %(category)s
     AND nearby_content_id = %(empty_id)s
-    AND route_type = %(route_type)s AND expires_at > statement_timestamp()
+    AND route_type = %(route_type)s AND expires_at > now()
 """
 
 _CACHE_LOOKUP_SQL = """
