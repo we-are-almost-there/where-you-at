@@ -4,7 +4,7 @@
 
 import type { Race } from "./types";
 import { mockRaces as raceMock } from "./raceMock";
-import { HttpError } from "../../components/error/userError";
+import { HttpError } from "../../lib/http";
 
 // ??가 아니라 ||인 이유: .env에 VITE_API_BASE_URL=처럼 빈 값으로 두면 ??는 ""를
 // 그대로 통과시켜 요청이 상대경로로 나가고 404가 된다. 빈 값도 폴백으로 보낸다.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { HttpError, toUserError } from "./userError";
+import { HttpError } from "../../lib/http";
+import { toUserError } from "./userError";
 
 describe("toUserError", () => {
   it("TypeError는 연결 실패 문구로 바꾼다 (기존 계약 유지: 응답 변환 중 TypeError도 연결 실패로 분류되는 한계)", () => {

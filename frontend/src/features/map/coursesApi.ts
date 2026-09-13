@@ -10,7 +10,7 @@ import type {
   RouteDetail,
   RouteType,
 } from "./types";
-import { HttpError } from "../../components/error/userError";
+import { HttpError } from "../../lib/http";
 
 // 백엔드 원본 응답 형태(영어 값·nullable). UI 타입으로 변환하기 전 단계.
 interface ApiRoute {

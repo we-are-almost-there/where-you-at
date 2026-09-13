@@ -12,7 +12,7 @@
 //   - getBicycleFacilityDetail, getTourSpotDetail
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HttpError } from "../../components/error/userError";
+import { HttpError } from "../../lib/http";
 import { getNearbySpots } from "./nearbyApi";
 
 describe("getNearbySpots", () => {

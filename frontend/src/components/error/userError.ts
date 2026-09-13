@@ -20,20 +20,6 @@ export type UserError = {
 const RETRY_DESC = "잠시 후 다시 시도해 주세요.";
 
 /**
- * 서버가 응답은 했지만 ok가 아닐 때(4xx/5xx) API 레이어가 던진다.
- * 화면이 404처럼 상태별로 다르게 그려야 할 때 status로 구분한다.
- */
-export class HttpError extends Error {
-  // erasableSyntaxOnly가 켜져 있어 생성자 매개변수 프로퍼티 대신 필드를 따로 선언한다.
-  readonly status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-/**
  * 에러 객체 → 사용자용 문구.
  *
  * fetch는 서버까지 못 갔을 때(오프라인·DNS 실패 등)만 TypeError를 던진다.

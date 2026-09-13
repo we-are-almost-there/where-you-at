@@ -5,7 +5,7 @@
 //   - fetch가 TypeError로 실패하면 그대로 TypeError (toUserError가 연결 실패로 판별하는 근거)
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HttpError } from "../../components/error/userError";
+import { HttpError } from "../../lib/http";
 import { getCourseDetail } from "./coursesApi";
 
 describe("getCourseDetail", () => {

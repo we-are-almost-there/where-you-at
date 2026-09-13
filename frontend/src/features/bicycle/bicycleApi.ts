@@ -1,5 +1,5 @@
 import type { BicycleFacility, BicycleFacilityListResponse } from "./types";
-import { HttpError } from "../../components/error/userError";
+import { HttpError } from "../../lib/http";
 interface ApiBicycleFacility {
   id: number;
   facility_title: string;
