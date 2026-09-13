@@ -13,3 +13,30 @@ export class HttpError extends Error {
     this.status = status;
   }
 }
+
+/**
+ * fetch가 서버에 닿지 못했을 때(오프라인, DNS 실패, 서버 다운 등) API 레이어가 던진다.
+ * 원래 오류는 cause로 남겨 원인을 추적할 수 있게 한다.
+ */
+export class NetworkError extends Error {
+  constructor(cause: unknown) {
+    super("서버에 연결하지 못했어요", { cause });
+    this.name = "NetworkError";
+  }
+}
+
+/**
+ * fetch 호출 자체가 실패한 경우만 NetworkError로 바꾼다.
+ *
+ * fetch는 연결 실패를 TypeError로 알린다. 응답을 받은 뒤의 res.json()과 변환은 이 함수 밖에서
+ * 돌기 때문에, 거기서 난 TypeError는 연결 실패로 섞이지 않는다.
+ * 요청 취소(AbortError)처럼 TypeError가 아닌 오류는 호출부가 원래대로 구분하도록 그대로 던진다.
+ */
+export async function fetchOrNetworkError(...args: Parameters<typeof fetch>): Promise<Response> {
+  try {
+    return await fetch(...args);
+  } catch (error) {
+    if (error instanceof TypeError) throw new NetworkError(error);
+    throw error;
+  }
+}

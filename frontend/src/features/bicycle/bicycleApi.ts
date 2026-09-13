@@ -1,5 +1,5 @@
 import type { BicycleFacility, BicycleFacilityListResponse } from "./types";
-import { HttpError } from "../../lib/http";
+import { fetchOrNetworkError, HttpError } from "../../lib/http";
 interface ApiBicycleFacility {
   id: number;
   facility_title: string;
@@ -32,10 +32,10 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 /**
  * 공통 GET 헬퍼. coursesApi.ts와 동일하게 사용자 문구로 바꾸지 않는다.
- * 네트워크 실패는 fetch의 TypeError를 그대로 두고, HTTP 오류는 HttpError로 던진다.
+ * 네트워크 실패는 NetworkError로, HTTP 오류는 HttpError로 던진다.
  */
 async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetchOrNetworkError(`${API_BASE}${path}`);
   if (!res.ok) throw new HttpError(res.status, `불러오지 못했어요 (${res.status})`);
   return res.json();
 }

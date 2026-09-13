@@ -10,7 +10,7 @@ import type {
   RouteDetail,
   RouteType,
 } from "./types";
-import { HttpError } from "../../lib/http";
+import { fetchOrNetworkError, HttpError } from "../../lib/http";
 
 // 백엔드 원본 응답 형태(영어 값·nullable). UI 타입으로 변환하기 전 단계.
 interface ApiRoute {
@@ -93,11 +93,11 @@ function fromApiCourse(c: ApiCourse): Course {
 
 /**
  * 공통 GET 헬퍼. 사용자 문구로 바꾸지 않는다.
- * 네트워크 실패(서버 다운·오프라인)는 fetch의 TypeError를 그대로 두고, HTTP 오류는 HttpError로 던진다.
+ * 네트워크 실패(서버 다운·오프라인)는 NetworkError로, HTTP 오류는 HttpError로 던진다.
  * 화면 문구 변환은 컴포넌트가 toUserError로 한다.
  */
 async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetchOrNetworkError(`${API_BASE}${path}`);
   if (!res.ok) throw new HttpError(res.status, `불러오지 못했어요 (${res.status})`);
   return res.json();
 }
