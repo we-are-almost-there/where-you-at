@@ -8,8 +8,8 @@
 // HTTP 실패는 HttpError로 던진다. 사용자 문구로 바꾸는 일은 컴포넌트가 toUserError로 한다.
 
 // 연결 실패 시 표준 문구 (여러 화면에서 동일하게 사용)
-export const CONNECTION_ERROR_TITLE = "서버에 연결할 수 없어요";
-export const CONNECTION_ERROR_DESC =
+const CONNECTION_ERROR_TITLE = "서버에 연결할 수 없어요";
+const CONNECTION_ERROR_DESC =
   "일시적인 통신 문제로 정보를 불러오지 못했습니다.\n잠시 후 다시 시도해 주세요.";
 
 export type UserError = {

@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router";
 import { CircleAlert, CircleCheck } from "lucide-react";
 import { KakaoMap } from "./KakaoMap";
 import { ErrorNotice } from "../../components/error/ErrorNotice";
-import { CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "../../components/error/userError";
+import { HttpError, toUserError, type UserError } from "../../components/error/userError";
 import { getCourseDetail, getCourseGpx } from "./coursesApi";
 import type { CourseDetail as CourseDetailData, LatLng, RouteDetail, RouteType } from "./types";
 import { Nearby } from "../nearby";
@@ -151,6 +151,11 @@ function PausedControls({
   );
 }
 
+// 404는 다시 시도해도 같은 결과라 다른 조회 실패와 화면을 나눈다.
+type DetailError =
+  | { kind: "not-found" }
+  | { kind: "request"; value: UserError };
+
 export function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -159,7 +164,7 @@ export function CourseDetail() {
 
   const [detail, setDetail] = useState<CourseDetailData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<DetailError | null>(null);
   const routeType = parseRouteTypeParam(searchParams);
   const infoTab = parseInfoTabParam(searchParams);
   const [descExpanded, setDescExpanded] = useState(false);
@@ -226,7 +231,15 @@ export function CourseDetail() {
         setDetail(d);
         setError(null);
       })
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "코스를 불러오지 못했어요"))
+      .catch(
+        (e) =>
+          !cancelled &&
+          setError(
+            e instanceof HttpError && e.status === 404
+              ? { kind: "not-found" }
+              : { kind: "request", value: toUserError(e, "코스를 불러오지 못했어요") },
+          ),
+      )
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -617,17 +630,18 @@ export function CourseDetail() {
               description="존재하지 않는 코스 주소예요."
               onBack={() => navigate(-1)}
             />
-          ) : error ? (
+          ) : error?.kind === "not-found" ? (
+            // 없는 코스(404) — 다시 시도해도 같으니 목록으로만
+            <ErrorNotice title="코스를 찾을 수 없어요" onBack={() => navigate(-1)} />
+          ) : error?.kind === "request" ? (
             // 조회 실패(연결/서버) — 재시도 + 목록으로
             <ErrorNotice
-              title={CONNECTION_ERROR_TITLE}
-              description={CONNECTION_ERROR_DESC}
+              title={error.value.title}
+              description={error.value.description}
               onRetry={retry}
               onBack={() => navigate(-1)}
             />
-          ) : !detail ? (
-            <ErrorNotice title="코스를 찾을 수 없어요" onBack={() => navigate(-1)} />
-          ) : (
+          ) : !detail ? null : (
             <>
               {/* 스크롤 영역 (모바일은 콘텐츠 높이에 맞춰 시트가 줄어 따라가기 버튼과 붙는다)
                 추적 중에는 모바일에서만 숨겨 지도를 넓게 쓴다. 데스크톱은 지도와 나란히 놓여

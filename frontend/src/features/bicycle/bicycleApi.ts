@@ -1,4 +1,5 @@
 import type { BicycleFacility, BicycleFacilityListResponse } from "./types";
+import { HttpError } from "../../components/error/userError";
 interface ApiBicycleFacility {
   id: number;
   facility_title: string;
@@ -30,17 +31,12 @@ export interface BicycleSubregionOption {
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 /**
- * 공통 GET 헬퍼. coursesApi.ts와 동일하게 네트워크/HTTP 오류를
- * 사용자용 한국어 메시지로 변환한다.
+ * 공통 GET 헬퍼. coursesApi.ts와 동일하게 사용자 문구로 바꾸지 않는다.
+ * 네트워크 실패는 fetch의 TypeError를 그대로 두고, HTTP 오류는 HttpError로 던진다.
  */
 async function apiGet<T>(path: string): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}${path}`);
-  } catch {
-    throw new Error("서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.");
-  }
-  if (!res.ok) throw new Error(`불러오지 못했어요 (${res.status})`);
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) throw new HttpError(res.status, `불러오지 못했어요 (${res.status})`);
   return res.json();
 }
 
