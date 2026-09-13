@@ -387,6 +387,51 @@ create trigger trg_faq_updated_at
   for each row execute function set_updated_at();
 
 
+-- 4. inquiry (1:1 문의)
+-- 로그인 없이 받는 문의라 답변은 email로 직접 회신한다. 조회 API는 두지 않고 콘솔에서만 본다.
+-- category: 문의 유형. 목록을 바꾸면 app/schemas/inquiry.py의 INQUIRY_CATEGORIES와 프론트 문의 폼도 함께 바꾼다.
+-- status: 접수 → 처리중 → 완료. 완료로 바꾸면 resolved_at이 자동으로 채워진다.
+-- consented_at: 개인정보 수집·이용에 동의한 시각. 동의하지 않으면 API가 저장하지 않는다.
+-- 보유 기간: 처리 완료 후 1년 (개인정보처리방침과 같아야 한다). 기간이 지난 행은 아래 SQL로 파기한다.
+--   delete from inquiry where status = '완료' and resolved_at < now() - interval '1 year';
+create table inquiry (
+  id           bigint generated always as identity primary key,
+  category     varchar(20) not null,
+  email        varchar(254) not null,
+  content      text not null,
+  status       varchar(10) not null default '접수',
+  consented_at timestamptz not null,
+  resolved_at  timestamptz,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  check (category in ('코스 탐색', '대회 행사', '방문 혜택', '자전거 대여', '정보 오류 신고', '기타')),
+  check (status in ('접수', '처리중', '완료')),
+  check (char_length(content) between 10 and 2000)
+);
+
+create trigger trg_inquiry_updated_at
+  before update on inquiry
+  for each row execute function set_updated_at();
+
+-- 완료로 바뀌는 순간 resolved_at을 채우고, 완료에서 다른 상태로 되돌리면 비운다.
+-- 보유 기간(처리 완료 후 1년)을 이 값으로 계산한다.
+create or replace function set_inquiry_resolved_at()
+returns trigger as $$
+begin
+  if new.status = '완료' and old.status is distinct from '완료' then
+    new.resolved_at = now();
+  elsif new.status <> '완료' then
+    new.resolved_at = null;
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger trg_inquiry_resolved_at
+  before update of status on inquiry
+  for each row execute function set_inquiry_resolved_at();
+
+
 -- 행 수준 보안(RLS)
 -- Supabase Data API(anon·authenticated 키)로는 이 테이블들을 읽거나 쓰지 못하게 막는다.
 -- 정책(policy)은 일부러 만들지 않는다. 백엔드는 postgres 역할(테이블 소유자)로 Postgres에 직접
@@ -395,3 +440,4 @@ create trigger trg_faq_updated_at
 alter table notice       enable row level security;
 alter table faq_category enable row level security;
 alter table faq          enable row level security;
+alter table inquiry      enable row level security;
