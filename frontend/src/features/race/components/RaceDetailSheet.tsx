@@ -123,7 +123,7 @@ export default function RaceDetailSheet({ race, onClose, backLabel, inline = fal
           </dl>
 
           {homepageHref && (
-          <a
+            <a
               href={homepageHref}
               target="_blank"
               rel="noreferrer"
