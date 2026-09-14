@@ -1,12 +1,363 @@
-/**
+import { Items, LegalSection, LegalToc, P, SubTitle, Table, type LegalSectionInfo } from "./LegalDocument";
+import { EFFECTIVE_DATE, OPERATOR, SERVICE } from "./legalInfo";
+
+/*
  * 개인정보처리방침 본문. /privacy 페이지와 1:1 문의의 동의 팝업(PrivacyPolicyDialog)이 함께 써서
  * 두 곳의 문안이 어긋나지 않게 한다.
  *
- * 문안은 아직 없다. 개인정보처리방침 작업 때 1:1 문의에서 수집하는 항목·목적·보유 기간
- * (ContactPage 동의 안내, sql/01_schema.sql inquiry 주석)과 맞춰 채운다.
+ * 작성 기준: 개인정보보호위원회 「개인정보 처리방침 작성지침」(2026.4. 개정)
+ * - 순서는 서문 → 목차 → 본문. 목차를 누르면 해당 항목으로 이동한다(권장 사항).
+ * - 해당하지 않는 항목(민감정보, 가명정보, 자동화된 결정, 국내대리인, 영상정보처리기기 등)은 넣지 않았다.
+ *   제3자 제공·자동 수집 장치는 "하지 않는다"는 사실을 적는 편이 이용자에게 분명해서 남겼다.
+ *
+ * 방침은 실제 처리 현황과 일치해야 한다. 아래가 바뀌면 이 문서도 함께 고친다.
+ * - 1:1 문의 항목·보유 기간: ContactPage 동의 안내, backend/app/schemas/inquiry.py, sql/01_schema.sql inquiry
+ * - 접속 IP 주소(요청 제한): backend/app/api/routers/inquiries.py, backend/app/services/rate_limit.py
+ * - 기기 안에서만 처리하는 곳: 가까운 순 정렬(홈, 코스 탐색, 자전거 대여), features/map/useCourseTracking.ts,
+ *   features/map/components/RecordCard.tsx, features/support/components/SupportDetail.tsx(localStorage)
+ * - 배포 환경: Vercel(웹사이트), Render 싱가포르(API 서버), Supabase 서울 Free 요금제(DB).
+ *   서버 접속 기록 보관 기간은 Vercel·Render Hobby 요금제 기준이다. 요금제나 업체를 바꾸면 2·4·7·8번을 고친다.
+ * - 파기: Supabase Cron 예약 작업이 매일 보유 기간이 지난 문의를 지운다. 이 작업이 DB에 등록돼 있어야 5번이 사실이다.
+ *
+ * 현재 위치: 가까운 순 정렬은 서버로 좌표를 보내지 않고 브라우저에서 계산한다(위치기반서비스사업 신고 대상에서
+ * 벗어나기 위한 결정). 좌표 전송을 없애는 작업은 별도 브랜치에서 하므로, 그 변경이 같은 배포에 포함되거나
+ * 먼저 배포되어야 이 문서가 사실과 맞다.
+ *
+ * 코드로 확인할 수 없어 팀 확인이 필요한 사실이 새로 생기면 LegalDocument의 <Todo>로 표시하고, 배포 전에 채운다.
  */
-export default function PrivacyPolicyContent() {
+
+const S = {
+  purpose: { id: "privacy-purpose", label: "1. 개인정보의 처리 목적" },
+  items: { id: "privacy-items", label: "2. 처리하는 개인정보의 항목" },
+  children: { id: "privacy-children", label: "3. 14세 미만 아동의 개인정보 처리" },
+  retention: { id: "privacy-retention", label: "4. 개인정보의 처리 및 보유 기간" },
+  destruction: { id: "privacy-destruction", label: "5. 개인정보의 파기 절차 및 방법" },
+  provision: { id: "privacy-provision", label: "6. 개인정보의 제3자 제공" },
+  outsourcing: { id: "privacy-outsourcing", label: "7. 개인정보 처리업무의 위탁" },
+  overseas: { id: "privacy-overseas", label: "8. 개인정보의 국외 수집 및 이전" },
+  security: { id: "privacy-security", label: "9. 개인정보의 안전성 확보조치" },
+  autoCollect: { id: "privacy-auto-collect", label: "10. 개인정보 자동 수집 장치의 설치·운영 및 거부" },
+  rights: { id: "privacy-rights", label: "11. 정보주체의 권리·의무 및 행사방법" },
+  officer: { id: "privacy-officer", label: "12. 개인정보 보호책임자" },
+  remedy: { id: "privacy-remedy", label: "13. 권익침해 구제방법" },
+  changes: { id: "privacy-changes", label: "14. 개인정보처리방침의 변경" },
+} satisfies Record<string, LegalSectionInfo>;
+
+const SECTIONS = Object.values(S);
+
+interface Props {
+  /** 항목 제목의 단계. 페이지는 h1 아래라 2, 팝업은 팝업 제목(h2) 아래라 3. */
+  headingLevel?: 2 | 3;
+}
+
+export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
+  const level = headingLevel;
+
   return (
-    <p className="break-keep text-[14px] leading-relaxed text-caption">개인정보처리방침 문안을 준비하고 있어요.</p>
+    <div>
+      <p className="break-keep text-[14px] leading-relaxed text-ink">
+        {OPERATOR}(이하 &lsquo;운영팀&rsquo;)은 {SERVICE} 서비스(이하 &lsquo;서비스&rsquo;)를 이용하는 분의 자유와 권리를
+        보호하기 위해 「개인정보 보호법」 및 관계 법령이 정한 바를 지켜 개인정보를 적법하게 처리하고 안전하게
+        관리합니다. 이에 「개인정보 보호법」 제30조에 따라 개인정보의 처리와 보호에 관한 절차 및 기준을 안내하고,
+        관련 고충을 신속하고 원활하게 처리하기 위해 다음과 같이 개인정보처리방침을 수립·공개합니다.
+      </p>
+
+      <LegalToc label="개인정보처리방침 목차" sections={SECTIONS} />
+
+      <LegalSection section={S.purpose} level={level}>
+        <P>
+          운영팀은 다음 목적으로만 개인정보를 처리합니다. 처리한 개인정보는 이 목적 외의 용도로 쓰지 않으며, 목적이
+          바뀌면 「개인정보 보호법」 제18조에 따라 별도의 동의를 받는 등 필요한 조치를 하겠습니다.
+        </P>
+        <Items ordered>
+          <li>
+            <strong>1:1 문의 접수 및 답변</strong>: 문의 내용 확인, 입력한 이메일로 답변 회신, 문의 처리 상태 관리
+          </li>
+          <li>
+            <strong>1:1 문의 부정 이용 방지</strong>: 같은 곳에서 짧은 시간에 반복해서 보내는 문의 제한
+          </li>
+          <li>
+            <strong>서비스 운영 기록 관리</strong>: 서버 오류 확인과 비정상적인 접근 대응
+          </li>
+        </Items>
+      </LegalSection>
+
+      <LegalSection section={S.items} level={level}>
+        <P>
+          서비스는 회원가입 없이 이용하므로 이름, 전화번호, 주소 같은 정보는 받지 않습니다. 운영팀은 처리 목적에 필요한
+          최소한의 개인정보만 다음과 같이 처리합니다.
+        </P>
+
+        <SubTitle>① 정보주체의 동의를 받아 처리하는 개인정보</SubTitle>
+        <Table
+          head={["구분", "처리하는 항목", "법적 근거"]}
+          rows={[
+            [
+              "1:1 문의 접수 및 답변",
+              "이메일, 문의 유형, 문의 내용 (접수 일시, 동의 일시, 처리 상태, 처리 완료 일시는 자동으로 기록)",
+              "「개인정보 보호법」 제15조제1항제1호(동의)",
+            ],
+          ]}
+        />
+
+        <SubTitle>② 정보주체의 동의 없이 처리하는 개인정보</SubTitle>
+        <Table
+          head={["구분", "처리하는 항목", "법적 근거"]}
+          rows={[
+            ["1:1 문의 부정 이용 방지", "접속 IP 주소", "「개인정보 보호법」 제15조제1항제6호(정당한 이익)"],
+            [
+              "서비스 운영 기록 관리",
+              "서버 접속 기록(접속 IP 주소, 요청 일시, 요청 주소)",
+              "「개인정보 보호법」 제15조제1항제6호(정당한 이익)",
+            ],
+          ]}
+        />
+
+        <SubTitle>③ 이용자의 기기 안에서만 처리하는 정보</SubTitle>
+        <P>다음 기능은 정보를 이용자의 기기(브라우저) 안에서만 처리하며, 운영팀 서버로 보내지 않습니다.</P>
+        <Items>
+          <li>
+            <strong>가까운 코스·자전거 대여소 안내</strong>: 위치 사용을 허용한 경우의 현재 위치. 가까운 순서를 기기
+            안에서 계산하며, 현재 위치를 운영팀 서버로 보내거나 저장하지 않습니다.
+          </li>
+          <li>
+            <strong>코스 따라가기</strong>: 진행률과 코스 이탈 여부를 계산하는 데 쓰는 현재 위치. 따라가기를 끝내거나
+            화면을 벗어나면 더 이상 쓰지 않습니다.
+          </li>
+          <li>
+            <strong>기록 카드</strong>: 이용자가 고른 사진과 만든 이미지. 저장과 공유는 이용자의 기기에서 이루어집니다.
+          </li>
+          <li>
+            <strong>방문 혜택 체크리스트</strong>: 항목별 체크 상태. 브라우저 저장소에 남으며, 브라우저에서 사이트
+            데이터를 삭제하면 지워집니다.
+          </li>
+        </Items>
+      </LegalSection>
+
+      <LegalSection section={S.children} level={level}>
+        <P>
+          서비스는 이용자의 나이를 확인하지 않으며, 14세 미만 아동의 개인정보를 알면서 수집하지 않습니다. 14세 미만
+          아동이 1:1 문의를 하려면 법정대리인이 대신 문의해 주세요. 14세 미만 아동이 보낸 문의임을 알게 되면 해당
+          개인정보를 지체 없이 파기합니다.
+        </P>
+      </LegalSection>
+
+      <LegalSection section={S.retention} level={level}>
+        <P>
+          운영팀은 법령에 따른 보유·이용 기간 또는 개인정보를 수집할 때 동의받은 보유·이용 기간 안에서 개인정보를
+          처리·보유합니다.
+        </P>
+        <Table
+          head={["구분", "보유 기간"]}
+          rows={[
+            [
+              "1:1 문의 (이메일, 문의 유형, 문의 내용)",
+              "문의 처리 완료 후 1년. 답변이 끝나지 않은 문의는 처리가 끝날 때까지 보유합니다.",
+            ],
+            [
+              "접속 IP 주소 (부정 이용 방지)",
+              "데이터베이스에 저장하지 않고 서버 메모리에서 최근 10분 동안의 요청 횟수를 세는 데에만 씁니다. 10분이 지난 기록은 이후 요청을 처리할 때 지우며, 서버를 다시 시작하면 모두 지워집니다.",
+            ],
+            [
+              "서버 접속 기록 (접속 IP 주소, 요청 일시, 요청 주소)",
+              "각 업체가 Hobby 요금제에서 제공하는 로그 보관 기간은 API 서버(Render) 7일, 웹사이트(Vercel) 1시간입니다.",
+            ],
+          ]}
+        />
+        <P>
+          다만 관계 법령 위반에 따른 수사·조사 등이 진행 중인 경우에는 해당 수사·조사가 끝날 때까지 보유합니다.
+        </P>
+      </LegalSection>
+
+      <LegalSection section={S.destruction} level={level}>
+        <Items ordered>
+          <li>
+            운영팀은 보유 기간이 지나거나 처리 목적을 달성해 개인정보가 필요 없게 되면 지체 없이 해당 개인정보를
+            파기합니다.
+          </li>
+          <li>
+            <strong>파기 절차</strong>: 보유 기간이 지난 1:1 문의는 데이터베이스의 예약 작업이 매일 자동으로 찾아
+            파기합니다. 서버 접속 기록은 각 업체가 정한 로그 보관 기간(4번)에 따라 처리됩니다.
+          </li>
+          <li>
+            <strong>파기 방법</strong>: 전자 파일 형태로 저장된 개인정보는 복구할 수 없도록 데이터베이스에서 삭제합니다.
+            운영팀은 개인정보가 담긴 데이터베이스를 따로 백업해 두지 않으며, 종이 문서로도 보관하지 않습니다.
+          </li>
+        </Items>
+      </LegalSection>
+
+      <LegalSection section={S.provision} level={level}>
+        <P>
+          운영팀은 개인정보를 제3자에게 제공하지 않습니다. 다만 정보주체가 별도로 동의한 경우나 법률에 특별한 규정이
+          있는 경우 등 「개인정보 보호법」 제17조 및 제18조에 해당하는 경우에는 제공할 수 있습니다.
+        </P>
+      </LegalSection>
+
+      <LegalSection section={S.outsourcing} level={level}>
+        <P>운영팀은 서비스 운영을 위해 다음과 같이 개인정보 처리업무를 위탁하고 있습니다.</P>
+        <Table
+          head={["위탁받는 자(수탁자)", "위탁하는 업무"]}
+          rows={[
+            ["Supabase, Inc.", "1:1 문의 정보를 보관하는 데이터베이스(클라우드) 운영"],
+            ["Vercel Inc.", "웹사이트 호스팅 (웹사이트 전송 과정에서 서버 접속 기록 처리)"],
+            ["Render Services, Inc.", "API 서버 운영 (1:1 문의 정보와 서버 접속 기록 처리)"],
+          ]}
+        />
+        <P>위탁하는 업무의 내용이나 수탁자가 바뀌면 지체 없이 이 개인정보처리방침을 통해 알리겠습니다.</P>
+        <P>
+          새 문의가 들어왔음을 운영팀에 알리는 메신저 알림에는 문의 번호, 문의 유형, 접수 시각만 담으며 이메일과 문의
+          내용은 담지 않습니다.
+        </P>
+      </LegalSection>
+
+      <LegalSection section={S.overseas} level={level}>
+        {/* Vercel·Render·Supabase는 미국 법인이고 Render에는 서울 리전이 없어(2026.9. 기준 오리건·오하이오·버지니아·
+          프랑크푸르트·싱가포르), 7번의 처리위탁이 국외 이전에 해당한다. 작성지침 Ⅲ-10의 기재 사항(근거, 항목, 국가,
+          시기·방법, 이전받는 자와 연락처, 목적, 보유 기간, 거부 방법)을 표로 적는다.
+          근거는 제28조의8제1항제3호가목(서비스 제공을 위한 처리위탁·보관 + 처리방침 공개)로 정했다. 웹사이트 접속만으로도
+          접속 기록이 이전되어 1:1 문의 동의(제1호)로는 모든 이전을 다룰 수 없기 때문이다. 1:1 문의 동의 안내에는
+          국외 이전 사실을 한 줄로 알린다(ContactPage). */}
+        <P>
+          운영팀은 7번의 처리업무 위탁에 따라 다음과 같이 개인정보를 국외로 이전하고 있으며, 「개인정보 보호법」
+          제28조의8제2항에 따라 다음과 같이 안내합니다.
+        </P>
+        <Table
+          head={["이전받는 자(연락처)", "이전 국가", "이전하는 항목", "이전 시기·방법", "이용 목적", "보유·이용 기간"]}
+          rows={[
+            [
+              "Vercel Inc. (privacy@vercel.com)",
+              "미국",
+              "서버 접속 기록(접속 IP 주소, 요청 일시, 요청 주소)",
+              "웹사이트에 접속할 때 네트워크를 통해 전송",
+              "웹사이트 호스팅",
+              "로그 보관 기간 1시간 (Hobby 요금제 기준)",
+            ],
+            [
+              "Render Services, Inc. (legal@render.com)",
+              // API 서버 리전은 DB(Supabase 서울)와 가장 가까운 싱가포르로 정했다. 리전을 바꾸면 여기도 고친다.
+              "싱가포르",
+              "1:1 문의 정보(이메일, 문의 유형, 문의 내용), 서버 접속 기록(접속 IP 주소, 요청 일시, 요청 주소)",
+              "서비스를 이용할 때 네트워크를 통해 전송",
+              "API 서버 운영",
+              "1:1 문의 정보는 요청을 처리한 뒤 저장하지 않음. 로그 보관 기간 7일 (Hobby 요금제 기준)",
+            ],
+            [
+              // 데이터는 서울 리전에 저장하지만, Supabase DPA는 Supabase와 하위 처리자가 시설을 둔 곳에서 처리될 수
+              // 있다고 정한다. 운영·지원을 위한 원격 접근 가능성을 보수적으로 국외 이전으로 적는다.
+              "Supabase, Inc. (privacy@supabase.com)",
+              "미국 (데이터는 대한민국 서울 지역 서버에 저장)",
+              "1:1 문의 정보(이메일, 문의 유형, 문의 내용, 접수·동의·처리 일시)",
+              "데이터베이스 운영과 장애 대응 등 기술 지원이 필요할 때 원격으로 접근",
+              "데이터베이스(클라우드) 운영과 기술 지원",
+              "1:1 문의 보유 기간(문의 처리 완료 후 1년)과 같음",
+            ],
+          ]}
+        />
+        <P>
+          법적 근거: 「개인정보 보호법」 제28조의8제1항제3호가목(서비스 제공을 위한 개인정보 처리위탁·보관으로서 이
+          개인정보처리방침에 공개)
+        </P>
+        <P>
+          국외 이전을 원하지 않으면 1:1 문의를 이용하지 않을 수 있습니다. 다만 웹사이트와 API 서버가 위 업체를 통해
+          운영되므로 국외 이전을 거부하면 서비스를 이용할 수 없습니다.
+        </P>
+      </LegalSection>
+
+      <LegalSection section={S.security} level={level}>
+        <P>운영팀은 개인정보의 안전성 확보를 위해 다음과 같은 조치를 하고 있습니다.</P>
+        <Items ordered>
+          <li>
+            <strong>관리적 조치</strong>: 개인정보에 접근할 수 있는 사람을 운영팀원 3명으로 제한
+          </li>
+          <li>
+            {/* HTTPS: Vercel·Render는 배포한 주소에 HTTPS 인증서를 자동으로 적용한다. 프론트가 API를 부를 때도
+              https 주소를 쓴다(coursesApi.ts의 https 올림 처리 참고). 배포 환경을 바꾸면 다시 확인한다. */}
+            <strong>기술적 조치</strong>: 데이터베이스 접속 정보를 코드와 분리해 관리, 데이터베이스 행 수준 보안(RLS)으로
+            외부에 공개된 접근 경로 차단, 반복 전송 제한, 보유 기간이 지난 개인정보 자동 파기, 암호화된 통신(HTTPS)으로
+            전송
+          </li>
+          <li>
+            <strong>물리적 조치</strong>: 개인정보를 수탁자(Supabase)가 관리하는 데이터센터에 저장
+          </li>
+        </Items>
+      </LegalSection>
+
+      <LegalSection section={S.autoCollect} level={level}>
+        <P>
+          운영팀은 쿠키 등 개인정보를 자동으로 수집하는 장치를 설치·운영하지 않으며, 광고나 이용 분석을 위해 제3자가
+          행태정보를 수집하도록 허용하지 않습니다.
+        </P>
+        <P>
+          방문 혜택 체크리스트의 체크 상태는 브라우저 저장소(localStorage)에 저장됩니다. 개인을 알아볼 수 있는 정보는
+          담지 않으며, 브라우저 설정에서 사이트 데이터를 삭제하면 지워집니다.
+        </P>
+        <P>
+          지도를 보여 주기 위해 카카오맵을 불러오며, 이 과정에서 카카오가 이용자의 접속 정보를 처리할 수 있습니다. 이에
+          대해서는 카카오의 개인정보처리방침이 적용됩니다.
+        </P>
+      </LegalSection>
+
+      <LegalSection section={S.rights} level={level}>
+        <Items ordered>
+          <li>
+            정보주체는 운영팀에 언제든지 개인정보 열람·정정·삭제·처리정지 및 동의 철회를 요구(이하 &lsquo;권리
+            행사&rsquo;)할 수 있습니다.
+          </li>
+          <li>
+            권리 행사는 아래 개인정보 보호책임자의 이메일이나 1:1 문의로 할 수 있으며, 운영팀은 요청을 받은 날부터 10일
+            이내에 회신합니다. 회원 기능이 없으므로 문의할 때 입력한 이메일로 본인인지 확인합니다.
+          </li>
+          <li>
+            법정대리인이나 위임을 받은 사람 등 대리인을 통해서도 권리를 행사할 수 있습니다. 이 경우 「개인정보 처리 방법에
+            관한 고시」 별지 제11호 서식에 따른 위임장을 제출해야 합니다.
+          </li>
+          <li>
+            개인정보 열람 및 처리정지 요구는 「개인정보 보호법」 제35조제4항 및 제37조제2항에 따라 제한될 수 있습니다.
+          </li>
+          <li>
+            위치 사용은 브라우저나 기기의 위치 권한 설정에서 언제든지 거부하거나 해제할 수 있습니다. 거부하면 가까운 순
+            정렬 없이 기본 순서로 목록을 보여 줍니다.
+          </li>
+        </Items>
+      </LegalSection>
+
+      <LegalSection section={S.officer} level={level}>
+        <P>
+          운영팀은 개인정보 처리 업무를 총괄하고 개인정보와 관련한 문의, 불만 처리, 피해 구제를 위해 아래와 같이 개인정보
+          보호책임자를 지정하고 있습니다.
+        </P>
+        <Items>
+          <li>성명: 유예성</li>
+          <li>역할: 팀장</li>
+          <li>연락처: yeseong.yys@gmail.com</li>
+        </Items>
+        <P>
+          서비스를 이용하며 생긴 개인정보 보호 관련 문의는 개인정보 보호책임자에게 연락하거나 1:1 문의로 보내 주세요.
+          지체 없이 답변하고 처리하겠습니다.
+        </P>
+      </LegalSection>
+
+      <LegalSection section={S.remedy} level={level}>
+        <P>
+          개인정보 침해로 인한 분쟁 해결이나 상담 등 피해 구제가 필요하면 아래 기관에 신고하거나 상담을 신청할 수
+          있습니다.
+        </P>
+        <Items>
+          <li>개인정보 분쟁조정위원회: (국번 없이) 1833-6972 (www.kopico.go.kr)</li>
+          <li>개인정보침해 신고센터: (국번 없이) 118 (privacy.kisa.or.kr)</li>
+          <li>경찰청: (국번 없이) 182 (ecrm.police.go.kr)</li>
+        </Items>
+      </LegalSection>
+
+      <LegalSection section={S.changes} level={level}>
+        <Items ordered>
+          <li>이 개인정보처리방침은 {EFFECTIVE_DATE}부터 적용됩니다.</li>
+          <li>
+            내용을 바꿀 때는 시행 전에 공지사항으로 알리고, 이전 개인정보처리방침은 적용 기간과 함께 이 페이지에서 볼 수
+            있게 하겠습니다.
+          </li>
+        </Items>
+      </LegalSection>
+    </div>
   );
 }

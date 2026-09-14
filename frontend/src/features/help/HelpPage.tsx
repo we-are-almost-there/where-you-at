@@ -11,6 +11,7 @@ const LINKS: HelpLink[] = [
   { label: "공지사항", to: "/notices" },
   { label: "자주 묻는 질문", to: "/faq" },
   { label: "이용약관", to: "/terms" },
+  // 명칭은 붙여 쓴 "개인정보처리방침"으로 통일한다. 페이지·팝업 제목, 1:1 문의·이용약관의 링크도 같은 표기를 쓴다.
   { label: "개인정보처리방침", to: "/privacy" },
   { label: "1:1 문의", to: "/contact" },
 ];

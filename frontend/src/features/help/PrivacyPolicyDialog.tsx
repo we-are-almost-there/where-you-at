@@ -87,7 +87,8 @@ export default function PrivacyPolicyDialog({ onClose, returnFocusRef }: Props) 
         {/* overscroll-contain: 본문 끝까지 스크롤한 뒤 계속 굴려도 뒤 페이지로 스크롤이 넘어가지 않게 한다. */}
         {/* 제목과 본문 사이 구분선이 없어 위 여백(pt-1)은 좁게 두고, 제목 줄 높이(h-14)가 간격을 대신한다. */}
         <div className="flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-1">
-          <PrivacyPolicyContent />
+          {/* 팝업 제목이 h2라 본문 항목 제목은 h3로 한 단계 낮춘다. */}
+          <PrivacyPolicyContent headingLevel={3} />
         </div>
       </div>
     </div>,
