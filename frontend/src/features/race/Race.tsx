@@ -46,9 +46,14 @@ export default function Race() {
     const isInternalSelection = pendingSelection !== null
       && pendingSelection.from === prevEventParam
       && pendingSelection.to === eventParam;
+    // eventId가 새로 "들어올" 때만 필터를 초기화한다(딥링크·외부 진입이
+    // 필터에 가려 안 보이는 문제 방지). eventId가 "사라질" 때(뒤로가기로
+    // 바텀시트를 닫는 경우 등)는 사용자가 상세만 닫으려던 것이므로
+    // 현재 뷰·필터를 그대로 유지한다.
+    const isArriving = eventParam !== null;
     setPrevEventParam(eventParam);
     setPendingSelection(null);
-    if (!isInternalSelection) {
+    if (isArriving && !isInternalSelection) {
       setViewMode("list");
       setActiveType(null);
       setKeyword("");

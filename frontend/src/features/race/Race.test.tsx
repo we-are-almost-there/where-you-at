@@ -215,3 +215,25 @@ it("데스크톱에서는 뒤로가기가 여러 번 조작을 거쳐도 페이�
   goBack();
   await waitFor(() => screen.getByText("홈"));
 });
+
+it("모바일에서 상세를 뒤로가기로 닫아도 뷰·필터는 유지된다", async () => {
+  mediaMatches = false;
+  await open("/race?keep=yes");
+
+  fireEvent.click(screen.getByRole("checkbox", { name: "예정된 대회만" }));
+  fireEvent.click(screen.getByRole("button", { name: "캘린더" }));
+  fireEvent.click(screen.getByRole("button", { name: "대회 A" }));
+  await waitFor(() => expect(screen.getByTestId("selected").textContent).toBe("1"));
+
+  // selectRace()를 거치지 않는 브라우저/제스처 뒤로가기
+  goBack();
+
+  await waitFor(() => expect(screen.getByTestId("selected").textContent).toBe("none"));
+  // 뷰 모드와 필터가 유지되어야 한다 — 캘린더 모드에서는 검색창이 없으므로
+  // 캘린더가 그대로 유지됐는지는 검색창 부재로, 필터는 체크박스로 확인한다.
+  expect(screen.queryByRole("searchbox")).toBeNull();
+  // 체크박스는 목록 뷰에서만 렌더되므로, 목록으로 전환(selectRace(null)만
+  // 거치는 내부 액션이라 upcomingOnly는 건드리지 않음)한 뒤 필터 유지를 확인한다.
+  fireEvent.click(screen.getByRole("button", { name: "목록" }));
+  expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
+});
