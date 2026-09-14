@@ -13,8 +13,6 @@ const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const MAX_VISIBLE_PER_DAY = 3;
 const MIN_CALENDAR_WEEKS = 5;
 
-// Date 객체를 로컬 타임존 기준 "YYYY-MM-DD"로 포맷.
-// toISOString()은 UTC 기준이라 KST(UTC+9)에서 하루가 밀리는 문제가 있어 사용하지 않는다.
 function formatDateKey(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -22,13 +20,12 @@ function formatDateKey(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-// 대회 하나가 여러 날짜(start_date~end_date)에 걸치면 그 기간의 모든 날짜에 표시
 function buildDateMap(races: Race[]): Map<string, Race[]> {
   const map = new Map<string, Race[]>();
   for (const race of races) {
     const start = parseLocalDate(race.start_date);
     const end = race.end_date ? parseLocalDate(race.end_date) : start;
-    if (end < start) continue; // 잘못된 데이터는 건너뛴다 (목록 뷰는 그대로 노출)
+    if (end < start) continue;
     const cursor = new Date(start);
     while (cursor <= end) {
       const key = formatDateKey(cursor);
@@ -47,11 +44,11 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
   const dateMap = useMemo(() => buildDateMap(races), [races]);
 
   const year = viewDate.getFullYear();
-  const month = viewDate.getMonth(); // 0-indexed
+  const month = viewDate.getMonth();
 
   const cells = useMemo(() => {
     const firstOfMonth = new Date(year, month, 1);
-    const startWeekday = firstOfMonth.getDay(); // 0=일
+    const startWeekday = firstOfMonth.getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     const weekCount = Math.max(MIN_CALENDAR_WEEKS, Math.ceil((startWeekday + daysInMonth) / 7));
@@ -72,14 +69,13 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
 
   return (
     <div className="w-full min-w-0 bg-white">
-      {/* 월 네비게이션 */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#ebe8f7] pb-3">
         <button
           type="button"
           onClick={goToday}
           title="이번 달로 이동"
           aria-label={`${year}년 ${month + 1}월, 이번 달로 이동`}
-          className="rounded text-left text-xl font-bold text-[#29235c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#6C5CE7]"
+          className="rounded text-left text-xl font-bold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           {year}년 {month + 1}월
         </button>
@@ -88,7 +84,7 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
             type="button"
             onClick={goPrevMonth}
             aria-label="이전 달"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#e2ddf5] text-sm text-gray-500 transition-colors hover:bg-[#f6f4fc] focus-visible:outline-2 focus-visible:outline-[#6C5CE7]"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#e2ddf5] text-sm text-gray-500 transition-colors hover:bg-[#f6f4fc] focus-visible:outline-2 focus-visible:outline-accent"
           >
             ‹
           </button>
@@ -96,21 +92,19 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
             type="button"
             onClick={goNextMonth}
             aria-label="다음 달"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#e2ddf5] text-sm text-gray-500 transition-colors hover:bg-[#f6f4fc] focus-visible:outline-2 focus-visible:outline-[#6C5CE7]"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#e2ddf5] text-sm text-gray-500 transition-colors hover:bg-[#f6f4fc] focus-visible:outline-2 focus-visible:outline-accent"
           >
             ›
           </button>
         </div>
       </div>
 
-      {/* 요일 헤더 */}
       <div className="grid grid-cols-7 py-2.5 text-center text-[11px] text-gray-500">
         {WEEKDAYS.map((w) => (
           <div key={w}>{w}</div>
         ))}
       </div>
 
-      {/* 데스크톱은 6주 높이를 확보하고, 모바일은 실제 주 수만큼만 표시한다. */}
       <div className="md:min-h-[775px]">
         <div className="grid auto-rows-[104px] grid-cols-7 gap-px border border-[#ebe8f7] bg-[#ebe8f7] md:auto-rows-[128px]">
           {cells.map(({ date, key }) => {
@@ -141,7 +135,7 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
                         type="button"
                         onClick={() => onSelectRace(race)}
                         aria-pressed={isSelected}
-                        className={`w-full min-w-0 shrink-0 truncate rounded-sm px-1.5 text-left text-[10px] font-medium leading-4 text-white transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#29235c] sm:text-[11px] md:leading-5 ${
+                        className={`w-full min-w-0 shrink-0 truncate rounded-sm px-1.5 text-left text-[10px] font-medium leading-4 text-white transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:text-[11px] md:leading-5 ${
                           selectedRaceId != null && !isSelected ? "opacity-40" : "opacity-100"
                         }`}
                         style={{

@@ -18,7 +18,6 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
     [races]
   );
 
-
   const { monthGroups, showYear } = useMemo(() => {
     const groups = new Map<string, { year: number; month: number; races: Race[] }>();
     for (const race of sorted) {
@@ -64,6 +63,7 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
           ) / 86_400_000) + 1;
           const isEnded = end.getTime() < today;
           const color = race.event_type ? EVENT_TYPE_COLOR[race.event_type] : "#9CA3AF";
+          const textColor = race.event_type === "cycling" ? "var(--color-race-cycling-text)" : color;
           const location = race.location_name?.replace(/\s*·\s*/g, " | ");
 
           return (
@@ -86,8 +86,8 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
                 <span
                   className={`flex h-14 w-16 shrink-0 flex-col items-center justify-center rounded-xl ${isEnded ? "bg-gray-100 text-gray-500" : ""}`}
                   style={isEnded ? undefined : {
-                    backgroundColor: `${color}12`,
-                    color: race.event_type === "cycling" ? "#008575" : color,
+                    backgroundColor: `color-mix(in srgb, ${color} 7%, transparent)`,
+                    color: textColor,
                   }}
                 >
                   <span className="text-xl font-bold leading-6 tabular-nums">
@@ -103,7 +103,7 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
                     {race.event_type && (
                       <span
                         className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${isEnded ? "bg-gray-100 text-gray-400" : ""}`}
-                        style={isEnded ? undefined : { backgroundColor: `${color}18`, color: race.event_type === "cycling" ? "#008575" : color }}
+                        style={isEnded ? undefined : { backgroundColor: `color-mix(in srgb, ${color} 9%, transparent)`, color: textColor }}
                       >
                         {EVENT_TYPE_LABEL[race.event_type]}
                       </span>
