@@ -22,7 +22,9 @@ vi.mock("./components/RaceCalendar", () => ({ default: ({ races, selectedRaceId,
 }) => <div><output data-testid="selected">{selectedRaceId ?? "none"}</output>{races.map((race) =>
   <button key={race.event_id} onClick={() => onSelectRace(race)}>{race.race_title}</button>
 )}</div> }));
-vi.mock("./components/RaceDetailSheet", () => ({ default: () => null }));
+vi.mock("./components/RaceDetailSheet", () => ({ default: ({ onClose }: { onClose: () => void }) =>
+  <button onClick={onClose}>상세 닫기</button>
+}));
 
 const scroll = vi.fn();
 let mediaMatches = true;
@@ -132,7 +134,7 @@ it("모바일에서는 선택·닫기마다 history entry가 쌓이고 뒤로가
   await waitFor(() => expectSearchParams({ eventId: "2", keep: "yes" }));
   expect(screen.getByTestId("selected").textContent).toBe("2");
 
-  fireEvent.click(screen.getByRole("button", { name: "대회 B" })); // 닫기
+  fireEvent.click(screen.getByRole("button", { name: "상세 닫기" }));
   await waitFor(() => expectSearchParams({ keep: "yes" }));
   expect(screen.getByTestId("selected").textContent).toBe("none");
 
