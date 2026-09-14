@@ -9,12 +9,40 @@ from app.crud import nearby
 
 
 class TestEmptyCache(unittest.TestCase):
-    def make_conn(self, empty_hit=False):
+    def make_conn(self, empty_hit=False, has_route=True):
         conn = MagicMock()
         cursor = conn.cursor.return_value.__enter__.return_value
         cursor.fetchall.return_value = []
-        cursor.fetchone.return_value = (1,) if empty_hit else None
+        cursor.fetchone.side_effect = lambda: (
+            ((1,) if has_route else None)
+            if "FROM course_waypoint" in cursor.execute.call_args.args[0]
+            else ((1,) if empty_hit else None)
+        )
         return conn, cursor
+
+    def test_missing_route_does_not_cache_empty_result(self):
+        for category in ("attraction", "restaurant", "accommodation", "bicycle"):
+            for route in ("trail", "bicycle"):
+                with self.subTest(category=category, route=route):
+                    conn, cursor = self.make_conn(has_route=False)
+                    fetch = "_fetch_bicycle_live" if category == "bicycle" else "_fetch_live"
+                    with (
+                        patch.object(nearby, fetch, return_value=[]),
+                        patch.object(nearby, "execute_values") as insert,
+                    ):
+                        total, rows, _ = nearby.list_nearby_spots(
+                            conn, 5, category, route, strict_cache=True,
+                        )
+                    self.assertEqual((total, rows), (0, []))
+                    self.assertEqual(cursor.execute.call_args.args[1], {
+                        "course_id": 5, "route_type": route,
+                    })
+                    insert.assert_not_called()
+                    conn.commit.assert_not_called()
+                    self.assertFalse(any(
+                        call.args[0] == nearby._DELETE_STALE_CACHE_SQL
+                        for call in cursor.execute.call_args_list
+                    ))
 
     def test_empty_hit_skips_live_query_and_does_not_extend_ttl(self):
         for category in ("attraction", "restaurant", "accommodation", "bicycle"):

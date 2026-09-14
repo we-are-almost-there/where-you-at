@@ -58,7 +58,7 @@ def warm_course(conn, course_id: int) -> None:
             )
 
             if total == 0:
-                result = "빈 결과 캐시 조회 또는 생성 완료: 0건 (유효기간 30일)"
+                result = "조회 완료: 0건 (경로가 없으면 빈 결과 캐시를 생성하지 않음)"
             else:
                 result = f"캐시 조회 또는 생성 완료: {total}건"
 

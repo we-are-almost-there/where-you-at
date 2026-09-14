@@ -4,7 +4,8 @@ import { SpotCard } from "./components/SpotCard";
 import { SpotDetailSheet } from "./components/SpotDetailSheet";
 import { getNearbySpots } from "./nearbyApi";
 import type { NearbySpot, SpotCategory } from "./types";
-import { ErrorNotice, CONNECTION_ERROR_TITLE, CONNECTION_ERROR_DESC } from "../map/components/ErrorNotice";
+import { ErrorNotice } from "../map/components/ErrorNotice";
+import { toUserError, type UserError } from "../../components/error/userError";
 
 interface NearbyProps {
   courseId: number;
@@ -119,7 +120,9 @@ interface SpotListState {
   loading: boolean;
   loadingMore: boolean;
   exhausted: boolean;
-  error: string | null;
+  error: UserError | null;
+  failedLoad?: "first" | "more";
+
 }
 
 const MAX_AUTO_RESTARTS = 3;
@@ -174,7 +177,7 @@ function SpotList({
   const updateState = useCallback((patch: Partial<SpotListState>) => {
     const next = { ...stateRef.current, ...patch };
     stateRef.current = next;
-    setState(next); 
+    setState(next);
   }, []);
 
   const loadFirstPage = useCallback(async () => {
@@ -196,6 +199,7 @@ function SpotList({
       loadingMore: false,
       exhausted: false,
       error: null,
+      failedLoad: undefined,
     });
 
     try {
@@ -229,10 +233,9 @@ function SpotList({
       if (error instanceof DOMException && error.name === "AbortError") return;
 
       updateState({
-        error:
-          error instanceof Error
-            ? error.message
-            : "주변 정보를 불러오지 못했어요.",
+        error: toUserError(error, "주변 정보를 불러오지 못했어요"),
+        failedLoad: "first",
+
       });
     } finally {
       if (generation === generationRef.current) {
@@ -303,7 +306,9 @@ function SpotList({
       if (result.listVersion !== expectedVersion) {
         if (autoRestartsRef.current >= MAX_AUTO_RESTARTS) {
           updateState({
-            error: "목록이 계속 변경되고 있어요. 다시 불러와 주세요.",
+            error: { title: "목록이 계속 변경되고 있어요", description: "다시 불러와 주세요." },
+            failedLoad: "first",
+
           });
           return;
         }
@@ -333,10 +338,9 @@ function SpotList({
       if (error instanceof DOMException && error.name === "AbortError") return;
 
       updateState({
-        error:
-          error instanceof Error
-            ? error.message
-            : "주변 정보를 더 불러오지 못했어요.",
+        error: toUserError(error, "주변 정보를 더 불러오지 못했어요"),
+        failedLoad: "more",
+
       });
     } finally {
       if (generation === generationRef.current) {
@@ -394,7 +398,12 @@ function SpotList({
     if (inFlightRef.current) return;
 
     autoRestartsRef.current = 0;
-    void loadFirstPage();
+    if (stateRef.current.failedLoad === "more") {
+      updateState({ error: null, failedLoad: undefined });
+      void loadMore();
+    } else {
+      void loadFirstPage();
+    }
   };
 
   if (state.loading) {
@@ -429,16 +438,8 @@ function SpotList({
       {state.error !== null ? (
         <div role="alert">
           <ErrorNotice
-            title={
-              state.error === `${CONNECTION_ERROR_TITLE}. 잠시 후 다시 시도해 주세요.`
-                ? CONNECTION_ERROR_TITLE
-                : "주변 정보를 불러오지 못했어요"
-            }
-            description={
-              state.error === `${CONNECTION_ERROR_TITLE}. 잠시 후 다시 시도해 주세요.`
-                ? CONNECTION_ERROR_DESC
-                : state.error
-            }
+            title={state.error.title}
+            description={state.error.description}
             onRetry={retry}
             onBack={onBack}
           />

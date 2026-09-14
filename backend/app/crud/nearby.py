@@ -144,7 +144,7 @@ def _refresh_cache(
 ) -> None:
     """기존 캐시를 교체한다. 장소 목록과 정상 조회의 빈 결과 모두 30일 보관한다.
 
-    0건이면 기존 테이블에 예약 ID의 표시 행 하나를 저장한다. distance_km=0은
+    경로가 있고 0건이면 기존 테이블에 예약 ID의 표시 행 하나를 저장한다. distance_km=0은
     필수 컬럼을 채우는 값이며, 빈 결과 여부는 거리 대신 예약 ID로 판별한다.
 
     DB 오류 시 로그를 남기고 연결 전체의 롤백을 시도한다.
@@ -162,6 +162,17 @@ def _refresh_cache(
 
     try:
         with conn.cursor() as cur:
+            if not rows:
+                # 경로 미수집은 정상적인 주변 정보 0건 결과와 구분한다.
+                cur.execute(
+                    """SELECT 1 FROM course_waypoint
+                    WHERE course_id = %(course_id)s AND route_type = %(route_type)s
+                        AND lat IS NOT NULL AND lng IS NOT NULL
+                    LIMIT 1""",
+                    {"course_id": course_id, "route_type": route_type},
+                )
+                if cur.fetchone() is None:
+                    return
             cur.execute(
                 _DELETE_STALE_CACHE_SQL,
                 {
@@ -246,7 +257,8 @@ def _get_rows(
     거리와 목록 포함 여부는 캐시 생성 시점 기준이며, 소요시간은 해당 거리로 계산한다.
     원본 좌표나 코스 경로가 변경돼도 캐시를 무효화·재생성하지 않으면
     만료 전까지 기존 거리와 목록이 유지될 수 있다.
-    정상 조회 결과가 0개이면 같은 테이블의 표시 행으로 30일간 빈 결과를 반환한다.
+    경로가 있고 정상 조회 결과가 0개이면 표시 행으로 30일간 빈 결과를 반환한다.
+    경로가 아직 없는 경우에는 빈 결과를 저장하지 않는다.
     원본 변경 시 자동 무효화하지 않으며, 만료 또는 수동 재생성 때 다시 조회한다.
     """
     if category == "bicycle":

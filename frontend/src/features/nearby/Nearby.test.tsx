@@ -131,6 +131,37 @@ afterEach(() => {
 });
 
 describe("Nearby 무한 스크롤", () => {
+  it("추가 로딩 재시도는 실패한 페이지를 다시 요청하고 목록과 선택을 유지한다", async () => {
+    const pending = deferred<NearbySpotsPage>();
+    api
+      .mockResolvedValueOnce(makePage(["A"]))
+      .mockResolvedValueOnce(makePage(["B"]))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockReturnValueOnce(pending.promise);
+    const nearbyRef = createRef<NearbyHandle>();
+    const onSelectedChange = vi.fn();
+    await act(async () => {
+      render(<Nearby ref={nearbyRef} courseId={1} category="attraction"
+        onCategoryChange={() => {}} onSelectedChange={onSelectedChange} />);
+    });
+    await scrollToEnd();
+    act(() => nearbyRef.current?.selectSpotById("B"));
+    const selectionCalls = onSelectedChange.mock.calls.length;
+    const firstCard = screen.getAllByTestId("spot")[0];
+    await scrollToEnd();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    });
+    expect(visibleIds()).toEqual(["A", "B"]);
+    expect(screen.getAllByTestId("spot")[0]).toBe(firstCard);
+    await scrollToEnd(3);
+    expect(api.mock.calls.map((call) => call[3])).toEqual([1, 2, 3, 3]);
+    await act(async () => pending.resolve(makePage(["C"])));
+    expect(visibleIds()).toEqual(["A", "B", "C"]);
+    expect(onSelectedChange).toHaveBeenCalledTimes(selectionCalls);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("연결 오류에 공통 안내와 재시도·목록 이동 버튼을 표시한다", async () => {
     api.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     const onBack = vi.fn();

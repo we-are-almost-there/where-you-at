@@ -196,6 +196,12 @@ export function CourseDetail() {
   // 일시정지도 세션이 살아 있는 상태다. 멈춘 사이에 코스나 진행 방향을 갈아타면
   // 이미 쌓인 기록·진행률과 어긋나므로, 그런 조작은 tracking/paused를 가리지 않고 잠근다.
   const sessionActive = trackingStatus !== "idle";
+  const confirmLeave = () => !sessionActive || window.confirm(
+    "이 화면을 나가면 지금까지의 따라가기 기록이 사라집니다. 이동할까요?",
+  );
+  const backToCourses = () => {
+    if (confirmLeave()) navigate("/courses");
+  };
   const [waypoints, setWaypoints] = useState<LatLng[]>([]);
   const [startAddress, endAddress] = useEndpointAddresses(waypoints);
   const [direction, setDirection] = useState<Direction>("forward"); // 기본 정방향, 토글로 역방향
@@ -668,18 +674,18 @@ export function CourseDetail() {
             <ErrorNotice
               title="잘못된 코스예요"
               description="존재하지 않는 코스 주소예요."
-              onBack={() => navigate("/courses")}
+              onBack={backToCourses}
             />
           ) : error?.kind === "not-found" ? (
             // 없는 코스(404) — 다시 시도해도 같으니 목록으로만
-            <ErrorNotice title="코스를 찾을 수 없어요" onBack={() => navigate("/courses")} />
+            <ErrorNotice title="코스를 찾을 수 없어요" onBack={backToCourses} />
           ) : error?.kind === "request" ? (
             // 조회 실패(연결/서버) — 재시도 + 목록으로
             <ErrorNotice
               title={error.value.title}
               description={error.value.description}
               onRetry={retry}
-              onBack={() => navigate("/courses")}
+              onBack={backToCourses}
             />
           ) : !detail ? null : (
             <>
@@ -695,7 +701,7 @@ export function CourseDetail() {
                   이 버튼이 모바일·데스크톱 공통으로 유일한 뒤로 이동 수단이라 md:hidden 없이 항상 노출된다. */}
                 <button
                   type="button"
-                  onClick={() => navigate(-1)}
+                  onClick={() => { if (confirmLeave()) navigate(-1); }}
                   aria-label="뒤로"
                   className="cursor-pointer text-[20px] leading-none text-ink"
                 >
@@ -797,7 +803,7 @@ export function CourseDetail() {
                       routeType={routeType === "자전거" ? "bicycle" : "trail"}
                       category={parseCategoryParam(searchParams)}
                       onCategoryChange={changeCategory}
-                      onBack={() => navigate("/courses")}
+                      onBack={backToCourses}
                       onSpotsChange={setNearbySpots}
                       onSelectedChange={(spot) => setSelectedNearbySpotId(spot?.id ?? null)}
                     />
