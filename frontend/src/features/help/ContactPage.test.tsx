@@ -5,7 +5,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HttpError } from "../../components/error/userError";
+import { HttpError, NetworkError } from "../../lib/http";
 import ContactPage from "./ContactPage";
 import { createInquiry } from "./helpApi";
 
@@ -88,7 +88,7 @@ describe("ContactPage", () => {
   });
 
   it("연결에 실패하면 공통 연결 오류 안내를 보여준다", async () => {
-    mockedCreate.mockRejectedValue(new TypeError("Failed to fetch"));
+    mockedCreate.mockRejectedValue(new NetworkError(new TypeError("Failed to fetch")));
     renderPage();
 
     fillValidForm();

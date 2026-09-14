@@ -5,7 +5,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HttpError } from "../../components/error/userError";
+import { HttpError, NetworkError } from "../../lib/http";
 import NoticeDetail from "./NoticeDetail";
 import { fetchNotice } from "./helpApi";
 
@@ -57,7 +57,7 @@ describe("NoticeDetail", () => {
   });
 
   it("연결에 실패하면 다시 시도와 목록으로를 함께 보여준다", async () => {
-    mockedFetch.mockRejectedValue(new TypeError("Failed to fetch"));
+    mockedFetch.mockRejectedValue(new NetworkError(new TypeError("Failed to fetch")));
 
     renderAt("/notices/5");
 

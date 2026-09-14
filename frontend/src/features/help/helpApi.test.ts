@@ -3,10 +3,10 @@
 // 테스트 범위: 요청 주소·본문과 에러 종류 보존에 한정한다.
 //   - 목록은 page·per_page를 쿼리로 보낸다 (서버 쿼리 이름은 per_page, 화면 쪽 이름은 perPage)
 //   - 404면 status가 담긴 HttpError (공지 상세가 "찾을 수 없어요"를 고르는 근거)
-//   - fetch가 TypeError로 실패하면 그대로 TypeError (toUserError가 연결 실패로 판별하는 근거)
+//   - fetch가 연결에 실패하면 NetworkError (toUserError가 연결 실패로 판별하는 근거)
 //   - 문의 접수는 JSON으로 POST하고, 429면 status가 담긴 HttpError (문의 폼이 안내를 고르는 근거)
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HttpError } from "../../components/error/userError";
+import { HttpError, NetworkError } from "../../lib/http";
 import { createInquiry, fetchFaqs, fetchNotice, fetchNotices } from "./helpApi";
 
 afterEach(() => {
@@ -42,10 +42,10 @@ describe("fetchNotice", () => {
 });
 
 describe("fetchFaqs", () => {
-  it("fetch가 TypeError로 실패하면 TypeError를 그대로 throw한다", async () => {
+  it("fetch가 TypeError로 실패하면 NetworkError를 throw한다", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
 
-    await expect(fetchFaqs()).rejects.toBeInstanceOf(TypeError);
+    await expect(fetchFaqs()).rejects.toBeInstanceOf(NetworkError);
   });
 });
 

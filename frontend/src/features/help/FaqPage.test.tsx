@@ -5,6 +5,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NetworkError } from "../../lib/http";
 import FaqPage from "./FaqPage";
 import { fetchFaqs } from "./helpApi";
 
@@ -76,7 +77,7 @@ describe("FaqPage", () => {
   });
 
   it("조회에 실패하면 에러를 보여주고, 다시 시도하면 다시 요청한다", async () => {
-    mockedFetch.mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValueOnce([]);
+    mockedFetch.mockRejectedValueOnce(new NetworkError(new TypeError("Failed to fetch"))).mockResolvedValueOnce([]);
 
     renderPage();
 
