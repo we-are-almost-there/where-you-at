@@ -152,17 +152,34 @@ describe("ContactPage", () => {
     expect(screen.getByText(/^10자 ·/)).toBeTruthy();
   });
 
-  it("이모지 2000자는 보낼 수 있고, 2001자는 2000자로 잘린다", () => {
+  it("이모지 2000자는 보낼 수 있고, 2001자는 넘친 글자 수를 알리며 보내기를 막는다", () => {
     renderPage();
     fillValidForm();
+    const textarea = () => screen.getByLabelText("문의 내용") as HTMLTextAreaElement;
 
-    fireEvent.change(screen.getByLabelText("문의 내용"), { target: { value: "😀".repeat(2000) } });
+    fireEvent.change(textarea(), { target: { value: "😀".repeat(2000) } });
     expect(screen.getByText(/^2000자 ·/)).toBeTruthy();
+    expect(textarea().getAttribute("aria-invalid")).toBe("false");
     expect(submitButton().disabled).toBe(false);
 
-    fireEvent.change(screen.getByLabelText("문의 내용"), { target: { value: "😀".repeat(2001) } });
-    const value = (screen.getByLabelText("문의 내용") as HTMLTextAreaElement).value;
-    expect([...value]).toHaveLength(2000);
+    fireEvent.change(textarea(), { target: { value: "😀".repeat(2001) } });
+    expect(screen.getByText("2001자 · 2000자를 1자 넘었어요")).toBeTruthy();
+    expect(textarea().getAttribute("aria-invalid")).toBe("true");
+    expect(submitButton().disabled).toBe(true);
+
+    fireEvent.change(textarea(), { target: { value: "😀".repeat(2000) } });
     expect(submitButton().disabled).toBe(false);
+  });
+
+  // 넘친 글자를 잘라 내면 가운데에 입력한 글자는 남고 끝 글자가 지워진다. 입력은 건드리지 않아야 한다.
+  it("2000자 글의 가운데에 입력해도 끝 글자를 지우지 않는다", () => {
+    renderPage();
+    const textarea = () => screen.getByLabelText("문의 내용") as HTMLTextAreaElement;
+
+    const value = `${"가".repeat(1000)}나${"가".repeat(999)}끝`;
+    fireEvent.change(textarea(), { target: { value } });
+
+    expect(textarea().value).toBe(value);
+    expect(textarea().value.endsWith("끝")).toBe(true);
   });
 });

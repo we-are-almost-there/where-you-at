@@ -67,6 +67,7 @@ export default function ContactPage() {
   const contentLength = countChars(content.trim());
   const emailValid = trimmedEmail.length <= EMAIL_MAX && EMAIL_PATTERN.test(trimmedEmail);
   const contentValid = contentLength >= CONTENT_MIN && contentLength <= CONTENT_MAX;
+  const contentOver = contentLength - CONTENT_MAX;
   const submitting = state.status === "submitting";
   const canSubmit = category !== "" && emailValid && contentValid && agreed && !submitting;
 
@@ -186,17 +187,21 @@ export default function ContactPage() {
             placeholder="어떤 화면에서 어떤 점이 궁금하거나 잘못되었는지 적어 주시면 더 빨리 확인할 수 있어요."
             value={content}
             // maxLength는 UTF-16 단위라 이모지를 2자로 세서 서버 기준보다 일찍 입력을 막는다.
-            // 대신 서버와 같은 코드 포인트 기준으로 직접 자른다. 코드 포인트 수는 length보다 크지 않으므로
-            // length가 넘을 때만 잘라 본다.
-            onChange={(e) => {
-              const value = e.target.value;
-              setContent(value.length > CONTENT_MAX ? [...value].slice(0, CONTENT_MAX).join("") : value);
-            }}
+            // 넘친 글자를 잘라 내면 가운데에 입력했을 때 끝 글자가 지워지므로, 입력은 그대로 두고
+            // 넘친 글자 수를 알려 주며 보내기 버튼을 끈다(canSubmit).
+            onChange={(e) => setContent(e.target.value)}
+            aria-invalid={contentOver > 0}
             aria-describedby="inquiry-content-count"
             className={`${INPUT_CLASS} resize-y leading-relaxed`}
           />
-          <p id="inquiry-content-count" className="text-right text-[12px] text-caption">
-            {contentLength}자 · {CONTENT_MIN}자 이상 {CONTENT_MAX}자 이하
+          {/* 이메일 안내와 같이 오류용 빨간색 대신 강조색(accent)으로 알린다. */}
+          <p
+            id="inquiry-content-count"
+            className={`text-right text-[12px] ${contentOver > 0 ? "text-accent" : "text-caption"}`}
+          >
+            {contentOver > 0
+              ? `${contentLength}자 · ${CONTENT_MAX}자를 ${contentOver}자 넘었어요`
+              : `${contentLength}자 · ${CONTENT_MIN}자 이상 ${CONTENT_MAX}자 이하`}
           </p>
         </div>
 
