@@ -169,7 +169,7 @@ export default function Race() {
           {/* 캘린더에서 선택해도 목록으로 전환해 동일한 상세 UI를 사용한다. */}
           <div className="w-full min-w-0">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h1 className="font-bold text-ink text-[20px]">대회·행사 일정</h1>
+              <h1 className="font-bold text-ink text-[20px]">대회 행사 일정</h1>
               {!isLoading && !error && (
                 <p className="shrink-0 text-[20px] font-bold tabular-nums text-ink" aria-live={keyword.trim() ? "off" : "polite"} aria-atomic="true">
                   {filteredRaces.length.toLocaleString("ko-KR")}개
