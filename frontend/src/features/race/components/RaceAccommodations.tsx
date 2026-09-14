@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { fetchNearbyAccommodations, type NearbyAccommodation } from "../raceApi";
 
+const ACCOMMODATIONS_PAGE_SIZE = 5;
+
 export default function RaceAccommodations({ eventId, hasLocation }: {
   eventId: number;
   hasLocation: boolean;
@@ -8,6 +10,16 @@ export default function RaceAccommodations({ eventId, hasLocation }: {
   const [items, setItems] = useState<NearbyAccommodation[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(ACCOMMODATIONS_PAGE_SIZE);
+
+  // 대회가 바뀌거나 재시도할 때는 더보기로 늘려둔 개수를 초기 5개로 되돌린다.
+  // useEffect의 setState는 연쇄 렌더링을 유발해 지양하고, 렌더 중 조건부 계산으로 처리한다.
+  const resetKey = `${eventId}:${attempt}`;
+  const [prevResetKey, setPrevResetKey] = useState(resetKey);
+  if (prevResetKey !== resetKey) {
+    setPrevResetKey(resetKey);
+    setVisibleCount(ACCOMMODATIONS_PAGE_SIZE);
+  }
 
   useEffect(() => {
     if (!hasLocation) return;
@@ -44,19 +56,32 @@ export default function RaceAccommodations({ eventId, hasLocation }: {
       ) : items.length === 0 ? (
         <p role="status" className="text-sm text-gray-500">반경 5km 내 등록된 숙박시설이 없어요.</p>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {items.map((item) => (
-            <li key={item.content_id} className="rounded-lg border border-divider p-3">
-              <div className="flex items-start justify-between gap-3">
-                <p className="min-w-0 break-words text-sm font-semibold text-ink">{item.tour_spot_title}</p>
-                <span className="shrink-0 text-xs text-gray-500">
-                  직선 {item.distance_km < 1 ? `${Math.round(item.distance_km * 1000)}m` : `${item.distance_km.toFixed(1)}km`}
-                </span>
-              </div>
-              <p className="mt-1 break-words text-xs text-gray-500">{item.addr1 || "주소 정보 없음"}</p>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="flex flex-col gap-2">
+            {items.slice(0, visibleCount).map((item) => (
+              <li key={item.content_id} className="rounded-lg border border-divider p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 break-words text-sm font-semibold text-ink">{item.tour_spot_title}</p>
+                  <span className="shrink-0 text-xs text-gray-500">
+                    직선 {item.distance_km < 1 ? `${Math.round(item.distance_km * 1000)}m` : `${item.distance_km.toFixed(1)}km`}
+                  </span>
+                </div>
+                <p className="mt-1 break-words text-xs text-gray-500">{item.addr1 || "주소 정보 없음"}</p>
+              </li>
+            ))}
+          </ul>
+          {visibleCount < items.length && (
+            <div className="mt-2 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setVisibleCount((count) => Math.min(count + ACCOMMODATIONS_PAGE_SIZE, items.length))}
+                className="text-xs text-gray-500 underline underline-offset-2 hover:text-gray-700 focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                더보기
+              </button>
+            </div>
+          )}
+        </>
       )}
     </section>
   );
