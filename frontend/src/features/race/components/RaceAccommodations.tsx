@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { fetchNearbyAccommodations, type NearbyAccommodation } from "../raceApi";
 
 const ACCOMMODATIONS_PAGE_SIZE = 5;
@@ -10,15 +11,15 @@ export default function RaceAccommodations({ eventId, hasLocation }: {
   const [items, setItems] = useState<NearbyAccommodation[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [visibleCount, setVisibleCount] = useState(ACCOMMODATIONS_PAGE_SIZE);
+  const [expanded, setExpanded] = useState(false);
 
-  // 대회가 바뀌거나 재시도할 때는 더보기로 늘려둔 개수를 초기 5개로 되돌린다.
+  // 대회가 바뀌거나 재시도할 때는 목록을 초기 5개로 접는다.
   // useEffect의 setState는 연쇄 렌더링을 유발해 지양하고, 렌더 중 조건부 계산으로 처리한다.
   const resetKey = `${eventId}:${attempt}`;
   const [prevResetKey, setPrevResetKey] = useState(resetKey);
   if (prevResetKey !== resetKey) {
     setPrevResetKey(resetKey);
-    setVisibleCount(ACCOMMODATIONS_PAGE_SIZE);
+    setExpanded(false);
   }
 
   useEffect(() => {
@@ -57,8 +58,8 @@ export default function RaceAccommodations({ eventId, hasLocation }: {
         <p role="status" className="text-sm text-gray-500">반경 5km 내 등록된 숙박시설이 없어요.</p>
       ) : (
         <>
-          <ul className="flex flex-col gap-2">
-            {items.slice(0, visibleCount).map((item) => (
+          <ul id={`race-stays-list-${eventId}`} className="flex flex-col gap-2">
+            {items.slice(0, expanded ? items.length : ACCOMMODATIONS_PAGE_SIZE).map((item) => (
               <li key={item.content_id} className="rounded-lg border border-divider p-3">
                 <div className="flex items-start justify-between gap-3">
                   <p className="min-w-0 break-words text-sm font-semibold text-ink">{item.tour_spot_title}</p>
@@ -70,14 +71,17 @@ export default function RaceAccommodations({ eventId, hasLocation }: {
               </li>
             ))}
           </ul>
-          {visibleCount < items.length && (
-            <div className="mt-2 flex justify-center">
+          {items.length > ACCOMMODATIONS_PAGE_SIZE && (
+            <div className="mt-3">
               <button
                 type="button"
-                onClick={() => setVisibleCount((count) => Math.min(count + ACCOMMODATIONS_PAGE_SIZE, items.length))}
-                className="text-xs text-gray-500 underline underline-offset-2 hover:text-gray-700 focus-visible:outline-2 focus-visible:outline-accent"
+                aria-expanded={expanded}
+                aria-controls={`race-stays-list-${eventId}`}
+                onClick={() => setExpanded((value) => !value)}
+                className="flex min-h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-divider bg-white px-4 py-1.5 text-sm font-semibold text-gray-500 transition-colors hover:text-gray-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
-                더보기
+                {expanded ? "접기" : "더보기"}
+                <ChevronDown aria-hidden="true" size={20} className={`transition-transform motion-reduce:transition-none ${expanded ? "rotate-180" : ""}`} />
               </button>
             </div>
           )}
