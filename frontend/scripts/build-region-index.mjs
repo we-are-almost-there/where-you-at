@@ -1,10 +1,14 @@
 // public/region-index.json 생성기
 //
-// 지도 도형(korea-all-regions.json)과 DB의 지역 코드는 코드 체계가 다르다.
-//   - korea-all-regions.json : 통계청(KOSTAT) 시군구 코드 (강진군 36590)
-//   - DB region 테이블       : 법정동 기반 프로젝트 코드 (강진군 12780)
-// 둘을 (시도, 시군구 이름)으로 이어 대응표를 만든다. 시도는 도형 내부점이
-// 어느 시도 폴리곤에 들어가는지로 구한다 — 이름만으로는 '중구'가 6곳이라 갈리지 않는다.
+// 지도 도형(korea-all-regions.json)을 (시도, 시군구 이름)으로 DB 지역에 이어 대응표를 만든다.
+// 시도는 도형 내부점이 어느 시도 폴리곤에 들어가는지로 구한다 — 이름만으로는 '중구'가 6곳이라
+// 갈리지 않는다.
+//
+// 도형의 sgg_code와 DB region_code는 둘 다 행안부 시군구 코드다(강진군 12780). 도형 파일은
+// 원래 SGIS 원본의 통계청 코드(강진군 36590)를 달고 있어 이 대응표가 코드를 바꿔 주는 역할을
+// 했는데, 2026년 인천 개편을 반영하면서 도형 코드를 행안부 코드로 맞췄다
+// (scripts/splice-incheon-2026.mjs). 지금은 코드와 이름이 같은 지역을 가리키는지 확인하는
+// 역할이고, 어긋나면 실패한다.
 //
 // 이 표가 있어야 지도가 "정적 지원지역 파일에 있는 지역"이 아니라
 // "DB에 등록된 모든 지역"을 색칠 대상으로 다룰 수 있다.
@@ -37,6 +41,11 @@ const CHECK_ONLY = process.argv.includes("--check");
 
 // 폴리곤 파일의 표기가 DB와 다른 경우. 행정 개편이 아니라 단순 표기 차이만 여기 둔다.
 const NAME_ALIAS = { 세종시: "세종특별자치시" };
+
+// DB 지역에 잇지 못해도 빌드를 통과시킬 도형의 sgg_code. 원칙적으로 비워 둔다 — 행정 개편이
+// DB에 먼저 들어가 도형 교체가 늦어질 때만, 교체할 때까지 임시로 적는다. 교체 후에도 남아
+// 있으면(이미 매칭되면) 실패하므로 목록이 낡지 않는다.
+const KNOWN_UNMATCHED = new Set([]);
 
 const polysOf = (g) =>
   g.type === "MultiPolygon" ? g.coordinates : g.type === "Polygon" ? [g.coordinates] : [];
@@ -202,14 +211,18 @@ function sidoCodeOf(point) {
 
 const byShape = {};
 const unmatched = [];
+// 코드가 가리키는 지역과 (시도, 이름)이 가리키는 지역이 다른 도형. 도형 파일에 다른 코드 체계가
+// 섞였거나 이름·코드 중 하나만 고친 경우다.
+const mismatched = [];
 for (const f of all.features) {
   const sgg = String(f.properties.sgg_code);
   const raw = String(f.properties.name);
   const name = NAME_ALIAS[raw] ?? raw;
   const sc = sidoCodeOf(interiorPoint(f.geometry));
   const hit = sc ? byKey.get(`${sc}|${name}`) : undefined;
-  if (hit) byShape[sgg] = hit;
-  else unmatched.push({ sgg, name: raw, sidoCode: sc });
+  if (!hit) unmatched.push({ sgg, name: raw, sidoCode: sc });
+  else if (hit !== sgg) mismatched.push({ sgg, name: raw, hit });
+  else byShape[sgg] = hit;
 }
 
 const mapped = new Set(Object.values(byShape));
@@ -237,23 +250,39 @@ const nameOf = new Map(db.map((r) => [r.code, displayName(r)]));
 const missing = [...reachable].filter((c) => !mapped.has(c)).sort();
 
 console.log(`도형 ${all.features.length}개 → 매칭 ${Object.keys(byShape).length}개`);
-// 미매칭은 실패로 보지 않는다. 지금 3건은 전부 인천의 옛 경계다 — DB는 중구·동구를
-// 제물포구·영종구로, 서구를 서해구·검단구로 나눈 개편을 반영했는데 도형 파일은 개편
-// 전이다. 셋 다 인구감소지역이 아니고 어느 시드에도 없어 제도가 걸릴 수 없다.
-// 걸리게 되면 아래 reachable 검사가 빌드를 세운다.
-if (unmatched.length) {
-  console.log(
-    `\n도형에 대응하는 DB 지역이 없는 것 ${unmatched.length}개` +
-      ` (개편 전 경계로 보인다 — 제도가 걸리면 아래 검사가 막는다):`,
+
+// 도형이 DB 지역에 이어지지 않거나, 코드와 이름이 다른 지역을 가리키면 실패한다.
+// 지원 대상이 아닌 지역은 연결이 빠져도 아래 reachable 검사에 걸리지 않고 지도에 옛 이름으로
+// 회색 표시만 된다 — 인천 개편 뒤 중구·동구·서구 도형이 그렇게 남아 있었다(#77).
+const problems = [];
+const blocking = unmatched.filter((u) => !KNOWN_UNMATCHED.has(u.sgg));
+const allowed = unmatched.filter((u) => KNOWN_UNMATCHED.has(u.sgg));
+const staleAllow = [...KNOWN_UNMATCHED].filter((c) => !unmatched.some((u) => u.sgg === c));
+if (allowed.length) {
+  console.log(`\nKNOWN_UNMATCHED로 통과시킨 도형 ${allowed.length}개 (도형을 교체하면 목록에서 지울 것):`);
+  for (const u of allowed) console.log(`  sgg=${u.sgg} sido=${u.sidoCode} ${u.name}`);
+}
+if (blocking.length) {
+  problems.push(
+    `도형에 대응하는 DB 지역이 없는 것 ${blocking.length}개 — 행정 개편 전 경계이거나 이름 표기가 다르다:\n` +
+      blocking.map((u) => `  sgg=${u.sgg} sido=${u.sidoCode} ${u.name}`).join("\n"),
   );
-  for (const u of unmatched) console.log(`  sgg=${u.sgg} sido=${u.sidoCode} ${u.name}`);
+}
+if (mismatched.length) {
+  problems.push(
+    `도형 코드와 (시도, 이름)이 가리키는 DB 지역이 다른 것 ${mismatched.length}개 — sgg_code는 행안부 코드여야 한다:\n` +
+      mismatched.map((m) => `  sgg=${m.sgg} ${m.name} → 이름으로 찾은 코드 ${m.hit}`).join("\n"),
+  );
+}
+if (staleAllow.length) {
+  problems.push(`KNOWN_UNMATCHED에 더는 필요 없는 코드가 남아 있다: ${staleAllow.join(", ")}`);
 }
 
 // 도형이 없는 DB 지역은 실패로 보지 않는다. 대부분 행정구(수원시 장안구 등)라
 // 지도가 시 단위로 병합한 결과이고, 제도가 그 단위로 걸리지는 않는다.
 // 다만 몇 곳인지는 남겨서, 늘어나면 눈에 띄게 한다.
 const noShape = db.filter((r) => !mapped.has(r.code));
-console.log(`\nDB 지역 ${db.length}곳 중 도형이 없는 곳 ${noShape.length}곳 (행정구·개편 신설구)`);
+console.log(`\nDB 지역 ${db.length}곳 중 도형이 없는 곳 ${noShape.length}곳 (행정구 등)`);
 
 console.log(
   `제도가 걸릴 수 있는 지역 ${reachable.size}곳` +
@@ -263,11 +292,14 @@ console.log(
 for (const c of missing) console.log(`  ${c} ${nameOf.get(c) ?? "(region_seed에 없는 코드)"}`);
 
 if (missing.length) {
-  console.error(
-    "\n제도가 걸릴 수 있는 지역이 대응표에서 빠졌다." +
+  problems.push(
+    "제도가 걸릴 수 있는 지역이 대응표에서 빠졌다." +
       " 그 지역은 API가 활성으로 반환해도 지도에 그려지지 않는다." +
       " 이름 표기나 도형 데이터를 확인할 것.",
   );
+}
+if (problems.length) {
+  for (const p of problems) console.error(`\n${p}`);
   process.exit(1);
 }
 

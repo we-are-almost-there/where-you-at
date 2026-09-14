@@ -3,15 +3,16 @@ import type { Feature, FeatureCollection, Geometry, Position } from "geojson";
 /**
  * 시군구 도형(korea-all-regions.json)에 시도 코드와 DB 지역 코드를 붙인다.
  *
- * 파일마다 코드 체계가 다르다.
- *  - korea-all-regions.json : 통계청(KOSTAT) 시군구 코드 (강진군 36590)
- *  - DB region 테이블       : 법정동 기반 프로젝트 코드 (강진군 12780)
- *  - korea-sido.json        : 시도 코드 (전남광주통합특별시 12)
+ * 세 파일 모두 행안부 코드를 쓴다.
+ *  - korea-all-regions.json : 행안부 시군구 코드 (강진군 12780)
+ *  - DB region 테이블       : 행안부 시군구 코드 (강진군 12780)
+ *  - korea-sido.json        : 행안부 시도 코드 (전남광주통합특별시 12)
  *
  * 시도는 도형 안에 점이 들어가는지로(point-in-polygon) 맞춘다.
  * 지역 코드는 미리 만들어 둔 대응표(region-index.json)를 쓴다 — 전국 시군구를
  * 모두 담고 있어서, 어떤 지역에 제도가 새로 생겨도 색칠 대상이 될 수 있다.
- * 대응표는 scripts/build-region-index.mjs가 같은 규칙으로 생성한다.
+ * 대응표는 scripts/build-region-index.mjs가 같은 규칙으로 생성한다. 도형 파일이 통계청
+ * 코드를 쓰던 때 코드를 바꿔 주던 표라, 지금은 키와 값이 같다.
  *
  * "어느 지역이 지원 대상인가"는 여기서 정하지 않는다. 그건 API 응답이냐 정적 파일이냐에
  * 따라 달라지고 재조회로 바뀔 수도 있어서, 도형 계산과 분리해 호출부가 정하게 둔다.
@@ -19,7 +20,7 @@ import type { Feature, FeatureCollection, Geometry, Position } from "geojson";
 
 export type RegionEntry = {
   feature: Feature;
-  /** 시군구 이름 (KOSTAT 원본 표기) */
+  /** 시군구 이름 (도형 파일 표기) */
   name: string;
   /** 이 시군구가 속한 시도 코드. 드릴다운 필터에 쓴다. */
   sidoCode: string | null;
@@ -27,7 +28,7 @@ export type RegionEntry = {
   regionCode: string | null;
 };
 
-/** KOSTAT 시군구 코드 → DB 지역 코드 */
+/** 도형 코드(sgg_code) → DB 지역 코드. 지금은 둘 다 행안부 코드라 같은 값이다 */
 export type RegionCodeMap = Readonly<Record<string, string>>;
 
 /**
