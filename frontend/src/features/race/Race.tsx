@@ -71,6 +71,7 @@ export default function Race() {
       return next;
     });
   };
+  
   useEffect(() => {
     const query = window.matchMedia("(min-width: 768px)");
     const onChange = () => {
@@ -78,8 +79,14 @@ export default function Race() {
       // 캘린더 뷰는 데스크톱 상세 UI가 없어서(목록 인라인 상세만 있음), 모바일
       // 바텀시트가 열린 채로 데스크톱 폭으로 넘어오면 selectedRace가 화면 어디에도
       // 표시되지 않는 "고아 상태"가 된다. 그 경우 목록으로 전환한다.
+      // 이때 keyword/upcomingOnly 필터가 남아 있으면 선택한 대회가 필터링되어
+      // 여전히 화면에 보이지 않는 "고아 선택" 상태가 재발하므로 함께 초기화한다.
       if (query.matches) {
-        if (viewMode === "calendar") setViewMode("list");
+        if (viewMode === "calendar") {
+          setViewMode("list");
+          setKeyword("");
+          setUpcomingOnly(false);
+        }
       }
     };
     query.addEventListener("change", onChange);
