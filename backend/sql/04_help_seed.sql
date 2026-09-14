@@ -3,7 +3,7 @@
 -- 고객지원 도메인 데이터 적재 (공용 DB 반영 2026-09-14, 담당자 문구 확인 전)
 -- 공지·FAQ 문구가 각 기능 설명과 맞는지 기능 담당자 확인을 받는 중이다(고객지원 PR에서 요청).
 -- 확인이 끝나면 위 줄의 "담당자 문구 확인 전"을 지운다. 문구를 고치면 이 파일을 수정한 뒤 다시 실행한다.
--- 같은 제목의 공지·같은 질문의 FAQ를 지우고 다시 넣으므로 여러 번 실행해도 중복되지 않는다.
+-- 여러 번 실행해도 중복되지 않는다 (아래 "재실행").
 -- 대상: notice / faq_category / faq
 -- 실행: backend/ 에서  python -m scripts.seed_help  (execute_sql_file 로 이 파일 실행)
 --   python scripts/seed_help.py 로 실행하면 scripts 폴더만 모듈 경로에 들어가 app 패키지를 찾지 못한다.
@@ -19,7 +19,9 @@
 --   문장 안의 따옴표는 SQL 따옴표와 겹치지 않게 ‘ ’를 쓴다.
 --
 -- 재실행
---   notice, faq: 값 목록(v)을 한 곳에만 두고, 같은 제목·질문의 기존 행을 지운 뒤 다시 넣는다.
+--   notice: 제목이 같은 행이 있으면 내용·고정 여부만 고치고, 없을 때만 넣는다. id와 게시일이 유지된다 (1번 주석).
+--   faq: 값 목록(v)을 한 곳에만 두고, 같은 질문의 기존 행을 지운 뒤 다시 넣는다.
+--     FAQ는 id를 화면 주소에 쓰지 않아 다시 넣어 id가 바뀌어도 된다.
 --     삭제용 목록을 따로 두면 문구를 고칠 때 한쪽만 바뀌어 중복 행이 생긴다.
 --   faq_category: 지우지 않고 이름이 같으면 순서만 갱신한다. FAQ가 참조 중인 카테고리는
 --     삭제가 막히고(on delete restrict), 콘솔에서 추가한 FAQ의 카테고리를 끊지 않기 위해서다.
@@ -30,7 +32,11 @@
 
 
 -- 1. notice (공지사항)
--- published_at = now(): 실행한 시각이 게시일이 된다. 공개할 시점에 실행할 것.
+-- 제목이 같은 공지가 있으면 내용·고정 여부만 고치고, 없을 때만 새로 넣는다.
+--   지우고 다시 넣으면 실행할 때마다 id가 바뀌어 공유한 공지 링크(/notices/{id})가 끊기고, 게시일도 실행 시각으로 바뀐다.
+--   게시일(published_at)은 처음 넣을 때만 실행 시각으로 채운다. 처음 넣는 실행은 공개할 시점에 할 것.
+--   내용·고정 여부가 같으면 고치지 않아 수정 시각(updated_at)도 그대로다.
+--   제목을 바꾸면 새 공지로 들어가고 옛 제목의 공지가 남는다. 제목을 고칠 때는 콘솔에서 기존 행의 제목부터 바꾼다.
 with v(title, content, is_pinned) as (
     values
     (
@@ -39,11 +45,19 @@ with v(title, content, is_pinned) as (
         false
     )
 ),
-del as (
-    delete from notice where title in (select title from v)
+upd as (
+    update notice n
+    set content = v.content, is_pinned = v.is_pinned
+    from v
+    where n.title = v.title
+      and (n.content, n.is_pinned) is distinct from (v.content, v.is_pinned)
 )
+-- 한 문장 안의 CTE는 모두 문장 시작 시점의 테이블을 본다. upd는 제목을 바꾸지 않으므로
+-- 아래 not exists는 upd 실행 여부와 상관없이 "원래 있던 제목인지"를 정확히 가린다.
 insert into notice (title, content, is_pinned, published_at)
-select title, content, is_pinned, now() from v;
+select v.title, v.content, v.is_pinned, now()
+from v
+where not exists (select 1 from notice n where n.title = v.title);
 
 
 -- 2. faq_category (FAQ 카테고리)
