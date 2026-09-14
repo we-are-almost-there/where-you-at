@@ -18,59 +18,85 @@ interface ApiRaceListResponse {
   items: Race[];
 }
 
-export interface RaceListQuery {
+export interface RaceFilters {
   region_code?: string;
   event_type?: "running" | "cycling";
   upcoming_only?: boolean;
+}
+
+export interface RacePageQuery extends RaceFilters {
   page?: number;
   per_page?: number;
 }
 
-export async function fetchRaceList(query: RaceListQuery = {}): Promise<Race[]> {
-  if (USE_MOCK) return raceMock;
-
-  // page를 명시적으로 지정한 호출부는 그 페이지만 반환(추후 페이지네이션 UI 대비).
-  // page 미지정 시(현재 모든 호출부)에는 total을 다 채울 때까지 이어서 가져와
-  // per_page 상한 때문에 나머지 데이터가 조용히 누락되는 일이 없게 한다.
-  const shouldFetchAll = query.page === undefined;
+export async function fetchRacePage(
+  query: RacePageQuery = {},
+  signal?: AbortSignal,
+): Promise<ApiRaceListResponse> {
+  signal?.throwIfAborted();
+  const page = query.page ?? 1;
   const perPage = query.per_page ?? 100;
-
-  const buildParams = (page: number) => {
-    const params = new URLSearchParams();
-    if (query.region_code) params.set("region_code", query.region_code);
-    if (query.event_type) params.set("event_type", query.event_type);
-    if (query.upcoming_only !== undefined) {
-      params.set("upcoming_only", String(query.upcoming_only));
-    }
-    params.set("page", String(page));
-    params.set("per_page", String(perPage));
-    return params;
-  };
-
-  const fetchPage = async (page: number): Promise<ApiRaceListResponse> => {
-    const res = await fetchOrNetworkError(`${API_BASE}/api/races?${buildParams(page)}`);
-    if (!res.ok) throw new HttpError(res.status, `대회 목록 조회 실패 (${res.status})`);
-    return res.json();
-  };
-
-  if (!shouldFetchAll) {
-    const data = await fetchPage(query.page ?? 1);
-    return data.items;
+  if (USE_MOCK) {
+    const items = raceMock.filter((race) =>
+      (!query.region_code || race.region_code === query.region_code)
+      && (!query.event_type || race.event_type === query.event_type)
+      && (!query.upcoming_only || new Date(race.end_date ?? race.start_date) >= new Date())
+    );
+    return { total: items.length, page, per_page: perPage, items: items.slice((page - 1) * perPage, page * perPage) };
   }
-
-  const allItems: Race[] = [];
-  let page = 1;
-  let total = Infinity;
-  while (allItems.length < total) {
-    const data = await fetchPage(page);
-    allItems.push(...data.items);
-    total = data.total;
-    if (data.items.length === 0) break; // 안전장치: 무한 루프 방지
-    page += 1;
-  }
-  return allItems;
+  const params = new URLSearchParams();
+  if (query.region_code) params.set("region_code", query.region_code);
+  if (query.event_type) params.set("event_type", query.event_type);
+  if (query.upcoming_only !== undefined) params.set("upcoming_only", String(query.upcoming_only));
+  params.set("page", String(page));
+  params.set("per_page", String(perPage));
+  const res = await fetchOrNetworkError(`${API_BASE}/api/races?${params}`, { signal });
+  if (!res.ok) throw new HttpError(res.status, `대회 목록 조회 실패 (${res.status})`);
+  const data: ApiRaceListResponse = await res.json();
+  signal?.throwIfAborted();
+  return data;
 }
 
+// 첫 응답 기준으로 페이지 수를 고정하고 최대 3개씩 요청한다.
+// OFFSET 조회 중 데이터 변경으로 생기는 누락까지 보장하지는 않는다.
+export async function fetchAllRaces(
+  query: RaceFilters = {},
+  signal?: AbortSignal,
+): Promise<Race[]> {
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  signal?.throwIfAborted();
+  signal?.addEventListener("abort", abort, { once: true });
+  try {
+    const first = await fetchRacePage({ ...query, page: 1 }, controller.signal);
+    if (!Number.isSafeInteger(first.per_page) || first.per_page <= 0
+      || !Number.isSafeInteger(first.total) || first.total < 0) {
+      throw new Error("대회 페이지 정보가 올바르지 않습니다");
+    }
+    const pageCount = Math.ceil(first.total / first.per_page);
+    const items = [...first.items];
+    for (let page = 2; page <= pageCount; page += 3) {
+      controller.signal.throwIfAborted();
+      const pages = await Promise.all(
+        Array.from({ length: Math.min(3, pageCount - page + 1) }, (_, index) =>
+          fetchRacePage({ ...query, page: page + index, per_page: first.per_page }, controller.signal)
+        ),
+      );
+      for (const result of pages) items.push(...result.items);
+    }
+    controller.signal.throwIfAborted();
+    const unique = new Map<number, Race>();
+    for (const race of items) {
+      if (!unique.has(race.event_id)) unique.set(race.event_id, race);
+    }
+    return [...unique.values()];
+  } catch (error) {
+    controller.abort(); // 한 페이지가 실패하면 같은 묶음의 나머지 요청도 중단한다.
+    throw error;
+  } finally {
+    signal?.removeEventListener("abort", abort);
+  }
+}
 // TODO: 대회 상세 페이지에서 목록 API 응답이 아닌 단건 조회가 필요해지면 사용.
 // 현재 상세 화면은 목록에서 선택한 Race 객체를 그대로 재사용하고 있어 아직 미사용.
 export async function fetchRaceDetail(eventId: number): Promise<Race> {

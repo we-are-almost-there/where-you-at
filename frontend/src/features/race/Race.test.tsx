@@ -3,11 +3,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import Race from "./Race";
+import { fetchAllRaces } from "./raceApi";
 import type { Race as RaceType } from "./types";
 
 vi.mock("../../components/layout/AppHeader", () => ({ default: () => null }));
 vi.mock("../../components/layout/Footer", () => ({ default: () => null }));
-vi.mock("./raceApi", () => ({ fetchRaceList: vi.fn(async () => [
+vi.mock("./raceApi", () => ({ fetchAllRaces: vi.fn(async () => [
   { event_id: 1, race_title: "대회 A", event_type: "running", start_date: "2026-10-01" },
   { event_id: 2, race_title: "대회 B", event_type: "running", start_date: "2026-10-02" },
 ]) }));
@@ -35,6 +36,14 @@ async function open(url = "/race?eventId=1&keep=yes") {
   await screen.findByRole("button", { name: "대회 A" });
   return router;
 }
+
+it("화면을 떠나면 전체 조회 요청을 취소한다", async () => {
+  await open();
+  const signal = vi.mocked(fetchAllRaces).mock.calls.at(-1)?.[1];
+  expect(signal?.aborted).toBe(false);
+  cleanup();
+  expect(signal?.aborted).toBe(true);
+});
 
 it("선택·닫기를 URL에 반영하고 뒤로가기와 재진입 시 선택을 복원한다", async () => {
   const router = await open();

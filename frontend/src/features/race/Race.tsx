@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router";
 import RaceCalendar from "./components/RaceCalendar";
 import RaceList from "./components/RaceList";
 import RaceDetailSheet from "./components/RaceDetailSheet";
-import { fetchRaceList } from "./raceApi";
+import { fetchAllRaces } from "./raceApi";
 import { parseLocalDate } from "./dateUtils";
 import { useToday } from "./useToday";
 import { EVENT_TYPE_COLOR, EVENT_TYPE_LABEL, type EventType, type Race as RaceType } from "./types";
@@ -98,9 +98,10 @@ export default function Race() {
   // 목록은 페이지 진입 시 한 번만 가져온다. eventId 쿼리 파라미터가 바뀌어도
   // (뒤로가기, 다른 링크 진입 등) 다시 fetch하지 않고 이미 가진 races에서 선택한다.
   useEffect(() => {
+    const controller = new AbortController();
     let ignore = false;
 
-    fetchRaceList({ upcoming_only: false })
+    fetchAllRaces({ upcoming_only: false }, controller.signal)
       .then((data) => {
         if (!ignore) {
           setError(null);
@@ -116,6 +117,7 @@ export default function Race() {
 
     return () => {
       ignore = true;
+      controller.abort();
     };
   }, [retryTick]);
 

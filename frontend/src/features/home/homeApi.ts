@@ -1,7 +1,7 @@
 // 홈 화면이 쓰는 데이터 조회.
 // 각 도메인 API를 그대로 호출하고, 홈 카드가 쓰는 형태로만 바꿔 담는다.
 
-import { fetchRaceList } from "../race/raceApi";
+import { fetchRacePage } from "../race/raceApi";
 import { EVENT_TYPE_LABEL } from "../race/types";
 import { getCourses } from "../map/coursesApi";
 import type { Course, LatLng } from "../map/types";
@@ -152,8 +152,8 @@ export interface UpcomingRace {
 }
 
 /** 가까운 날짜순 대회. 백엔드가 upcoming_only + start_date ASC로 이미 걸러 준다 */
-export async function fetchUpcomingRaces(limit = 3): Promise<UpcomingRace[]> {
-  const races = await fetchRaceList({ page: 1, per_page: limit, upcoming_only: true });
+export async function fetchUpcomingRaces(limit = 3, signal?: AbortSignal): Promise<UpcomingRace[]> {
+  const { items: races } = await fetchRacePage({ page: 1, per_page: limit, upcoming_only: true }, signal);
 
   return races.map((race) => ({
     id: race.event_id,
