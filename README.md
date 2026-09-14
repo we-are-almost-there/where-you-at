@@ -79,10 +79,11 @@ npm run dev --prefix frontend
 스키마와 초기 데이터는 `backend/sql/`에 있고, 번호 순서대로 적용합니다.
 
 ```
-01_schema.sql        테이블 정의 (고객지원 문의 자동 파기 예약 작업 포함)
-02_region_seed.sql   지역 코드
-03_support_seed.sql  지원금 제도
-04_help_seed.sql     공지사항·자주 묻는 질문 (python -m scripts.seed_help)
+01_schema.sql             테이블 정의
+02_region_seed.sql        지역 코드
+03_support_seed.sql       지원금 제도
+04_help_seed.sql          공지사항·자주 묻는 질문 (python -m scripts.seed_help)
+05_inquiry_retention.sql  1:1 문의 자동 파기 예약 작업 (Supabase SQL Editor에서 실행)
 ```
 
 외부 API에서 데이터를 받아오는 스크립트는 `backend/scripts/`에 있습니다.
@@ -129,12 +130,15 @@ python -m unittest discover -s tests -t .
 
 ### 문의 자동 파기 예약 작업
 
-`backend/sql/01_schema.sql` inquiry 섹션 끝의 `do $$ ... $$` 블록을 Supabase SQL Editor에서 실행합니다.
-등록 뒤 `username`이 `postgres`인지 확인합니다. 다른 역할로 등록하면 RLS 때문에 한 건도 지우지 못합니다.
+`backend/sql/05_inquiry_retention.sql` 전체를 Supabase SQL Editor에서 `postgres` 역할로 실행합니다.
+다른 역할로 등록하면 RLS 때문에 한 건도 지우지 못합니다. 다시 실행해도 작업이 중복되지 않습니다.
 
-```sql
-select jobname, schedule, username from cron.job;
-```
+실행 뒤 파일 끝의 확인 쿼리로 아래를 확인하고, 결과를 PR에 남깁니다.
+
+- `cron.job`에 `delete-expired-inquiries`가 정확히 1개, `active = true`, `username`·`database`가 `postgres`, `schedule`·`command`가 파일과 같음
+- 트리거 정의에 `BEFORE INSERT OR UPDATE OF status`가 들어 있음
+- `status = '완료'`인데 `resolved_at`이 빈 문의가 0건
+- 다음 날 한국 시간 03:00 이후 `cron.job_run_details`의 첫 실행이 `succeeded`
 
 ### 문의 요청 제한의 이용자 IP 확인
 

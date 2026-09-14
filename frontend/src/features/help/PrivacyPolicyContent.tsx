@@ -17,7 +17,7 @@ import { EFFECTIVE_DATE, OPERATOR, SERVICE } from "./legalInfo";
  *   features/map/components/RecordCard.tsx, features/support/components/SupportDetail.tsx(localStorage)
  * - 배포 환경: Vercel(웹사이트), Render 싱가포르(API 서버), Supabase 서울 Free 요금제(DB).
  *   서버 접속 기록 보관 기간은 Vercel·Render Hobby 요금제 기준이다. 요금제나 업체를 바꾸면 2·4·7·8번을 고친다.
- * - 파기: Supabase Cron 예약 작업이 매일 보유 기간이 지난 문의를 지운다(sql/01_schema.sql inquiry 섹션의 등록 SQL).
+ * - 파기: Supabase Cron 예약 작업이 매일 보유 기간이 지난 문의를 지운다(sql/05_inquiry_retention.sql).
  *   이 작업이 DB에 등록돼 있어야 5번이 사실이다.
  *
  * 현재 위치: 가까운 순 정렬은 서버로 좌표를 보내지 않고 브라우저에서 계산한다(위치기반서비스사업 신고 대상에서

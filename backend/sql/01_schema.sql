@@ -392,8 +392,8 @@ create trigger trg_faq_updated_at
 -- category: 문의 유형. 목록을 바꾸면 app/schemas/inquiry.py의 INQUIRY_CATEGORIES와 프론트 문의 폼도 함께 바꾼다.
 -- status: 접수 → 처리중 → 완료. 완료로 바꾸면 resolved_at이 자동으로 채워진다.
 -- consented_at: 개인정보 수집·이용에 동의한 시각. 동의하지 않으면 API가 저장하지 않는다.
--- 보유 기간: 처리 완료 후 1년 (개인정보처리방침과 같아야 한다). 기간이 지난 행은 이 섹션 끝의 예약 작업이
---   매일 자동으로 지운다. 답변이 끝나지 않은(완료가 아닌) 문의는 지우지 않으므로 처리 후 반드시 완료로 바꾼다.
+-- 보유 기간: 처리 완료 후 1년 (개인정보처리방침과 같아야 한다). 기간이 지난 행은 05_inquiry_retention.sql로
+--   등록하는 예약 작업이 매일 자동으로 지운다. 답변이 끝나지 않은(완료가 아닌) 문의는 지우지 않으므로 처리 후 반드시 완료로 바꾼다.
 create table inquiry (
   id           bigint generated always as identity primary key,
   category     varchar(20) not null,
@@ -413,8 +413,9 @@ create trigger trg_inquiry_updated_at
   before update on inquiry
   for each row execute function set_updated_at();
 
--- 완료로 바뀌는 순간 resolved_at을 채우고, 완료에서 다른 상태로 되돌리면 비운다.
+-- 완료로 바뀌거나 처음부터 완료로 넣으면 resolved_at을 채우고, 완료가 아닌 상태면 비운다.
 -- 보유 기간(처리 완료 후 1년)을 이 값으로 계산한다.
+-- insert일 때 old는 null이라 old.status is distinct from '완료'가 참이 된다.
 create or replace function set_inquiry_resolved_at()
 returns trigger as $$
 begin
@@ -427,32 +428,14 @@ begin
 end;
 $$ language plpgsql;
 
+-- insert에도 건다. 콘솔에서 처음부터 '완료'로 넣은 행의 resolved_at이 비면 자동 파기에서 빠진다.
+-- 05_inquiry_retention.sql이 기존 DB에 같은 트리거를 다시 만드므로, 바꾸면 두 곳을 함께 고친다.
 create trigger trg_inquiry_resolved_at
-  before update of status on inquiry
+  before insert or update of status on inquiry
   for each row execute function set_inquiry_resolved_at();
 
--- 보유 기간이 지난 문의 자동 파기 (Supabase Cron = pg_cron)
--- - SQL Editor에서 postgres 역할로 실행한다. inquiry는 RLS가 켜져 있고 정책이 없어서, 다른 역할로 등록하면
---   에러 없이 0건만 지운다. 등록 후 아래 조회로 username이 postgres인지 확인한다.
---     select jobname, schedule, username from cron.job;
--- - 같은 이름으로 다시 실행하면 기존 작업을 덮어써 중복되지 않는다.
--- - 시각은 UTC다. '0 18 * * *' = 한국 시간 매일 03:00.
--- - 실행 기록 확인:
---     select * from cron.job_run_details
---     where jobid = (select jobid from cron.job where jobname = 'delete-expired-inquiries')
---     order by start_time desc limit 10;
--- - pg_cron이 없는 로컬 Postgres에서는 건너뛴다. 그 환경에서는 보유 기간이 지난 문의를 직접 지운다.
-do $$
-begin
-  if exists (select 1 from pg_available_extensions where name = 'pg_cron') then
-    create extension if not exists pg_cron with schema pg_catalog;
-    perform cron.schedule(
-      'delete-expired-inquiries',
-      '0 18 * * *',
-      $job$delete from inquiry where status = '완료' and resolved_at < now() - interval '1 year'$job$
-    );
-  end if;
-end $$;
+-- 보유 기간이 지난 문의 자동 파기 작업은 05_inquiry_retention.sql에 있다.
+-- 이 파일을 실행한 뒤 Supabase SQL Editor에서 05를 postgres 역할로 실행하고, 파일 끝의 확인 쿼리로 등록을 확인한다.
 
 
 -- 행 수준 보안(RLS)
