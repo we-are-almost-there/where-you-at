@@ -23,6 +23,7 @@ describe("toUserError", () => {
     const result = toUserError(err, "코스를 불러오지 못했어요");
 
     expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe("HttpError");
     expect(err.status).toBe(500);
     expect(result).toEqual({ title: "코스를 불러오지 못했어요", description: "잠시 후 다시 시도해 주세요." });
   });
