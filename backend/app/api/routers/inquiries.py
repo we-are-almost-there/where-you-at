@@ -37,7 +37,8 @@ def create_inquiry(
     if not inquiry_limiter.allow(_client_key(request)):
         raise HTTPException(status_code=429, detail="문의를 너무 자주 보냈어요. 잠시 후 다시 시도해 주세요.")
 
-    row = inquiry_crud.create_inquiry(conn, category=body.category, email=body.email, content=body.content)
+    inquiry_crud.create_inquiry(conn, category=body.category, email=body.email, content=body.content)
     # 응답을 먼저 보내고 알림은 뒤에서 보낸다. 웹훅이 느리거나 실패해도 이용자는 기다리지 않는다.
-    background_tasks.add_task(notify_new_inquiry, row["id"], body.category, received_at=row["created_at"])
+    # 알림에는 문의 유형만 넘긴다 (services/inquiry_notify.py).
+    background_tasks.add_task(notify_new_inquiry, body.category)
     return InquiryCreated()

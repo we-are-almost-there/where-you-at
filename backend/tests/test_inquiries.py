@@ -58,8 +58,8 @@ class TestCreateInquiry(unittest.TestCase):
         mock_create.assert_called_once_with(
             ANY, category="코스 탐색", email="user@example.com", content=VALID["content"]
         )
-        # 알림에는 번호·유형·접수 시각만 넘기고 이메일·내용은 넘기지 않는다.
-        mock_notify.assert_called_once_with(12, "코스 탐색", received_at=SAVED["created_at"])
+        # 알림에는 유형만 넘긴다. 이메일·내용은 물론 DB 행과 이어 볼 수 있는 번호·접수 시각도 넘기지 않는다.
+        mock_notify.assert_called_once_with("코스 탐색")
 
     def test_email_and_content_are_trimmed_before_saving(self, mock_create, mock_notify):
         res = self.client.post(
