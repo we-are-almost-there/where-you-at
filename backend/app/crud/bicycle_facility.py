@@ -27,9 +27,6 @@ def list_bicycle_facilities(
     facility_type: str | None = None,
     fee_type: str | None = None,
     data_source: str | None = None,
-    sort: str | None = None,
-    lat: float | None = None,
-    lng: float | None = None,
     page: int = 1,
     size: int = 20,
 ) -> tuple[int, list[dict]]:
@@ -45,9 +42,8 @@ def list_bicycle_facilities(
     - "realtime": 실시간 API 신규삽입(rt:) 전체 (4,780건)
     fee_type: rental_fee_type 필터(무료/유료). "실시간" 탭 카드는 요금
     정보를 표시하지 않으므로 프론트에서는 "운영 정보" 탭에서만 이 필터를 노출한다.
-    sort/lat/lng: 코스 탐색(list_courses)과 동일한 패턴 — sort="nearest"이고
-    lat/lng이 모두 있을 때만 PostGIS geom 컬럼 기준 거리순 정렬. 그 외에는
-    bicycle_id 기본 정렬로 폴백한다.
+    정렬은 bicycle_id 고정이다. 이용자 위치를 서버로 받지 않기 위해 '가까운 순'은
+    브라우저가 전체 목록을 받아 정렬한다(frontend/src/features/map/nearestSort.ts).
     None이면 필터 없이 전체.
     """
     where = []
@@ -75,30 +71,12 @@ def list_bicycle_facilities(
 
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
-    use_nearest = sort == "nearest" and lat is not None and lng is not None
-    if use_nearest:
-        # geom은 geometry(Point,4326)이라 <->를 그대로 쓰면 위경도를 평면 좌표로 취급해
-        # "도(degree)" 단위 거리가 나온다. 위도 1도와 경도 1도를 같은 거리로 세는데
-        # 한국 위도(~36도)에서는 경도 1도가 위도 1도보다 짧아 동서 거리가 과대평가되고,
-        # 실제로 "가까운 순" 순위가 뒤바뀌는 걸 확인해 geography 캐스팅으로 되돌린다.
-        # KNN 인덱스는 못 타지만(시퀀셜 스캔) 현재 테이블 크기(6천여 행)에서는
-        # 같은 요청의 count(*)도 이미 시퀀셜 스캔이라 체감 차이가 없다.
-        order_sql = (
-            "ORDER BY ST_Distance("
-            "geom::geography, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography"
-            "), bicycle_id"
-        )
-    else:
-        order_sql = "ORDER BY bicycle_id"
-
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"SELECT count(*) AS total FROM bicycle_facility {where_sql}",
             params,
         )
         total = cur.fetchone()["total"]
-
-        order_params = [lng, lat] if use_nearest else []
 
         cur.execute(
             f"""
@@ -108,10 +86,10 @@ def list_bicycle_facilities(
                 total_bikes, available_bikes, region_code, realtime_synced_at
             FROM bicycle_facility
             {where_sql}
-            {order_sql}
+            ORDER BY bicycle_id
             LIMIT %s OFFSET %s
             """,
-            [*params, *order_params, size, (page - 1) * size],
+            [*params, size, (page - 1) * size],
         )
         rows = cur.fetchall()
 

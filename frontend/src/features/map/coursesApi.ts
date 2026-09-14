@@ -4,6 +4,7 @@ import type {
   CourseDetail,
   CourseListResponse,
   CourseRoute,
+  CourseStart,
   Difficulty,
   LatLng,
   Region,
@@ -36,9 +37,22 @@ interface ApiCourse {
   path_bicycle?: LatLng[];
 }
 
+interface ApiCourseStart {
+  id: number;
+  title: string;
+  start_address: string | null;
+  image_url: string | null;
+  region_code: string | null;
+  routes?: ApiRoute[];
+  start: LatLng | null;
+}
+
 // ??가 아니라 ||인 이유: .env에 VITE_API_BASE_URL=처럼 빈 값으로 두면 ??는 ""를
 // 그대로 통과시켜 요청이 상대경로로 나가고 404가 된다. 빈 값도 폴백으로 보낸다.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+// '가까운 순'을 브라우저에서 정렬하려고 전체 목록을 받을 때 한 번에 요청하는 개수. 백엔드 size 상한과 같다.
+const ALL_COURSES_PAGE_SIZE = 500;
 
 // 프론트(한국어) ↔ 백엔드(영어) 값 매핑.
 // 백엔드 DB는 route_type=trail/bicycle, difficulty=easy/medium/hard 로 저장하고
@@ -69,14 +83,17 @@ function toApiQuery(query: Record<string, string>): Record<string, string> {
 }
 
 /** 응답의 영어 route_type/difficulty를 UI용 한국어로 변환한다. */
-function fromApiCourse(c: ApiCourse): Course {
-  const routes: CourseRoute[] = (c.routes ?? []).map((r) => ({
+function fromApiRoute(r: ApiRoute): CourseRoute {
+  return {
     route_type: ROUTE_FROM_API[r.route_type] ?? r.route_type,
     distance: r.distance,
     estimated_time: r.estimated_time ?? 0,
     // 자전거 경로는 난이도가 null일 수 있으나 UI(도보 전용)에서 미표시되므로 그대로 둔다.
     difficulty: (r.difficulty != null ? DIFF_FROM_API[r.difficulty] ?? r.difficulty : r.difficulty) as Difficulty,
-  }));
+  };
+}
+
+function fromApiCourse(c: ApiCourse): Course {
   return {
     id: c.id,
     title: c.title,
@@ -85,7 +102,7 @@ function fromApiCourse(c: ApiCourse): Course {
     region_code: c.region_code ?? "",
     is_population_drop_zone: c.is_population_drop_zone ?? false,
     landmarks: c.landmarks ?? [],
-    routes,
+    routes: (c.routes ?? []).map(fromApiRoute),
     path_trail: c.path_trail ?? [],
     path_bicycle: c.path_bicycle ?? [],
   };
@@ -129,14 +146,52 @@ export async function getCourses(query: Record<string, string>): Promise<CourseL
   };
 }
 
+// 전체 목록 요청에 실어 보낼 수 있는 필터. 이용자 위치(lat·lng)나 정렬이 섞여 나가지 않도록
+// 지워야 할 키를 고르는 대신 보낼 키만 고른다.
+// 코스 필터를 새로 만들면(buildCourseQuery) 여기에도 추가한다. 빠뜨리면 '가까운 순'에서만 그 필터가 조용히 무시된다.
+const ALL_COURSES_FILTER_KEYS = ["type", "region", "distance", "difficulty", "keyword"] as const;
+
+/**
+ * 필터에 맞는 코스를 모두 받는다. '가까운 순'을 브라우저에서 정렬할 때 쓴다(nearestSort.ts).
+ * 이용자 위치는 보내지 않는다. query에서 필터(ALL_COURSES_FILTER_KEYS)만 골라 서버 기본 순서로 전체를 모은다.
+ */
+export async function getAllCourses(query: Record<string, string>): Promise<Course[]> {
+  const filters: Record<string, string> = {};
+  for (const key of ALL_COURSES_FILTER_KEYS) {
+    if (query[key]) filters[key] = query[key];
+  }
+
+  const courses: Course[] = [];
+  for (let page = 1; ; page++) {
+    const res = await getCourses({ ...filters, page: String(page), size: String(ALL_COURSES_PAGE_SIZE) });
+    courses.push(...res.courses);
+    if (res.courses.length === 0 || courses.length >= res.total_count) return courses;
+  }
+}
+
+/**
+ * GET /api/courses/starts — 도보 경로가 있는 모든 코스의 출발점과 카드 정보.
+ * 홈 '가까운 코스'를 브라우저에서 고르는 데 쓴다. 위치와 상관없이 항상 같은 전체 목록을 받는다.
+ * 위치를 못 얻었을 때의 기본 목록(type=trail)과 같은 범위라 자전거 전용 코스는 없다.
+ */
+export async function getCourseStarts(): Promise<CourseStart[]> {
+  const data = await apiGet<ApiCourseStart[]>("/api/courses/starts");
+  return data.map((c) => ({
+    id: c.id,
+    title: c.title,
+    start_address: c.start_address ?? "",
+    image_url: toHttpsImage(c.image_url),
+    region_code: c.region_code ?? "",
+    routes: (c.routes ?? []).map(fromApiRoute),
+    start: c.start ?? null,
+  }));
+}
+
 /** GET /api/courses/{id} — 코스 상세. route_type/difficulty를 UI용 한국어로 변환한다. */
 export async function getCourseDetail(id: number): Promise<CourseDetail> {
   const c = await apiGet<ApiCourseDetail>(`/api/courses/${id}`);
   const routes: RouteDetail[] = (c.routes ?? []).map((r) => ({
-    route_type: ROUTE_FROM_API[r.route_type] ?? r.route_type,
-    distance: r.distance,
-    estimated_time: r.estimated_time ?? 0,
-    difficulty: (r.difficulty != null ? DIFF_FROM_API[r.difficulty] ?? r.difficulty : r.difficulty) as Difficulty,
+    ...fromApiRoute(r),
     start_lat: r.start_lat ?? null,
     start_lng: r.start_lng ?? null,
     bounds: r.bounds ?? { min_lat: 0, max_lat: 0, min_lng: 0, max_lng: 0 },

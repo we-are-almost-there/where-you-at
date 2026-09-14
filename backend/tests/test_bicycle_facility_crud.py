@@ -140,31 +140,16 @@ class TestListBicycleFacilitiesCombinedFilters(unittest.TestCase):
         self.assertEqual(params, ["유료", "혼합", 10, 10])
 
 
-class TestListBicycleFacilitiesNearestSort(unittest.TestCase):
-    def test_nearest_sort_with_coords_uses_geography_distance(self):
+class TestListBicycleFacilitiesOrder(unittest.TestCase):
+    # 이용자 위치를 서버로 받지 않으므로 '가까운 순'은 브라우저가 전체 목록을 받아 정렬한다.
+    # 서버는 좌표 인자를 받지 않고 항상 bicycle_id 순으로 돌려준다.
+    def test_always_orders_by_bicycle_id_without_distance(self):
         conn, cursor = _mock_conn()
-        list_bicycle_facilities(conn, sort="nearest", lat=37.5665, lng=126.9780)
+        list_bicycle_facilities(conn, data_source="realtime", page=1, size=5000)
         sql, params = _call_sql_params(cursor, call_index=1)
-        self.assertIn("ST_Distance(", sql)
-        self.assertIn("geom::geography", sql)
-        self.assertIn("bicycle_id", sql)  # tiebreaker 확인
-        self.assertIn("ST_MakePoint(%s, %s)", sql)
-        self.assertEqual(params[0], 126.9780)
-        self.assertEqual(params[1], 37.5665)
-
-    def test_nearest_sort_without_coords_falls_back_to_default(self):
-        conn, cursor = _mock_conn()
-        list_bicycle_facilities(conn, sort="nearest", lat=None, lng=None)
-        sql, params = _call_sql_params(cursor, call_index=1)
-        self.assertNotIn("ST_Distance", sql)
         self.assertIn("ORDER BY bicycle_id", sql)
-
-    def test_no_sort_uses_default_order(self):
-        conn, cursor = _mock_conn()
-        list_bicycle_facilities(conn, lat=37.5665, lng=126.9780)  # sort 없음
-        sql, params = _call_sql_params(cursor, call_index=1)
         self.assertNotIn("ST_Distance", sql)
-        self.assertIn("ORDER BY bicycle_id", sql)
+        self.assertEqual(params, ["rt:%", 5000, 0])
 
 
 # ── list_bicycle_regions ─────────────────────────────────────────────────

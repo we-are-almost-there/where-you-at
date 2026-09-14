@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RotateCw } from "lucide-react";
 import { useSearchParams } from "react-router";
 import { BicycleList } from "./components/BicycleList";
@@ -7,21 +7,28 @@ import { Pagination } from "../map/components/Pagination";
 import { ErrorNotice } from "../../components/error/ErrorNotice";
 import { toUserError, type UserError } from "../../components/error/userError";
 import {
+  getAllBicycleFacilities,
   getBicycleFacilities,
   getBicycleRegions,
   getBicycleSubregions,
   type BicycleRegionOption,
   type BicycleSubregionOption,
 } from "./bicycleApi";
-import type { BicycleFacilityListResponse } from "./types";
+import type { BicycleFacility, BicycleFacilityListResponse } from "./types";
 import AppHeader from "../../components/layout/AppHeader";
 import { BicycleRegionSelect } from "./components/BicycleRegionSelect";
 import { buildBicycleRegionOptions, buildBicycleSubregionOptions } from "./regionOptions";
+import { slicePage, sortByDistance } from "../map/nearestSort";
 
 // 페이지당 20개. 24로 늘리면 3열(태블릿) 구간의 마지막 줄은 꽉 채울 수 있지만,
 // 2열(모바일) 구간이 10줄→12줄로 늘어나 스크롤 부담이 커진다. 3열 마지막 줄이
 // 2개로 끝나는 정도는 자연스러운 그리드 특성으로 보고 20을 그대로 유지한다.
 const DEFAULT_PAGE_SIZE = 20;
+
+// 가까운 순으로 받은 전체 목록을 다시 받는 기준 시간. 페이지 이동이나 탭 복귀 때 이보다 오래됐으면 다시 받는다.
+// 전체를 한 번 받은 뒤로는 페이지를 넘겨도 요청하지 않아, 그대로 두면 대여 가능 대수가 처음 값으로 남는다.
+// 운영 정보 탭도 실시간 매칭된 시설은 "대여 가능 N대"를 보여 주므로(BicycleCard) 두 탭 모두 다시 받는다.
+const REFRESH_AFTER_MS = 60_000;
 
 const EMPTY_RES: BicycleFacilityListResponse = {
   total_count: 0,
@@ -29,6 +36,16 @@ const EMPTY_RES: BicycleFacilityListResponse = {
   size: DEFAULT_PAGE_SIZE,
   facilities: [],
 };
+
+/** 서버가 페이지를 나눠 준 응답이거나, '가까운 순'을 위해 받은 현재 탭·필터의 시설 전체. */
+type FetchedFacilities =
+  | { mode: "page"; res: BicycleFacilityListResponse }
+  | { mode: "all"; facilities: BicycleFacility[] };
+
+/** 전체 목록을 받은 시각(fetchedAt)이 기준 시간보다 오래됐는지. 한 페이지 응답이면(null) 다시 받을 필요가 없다. */
+function isAllListStale(fetchedAt: number | null, now: number): boolean {
+  return fetchedAt !== null && now - fetchedAt >= REFRESH_AFTER_MS;
+}
 
 const FACILITY_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "rental_staffed", label: "유인대여소" },
@@ -190,7 +207,8 @@ export function BicycleExplore() {
 
   const query = useMemo(() => {
     const q: Record<string, string> = {
-      page: String(page),
+      // 위치를 얻으면 전체를 받아 화면에서 페이지를 나누므로, page를 1로 고정해 페이지를 넘겨도 다시 요청하지 않는다.
+      page: userLoc ? "1" : String(page),
       size: String(DEFAULT_PAGE_SIZE),
       data_source: dataSource,
     };
@@ -199,54 +217,112 @@ export function BicycleExplore() {
     // URL에 남아있는 값은 무시한다 (탭 전환 시 URL 정리가 누락돼도 안전하도록).
     if (dataSource === "standard" && facilityType) q.facility_type = facilityType;
     if (dataSource === "standard" && feeType) q.fee_type = feeType;
-    // 지역 필터를 선택했어도 위치를 확보했으면 항상 가까운 순으로 정렬한다.
-    // (예: "세종" 필터 + 내 위치가 부산이어도, 세종 안에서 내 위치 기준
-    // 가까운 순으로 보여준다 — 지역 중심이 아니라 실제 사용자 위치 기준.)
-    if (userLoc) {
-      q.sort = "nearest";
-      q.lat = String(userLoc.lat);
-      q.lng = String(userLoc.lng);
-    }
     return q;
   }, [page, effectiveRegion, facilityType, feeType, dataSource, userLoc]);
 
-  const queryKey = useMemo(() => JSON.stringify(query), [query]);
+  // 같은 query라도 위치 유무에 따라 받는 방식(한 페이지 / 전체)이 달라서 키에 함께 넣는다.
+  const queryKey = useMemo(() => JSON.stringify([userLoc != null, query]), [query, userLoc]);
 
-  const [res, setRes] = useState<BicycleFacilityListResponse>(EMPTY_RES);
+  const [fetched, setFetched] = useState<FetchedFacilities>({ mode: "page", res: EMPTY_RES });
   const [resolvedQueryKey, setResolvedQueryKey] = useState<string | null>(null);
   const [error, setError] = useState<UserError | null>(null);
   const [retryTick, setRetryTick] = useState(0);
+  // 오래된 전체 목록을 다시 받게 하는 트리거와, 다시 받을지 판단하는 값들. 화면에 그리지 않으므로 ref로 둔다.
+  // - fetchedAllAtRef: 마지막으로 전체를 받은 시각(한 페이지 응답이면 null)
+  // - requestInFlightRef: 목록 요청이 진행 중인지. 첫 로딩·필터 변경·갱신 모두 해당한다.
+  //   요청 중에는 갱신을 시작하지 않아, 느린 네트워크에서 페이지를 넘길 때 받던 요청을 취소하고 겹쳐 받지 않는다.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const fetchedAllAtRef = useRef<number | null>(null);
+  const requestInFlightRef = useRef(false);
 
   // queryKey가 마지막으로 반영 완료된 값과 다르면 로딩 중이라는 뜻 — 렌더링 중 계산.
+  // 오래된 목록을 다시 받을 때는 queryKey가 그대로라 로딩으로 치지 않고 지금 목록을 계속 보여 준다.
   const loading = resolvedQueryKey !== queryKey;
 
-  // 진입 시 위치를 기다리지 않으므로 첫 로딩이 빠르고, 위치가 나중에 도착해
-  // query가 바뀌면 여기서 곧바로 재조회되어 순서만 조용히 갱신된다.
+  // 진입 시 위치를 기다리지 않으므로 첫 로딩이 빠르다(서버가 bicycle_id 순으로 한 페이지를 준다).
+  // 위치가 나중에 도착하면 현재 탭·필터의 시설 전체를 받아 브라우저에서 가까운 순으로 정렬한다.
+  // 이용자 위치를 서버로 보내지 않기 위해서다(map/nearestSort.ts). 지역 필터를 골랐어도 그 안에서
+  // 실제 이용자 위치 기준으로 정렬한다.
   useEffect(() => {
     let cancelled = false;
-    getBicycleFacilities(query)
-      .then((r) => {
+    // 이 queryKey의 목록을 이미 보여 주고 있으면 뒤에서 도는 갱신(refreshTick)이다.
+    const isBackgroundRefresh = resolvedQueryKey === queryKey;
+    // 갱신뿐 아니라 필터를 바꿔 새로 받는 중에도 켠다. 그사이 화면에 남은 이전 목록에서 페이지를 넘기면
+    // 받은 시각이 아직 이전 조건 기준이라 갱신이 시작돼, 받던 요청을 취소하고 다시 받게 되기 때문이다.
+    requestInFlightRef.current = true;
+
+    const request: Promise<FetchedFacilities> = userLoc
+      ? getAllBicycleFacilities(query).then((facilities) => ({ mode: "all", facilities }))
+      : getBicycleFacilities(query).then((r) => ({ mode: "page", res: r }));
+    request
+      .then((result) => {
         if (cancelled) return;
-        setRes(r);
+        fetchedAllAtRef.current = result.mode === "all" ? Date.now() : null;
+        setFetched(result);
         setError(null);
         setResolvedQueryKey(queryKey);
       })
       .catch((e) => {
         if (cancelled) return;
+        // 이용자가 요청하지 않은 뒤쪽 갱신이 실패하면 보던 목록을 지우지 않고 조용히 넘긴다.
+        // 받은 시각을 그대로 두어 다음 페이지 이동·탭 복귀 때 다시 시도한다.
+        if (isBackgroundRefresh) return;
         setError(toUserError(e, "자전거 시설을 불러오지 못했어요"));
         // resolvedQueryKey는 갱신하지 않는다. 에러는 이 쿼리를 아직 성공적으로
         // 처리하지 못했다는 뜻이므로, retry() 호출 시 loading이 다시 true가
         // 되어 "불러오는 중..."이 뜨게 한다. 여기서 갱신하면 재시도 중에도
         // loading이 false로 계산되어 결과 없음 문구가 먼저 잘못 뜬다.
+      })
+      .finally(() => {
+        if (!cancelled) requestInFlightRef.current = false;
       });
     return () => {
       cancelled = true;
+      requestInFlightRef.current = false;
     };
     // query 대신 queryKey(query를 문자열화한 값)로 변경 여부를 비교한다. query 객체
     // 참조는 매 렌더 바뀔 수 있어도 queryKey가 같으면 재실행할 필요가 없으므로,
-    // query는 의도적으로 deps에서 제외한다.
+    // query는 의도적으로 deps에서 제외한다. refreshTick은 오래된 전체 목록을 다시 받을 때 바뀐다.
+    // resolvedQueryKey는 요청을 시작한 시점의 값으로 갱신인지 판단하는 데만 쓰므로 deps에 넣지 않는다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryKey, retryTick]);
+  }, [queryKey, retryTick, refreshTick]);
+
+  // 전체 목록이 오래됐고 다시 받는 중이 아니면 다시 받는다. 페이지 이동(아래 Pagination)과 탭 복귀 때 확인한다.
+  // 다시 받는 요청도 위치와 상관없는 같은 전체 목록이라 위치가 드러나지 않는다.
+  const refreshIfStale = () => {
+    if (requestInFlightRef.current || !isAllListStale(fetchedAllAtRef.current, Date.now())) return;
+    requestInFlightRef.current = true;
+    setRefreshTick((t) => t + 1);
+  };
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      if (requestInFlightRef.current || !isAllListStale(fetchedAllAtRef.current, Date.now())) return;
+      requestInFlightRef.current = true;
+      setRefreshTick((t) => t + 1);
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
+
+  // 전체를 받았으면 가까운 순으로 정렬한다. 정렬은 목록·위치가 바뀔 때만 다시 하고, 페이지 이동은 자르기만 한다.
+  // 시설 좌표는 map_y가 위도, map_x가 경도다.
+  const sortedAll = useMemo(() => {
+    if (fetched.mode !== "all") return null;
+    if (!userLoc) return fetched.facilities;
+    return sortByDistance(fetched.facilities, userLoc, (f) => ({ lat: f.map_y, lng: f.map_x }));
+  }, [fetched, userLoc]);
+
+  const res = useMemo<BicycleFacilityListResponse>(() => {
+    if (!sortedAll) return fetched.mode === "page" ? fetched.res : EMPTY_RES;
+    return {
+      total_count: sortedAll.length,
+      page,
+      size: DEFAULT_PAGE_SIZE,
+      facilities: slicePage(sortedAll, page, DEFAULT_PAGE_SIZE),
+    };
+  }, [sortedAll, fetched, page]);
 
   const retry = () => {
     // 클릭 시점에 현재 지역/탭의 세부 지역 실패까지 확인된 경우에만 함께 재요청한다.
@@ -420,7 +496,7 @@ export function BicycleExplore() {
 
         <p className="mt-3 mb-3 text-[13px] text-caption">
           총 {res.total_count}개 시설
-          {query.sort === "nearest" && " · 가까운 순"}
+          {fetched.mode === "all" && userLoc && " · 가까운 순"}
         </p>
 
         {error ? (
@@ -439,6 +515,7 @@ export function BicycleExplore() {
             page={page}
             totalPages={totalPages}
             onChange={(nextPage) => {
+              refreshIfStale();
               const params: Record<string, string> = { page: String(nextPage), source: dataSource };
               if (region) params.region = region;
               if (subregionCode) params.gu = subregionCode;

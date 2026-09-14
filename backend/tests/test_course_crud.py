@@ -52,19 +52,12 @@ class TestListCoursesSortTiebreaker(unittest.TestCase):
                 sql, _ = _list_sql_params(cursor)
                 self.assertEqual(_order_by(sql), expected)
 
-    def test_nearest_appends_id_tiebreaker(self):
-        conn, cursor = _mock_conn()
-        list_courses(conn, sort="nearest", lat=37.5665, lng=126.9780)
-        sql, params = _list_sql_params(cursor)
-        self.assertTrue(_order_by(sql).endswith("ASC NULLS LAST, c.id"))
-        # 보조 정렬은 상수라 바인딩 순서(type, lat, lng, lat, size, offset)는 그대로다.
-        self.assertEqual(params, ["trail", 37.5665, 126.9780, 37.5665, 20, 0])
-
     def test_default_sort_has_single_id(self):
         cases = {
             "sort 없음": {},
             "모르는 sort": {"sort": "unknown"},
-            "좌표 없는 nearest": {"sort": "nearest"},
+            # 이용자 위치를 서버로 받지 않으므로 '가까운 순'은 브라우저가 정렬한다. 서버는 기본 정렬이다.
+            "nearest": {"sort": "nearest"},
         }
         for label, kwargs in cases.items():
             with self.subTest(label):

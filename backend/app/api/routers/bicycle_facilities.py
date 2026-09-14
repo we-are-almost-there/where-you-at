@@ -27,23 +27,20 @@ def list_facilities(
     facility_type: str | None = Query(None, pattern="^(rental_staffed|rental_unmanned|rental_mixed)$"),
     fee_type: str | None = Query(None, pattern="^(무료|유료)$"),
     data_source: str | None = Query(None, pattern="^(standard|realtime)$"),
-    sort: str | None = Query(None, pattern="^nearest$"),
-    lat: float | None = Query(None, ge=-90, le=90),
-    lng: float | None = Query(None, ge=-180, le=180),
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    # 이용자 위치를 서버로 받지 않으므로 '가까운 순'은 브라우저가 전체 목록을 받아 정렬한다.
+    # 그래서 한 탭의 시설을 한 번에 받을 수 있게 상한을 프론트 요청 크기와 같은 5,000으로 둔다(실시간 탭 약 4,800건).
+    # 넘치면 프론트가 페이지를 넘기며 모은다. 인증 없는 공개 API라 필요 이상으로 크게 열지 않는다.
+    size: int = Query(20, ge=1, le=5000),
     conn=Depends(get_db),
 ):
-    """자전거 대여소/정비소 목록을 조회한다."""
+    """자전거 대여소/정비소 목록을 조회한다. 정렬은 bicycle_id 고정."""
     total, rows = list_bicycle_facilities(
         conn,
         region=region,
         facility_type=facility_type,
         fee_type=fee_type,
         data_source=data_source,
-        sort=sort,
-        lat=lat,
-        lng=lng,
         page=page,
         size=size,
     )
