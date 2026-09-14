@@ -17,11 +17,11 @@ type ViewMode = "list" | "calendar";
 
 export default function Race() {
   const today = useToday();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedEventId = Number(searchParams.get("eventId"));
   const linkedEventId = Number.isSafeInteger(requestedEventId) && requestedEventId > 0 ? requestedEventId : null;
   const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [selectedRace, setSelectedRace] = useState<RaceType | null>(null);
+
   const [races, setRaces] = useState<RaceType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<UserError | null>(null);
@@ -32,18 +32,23 @@ export default function Race() {
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia("(min-width: 768px)").matches);
 
 
-  // React 공식 문서의 "Adjusting state during render" 패턴을 쓴다 — 이전 값을
-  // state로 들고 있다가 렌더링 중에 비교해서 다르면 그 자리에서 setState한다.
-  // (커밋 전에 즉시 재렌더되어 화면 깜빡임 없이 반영된다.)
-  const [prevRaces, setPrevRaces] = useState(races);
-  const [prevLinkedEventId, setPrevLinkedEventId] = useState(linkedEventId);
-  if (races !== prevRaces || linkedEventId !== prevLinkedEventId) {
-    setPrevRaces(races);
-    setPrevLinkedEventId(linkedEventId);
-    setSelectedRace(races.find((race) => race.event_id === linkedEventId) ?? null);
-    // linkedEventId가 바뀌었을 때만(races만 새로 로드된 경우는 제외) 필터를 초기화한다.
-    // 그래야 다른 대회 링크로 들어왔을 때 이전 필터에 가려 목록에 안 보이는 일이 없다.
-    if (linkedEventId !== prevLinkedEventId) {
+  const selectedRace = races.find((race) => race.event_id === linkedEventId) ?? null;
+  const eventParam = searchParams.get("eventId");
+  const [prevEventParam, setPrevEventParam] = useState(eventParam);
+  const [pendingSelection, setPendingSelection] = useState<{
+    from: string | null;
+    to: string | null;
+  } | null>(null);
+  // 외부 링크·뒤로가기는 필터를 풀어 선택한 대회를 보여 준다.
+  // 이전 값은 실제 URL이 바뀐 뒤에만 갱신한다. 라우터 전환을 기다리는 동안
+  // 로컬 입력이 먼저 렌더되어도 필터 초기화가 발생하지 않는다.
+  if (eventParam !== prevEventParam) {
+    const isInternalSelection = pendingSelection !== null
+      && pendingSelection.from === prevEventParam
+      && pendingSelection.to === eventParam;
+    setPrevEventParam(eventParam);
+    setPendingSelection(null);
+    if (!isInternalSelection) {
       setViewMode("list");
       setActiveType(null);
       setKeyword("");
@@ -51,15 +56,30 @@ export default function Race() {
     }
   }
 
+  const scrollTarget = useRef<number | null>(linkedEventId);
+  const selectRace = (race: RaceType | null, scroll = false) => {
+    const id = race?.event_id ?? null;
+    scrollTarget.current = scroll ? id : null;
+    if (id === null && !searchParams.has("eventId")) return;
+    const nextEventParam = id === null ? null : String(id);
+    if (nextEventParam === eventParam) return;
+    setPendingSelection({ from: eventParam, to: nextEventParam });
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (id === null) next.delete("eventId");
+      else next.set("eventId", String(id));
+      return next;
+    });
+  };
   useEffect(() => {
     const query = window.matchMedia("(min-width: 768px)");
     const onChange = () => {
       setIsDesktop(query.matches);
       // 캘린더 뷰는 데스크톱 상세 UI가 없어서(목록 인라인 상세만 있음), 모바일
       // 바텀시트가 열린 채로 데스크톱 폭으로 넘어오면 selectedRace가 화면 어디에도
-      // 표시되지 않는 "고아 상태"가 된다. 그 경우 선택을 닫는다.
+      // 표시되지 않는 "고아 상태"가 된다. 그 경우 목록으로 전환한다.
       if (query.matches) {
-        setSelectedRace((current) => (viewMode === "calendar" ? null : current));
+        if (viewMode === "calendar") setViewMode("list");
       }
     };
     query.addEventListener("change", onChange);
@@ -76,9 +96,7 @@ export default function Race() {
   }, []);
 
   // 목록은 페이지 진입 시 한 번만 가져온다. eventId 쿼리 파라미터가 바뀌어도
-  // (뒤로가기, 다른 링크 진입 등) 다시 fetch하지 않고 위쪽 렌더링 중 비교 로직에서
-  // 이미 가진 races 중에서 선택만 갱신한다 — 그래야 재요청 도중 필터·검색어가
-  // 리셋되지 않는다.
+  // (뒤로가기, 다른 링크 진입 등) 다시 fetch하지 않고 이미 가진 races에서 선택한다.
   useEffect(() => {
     let ignore = false;
 
@@ -102,13 +120,13 @@ export default function Race() {
   }, [retryTick]);
 
   const selectedRaceId = selectedRace?.event_id;
-  const calendarScrollTarget = useRef<number | null>(null);
+
   useEffect(() => {
     if (isLoading || !isDesktop || viewMode !== "list" || selectedRaceId == null) return;
-    if (selectedRaceId !== linkedEventId && selectedRaceId !== calendarScrollTarget.current) return;
+    if (selectedRaceId !== scrollTarget.current) return;
     const frame = requestAnimationFrame(() => {
       document.getElementById(`race-trigger-${selectedRaceId}`)?.scrollIntoView({ block: "center" });
-      calendarScrollTarget.current = null;
+      scrollTarget.current = null;
     });
     return () => cancelAnimationFrame(frame);
   }, [isLoading, isDesktop, viewMode, selectedRaceId, linkedEventId]);
@@ -129,7 +147,7 @@ export default function Race() {
         checked={upcomingOnly}
         onChange={(event) => {
           setUpcomingOnly(event.target.checked);
-          setSelectedRace(null);
+          selectRace(null);
         }}
         className="h-4 w-4 cursor-pointer accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       />
@@ -162,7 +180,7 @@ export default function Race() {
             <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-gray-100">
               <button
                 type="button"
-                onClick={() => {setActiveType(null); setSelectedRace(null);}}
+                onClick={() => {setActiveType(null); selectRace(null);}}
                 className={`relative pb-2 text-sm font-medium transition-colors ${
                   activeType === null ? "text-gray-900" : "text-gray-400"
                 }`}
@@ -178,7 +196,7 @@ export default function Race() {
                   <button
                     key={type}
                     type="button"
-                    onClick={() => {setActiveType(isActive ? null : type);  setSelectedRace(null);}}
+                    onClick={() => {setActiveType(isActive ? null : type);  selectRace(null);}}
                     className={`relative pb-2 text-sm font-medium transition-colors ${
                       isActive ? "text-gray-900" : "text-gray-400"
                     }`}
@@ -201,7 +219,7 @@ export default function Race() {
                 type="button"
                 onClick={() => {
                   setViewMode("list");
-                  setSelectedRace(null);
+                  selectRace(null);
                 }}
                 className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
                   viewMode === "list" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"
@@ -213,7 +231,7 @@ export default function Race() {
                 type="button"
                 onClick={() => {
                   setViewMode("calendar");
-                  setSelectedRace(null);
+                  selectRace(null);
                 }}
                 className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
                   viewMode === "calendar" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"
@@ -233,7 +251,7 @@ export default function Race() {
                   value={keyword}
                   onChange={(event) => {
                     setKeyword(event.target.value);
-                    setSelectedRace(null);
+                    selectRace(null);
                   }}
                   className="h-10 w-full rounded-lg border border-divider bg-white pl-9 pr-3.5 text-sm text-ink placeholder:text-caption focus:border-accent focus:outline-none"
                 />
@@ -244,8 +262,8 @@ export default function Race() {
             </fieldset>
             {isLoading && <p className="py-10 text-center text-sm text-gray-400">불러오는 중...</p>}
             {error && <ErrorNotice title={error.title} description={error.description} onRetry={() => {setIsLoading(true); setError(null); setRetryTick((t) => t + 1)}} />}
-            {!isLoading && !error && linkedEventId && !races.some((race) => race.event_id === linkedEventId) && (
-              <p role="status" className="mb-4 rounded-lg bg-gray-50 p-3 text-sm text-gray-500">선택한 대회를 찾을 수 없어요. 다른 대회를 확인해 주세요.</p>
+            {!isLoading && !error && searchParams.has("eventId") && !selectedRace && (
+              <p role="status" className="mb-4 rounded-lg bg-gray-50 p-3 text-sm text-gray-500">선택한 대회를 찾을 수 없어요. 다른 대회를 확인해 주세요. <button type="button" onClick={() => selectRace(null)}>안내 닫기</button></p>
             )}
 
             {!isLoading && !error && viewMode === "list" && keyword.trim() && filteredRaces.length === 0 ? (
@@ -256,8 +274,8 @@ export default function Race() {
                   today={today}
                   races={filteredRaces}
                   selectedRaceId={selectedRace?.event_id ?? null}
-                  onSelectRace={(race) => setSelectedRace((current) =>
-                    isDesktop && current?.event_id === race.event_id ? null : race
+                  onSelectRace={(race) => selectRace(
+                    isDesktop && selectedRace?.event_id === race.event_id ? null : race
                   )}
                   isDesktop={isDesktop}
                 />
@@ -269,10 +287,10 @@ export default function Race() {
                     if (isDesktop) {
                       setKeyword("");
                       setUpcomingOnly(false);
-                      calendarScrollTarget.current = race.event_id;
+
                       setViewMode("list");
                     }
-                    setSelectedRace(race);
+                    selectRace(race, isDesktop);
                   }}
                 />
               )
@@ -284,7 +302,7 @@ export default function Race() {
               <RaceDetailSheet
                 key={selectedRace.event_id}
                 race={selectedRace}
-                onClose={() => setSelectedRace(null)}
+                onClose={() => selectRace(null)}
                 backLabel={viewMode === "calendar" ? "캘린더로" : "목록으로"}
               />
             </div>
