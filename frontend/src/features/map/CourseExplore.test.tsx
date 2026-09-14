@@ -2,7 +2,7 @@
 //
 // 코스 탐색 '가까운 순'이 이용자 위치를 서버로 보내지 않고, 필터 결과 전체를 한 번만 받아
 // 브라우저에서 정렬·페이지를 나누는지 본다. 페이지를 넘길 때마다 전체를 다시 받던 회귀를 막는다.
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CourseExplore } from "./CourseExplore";
@@ -95,6 +95,40 @@ describe("CourseExplore 가까운 순", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "2" }));
 
+    await waitFor(() => expect(shownIds(container)).toEqual([1]));
+    expect(getAllCourses).toHaveBeenCalledTimes(1);
+  });
+
+  // 위치 응답이 늦어 기본 순서 1페이지를 먼저 받은 뒤, 전체 목록이 오기 전에 페이지를 넘기는 경우.
+  // 요청 page가 1로 고정돼 새 요청이 없으므로, 받아 둔 1페이지를 2페이지인 것처럼 보여 주면 안 된다.
+  it("전체 목록이 오기 전에 페이지를 넘기면 이전 페이지 대신 로딩을 보여 주고, 도착하면 그 페이지를 보여 준다", async () => {
+    let giveLocation: PositionCallback = () => {};
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition: (onSuccess: PositionCallback) => {
+          giveLocation = onSuccess;
+        },
+      },
+    });
+    let resolveAll: (courses: Course[]) => void = () => {};
+    vi.mocked(getAllCourses).mockReturnValue(
+      new Promise((resolve) => {
+        resolveAll = resolve;
+      }),
+    );
+
+    const { container } = renderAt("/courses?sort=nearest");
+    await waitFor(() => expect(shownIds(container)).toEqual([1, 2, 3, 4, 5, 6]));
+
+    act(() => giveLocation({ coords: SEOUL } as GeolocationPosition));
+    await waitFor(() => expect(getAllCourses).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "2" }));
+    expect(await screen.findByText("코스를 불러오는 중…")).toBeTruthy();
+    expect(shownIds(container)).toEqual([]);
+
+    await act(async () => resolveAll(ALL));
     await waitFor(() => expect(shownIds(container)).toEqual([1]));
     expect(getAllCourses).toHaveBeenCalledTimes(1);
   });

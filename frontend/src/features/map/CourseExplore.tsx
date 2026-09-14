@@ -171,6 +171,12 @@ export function CourseExplore() {
     };
   }, [sortedAll, fetched, page]);
 
+  // 받아 둔 한 페이지 응답이 지금 페이지와 다르면 그 목록을 보여 주지 않고 로딩으로 둔다.
+  // '가까운 순'에서 전체 목록을 받는 중에 페이지를 넘기면 요청 page가 1로 고정돼 새 요청이 없어서,
+  // 그대로 두면 전체 목록이 올 때까지 페이지 번호만 바뀌고 카드는 이전 페이지로 남는다.
+  // 일반 페이지 이동에서도 새 응답이 오기 전까지 같은 어긋남이 생겨 함께 막는다. 필터 변경은 해당하지 않는다.
+  const pageMismatch = fetched.mode === "page" && fetched.res.page !== page;
+
   // 이벤트 핸들러에서 로딩 표시 후 재조회 트리거 (effect 안 setState 아님)
   const retry = () => {
     setLoading(true);
@@ -379,7 +385,7 @@ export function CourseExplore() {
                 description={error.description}
                 onRetry={retry}
               />
-            ) : loading ? (
+            ) : loading || pageMismatch ? (
               <p className="py-16 text-center text-[14px] text-caption">코스를 불러오는 중…</p>
             ) : (
               <>

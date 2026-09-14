@@ -3,7 +3,7 @@
 // 자전거 대여소 '가까운 순'이 이용자 위치를 서버로 보내지 않고 전체를 받아 브라우저에서 정렬하는지,
 // 그리고 받은 지 1분이 지난 전체 목록을 페이지 이동·탭 복귀 때 다시 받아 실시간 대여 가능 대수가
 // 처음 값으로 남지 않는지 본다.
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BicycleExplore } from "./BicycleExplore";
@@ -157,6 +157,41 @@ describe("BicycleExplore 가까운 순", () => {
     fireEvent.click(pageButton(2));
     await waitFor(() => expect(pageButton(2).getAttribute("aria-current")).toBe("page"));
     expect(getAllBicycleFacilities).toHaveBeenCalledTimes(2);
+  });
+
+  // 위치 응답이 늦어 기본 순서 1페이지를 먼저 받은 뒤, 전체 목록이 오기 전에 페이지를 넘기는 경우.
+  // 요청 page가 1로 고정돼 새 요청이 없으므로, 받아 둔 1페이지를 2페이지인 것처럼 보여 주면 안 된다.
+  it("전체 목록이 오기 전에 페이지를 넘기면 이전 페이지 대신 로딩을 보여 주고, 도착하면 그 페이지를 보여 준다", async () => {
+    let giveLocation: PositionCallback = () => {};
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition: (onSuccess: PositionCallback) => {
+          giveLocation = onSuccess;
+        },
+      },
+    });
+    let resolveAll: (facilities: BicycleFacility[]) => void = () => {};
+    vi.mocked(getAllBicycleFacilities).mockReturnValue(
+      new Promise((resolve) => {
+        resolveAll = resolve;
+      }),
+    );
+
+    renderRealtime();
+    await screen.findByText("대여소 1");
+
+    act(() => giveLocation({ coords: SEOUL } as GeolocationPosition));
+    await waitFor(() => expect(getAllBicycleFacilities).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(pageButton(2));
+    expect(await screen.findByText("불러오는 중...")).toBeTruthy();
+    expect(screen.queryByText("대여소 1")).toBeNull();
+
+    await act(async () => resolveAll(FACILITIES));
+    expect(await screen.findByText("대여소 21")).toBeTruthy();
+    expect(screen.queryByText("대여소 1")).toBeNull();
+    expect(getAllBicycleFacilities).toHaveBeenCalledTimes(1);
   });
 
   it("탭으로 돌아왔을 때 전체 목록이 1분보다 오래됐으면 다시 받는다", async () => {

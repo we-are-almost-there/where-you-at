@@ -324,6 +324,11 @@ export function BicycleExplore() {
     };
   }, [sortedAll, fetched, page]);
 
+  // 받아 둔 한 페이지 응답이 지금 페이지와 다르면 그 목록을 보여 주지 않고 로딩으로 둔다.
+  // 위치를 얻어 전체 목록을 받는 중에 페이지를 넘기면 요청 page가 1로 고정돼 새 요청이 없어서,
+  // 그대로 두면 전체 목록이 올 때까지 페이지 번호만 바뀌고 카드는 이전 페이지로 남는다(CourseExplore와 같은 처리).
+  const pageMismatch = fetched.mode === "page" && fetched.res.page !== page;
+
   const retry = () => {
     // 클릭 시점에 현재 지역/탭의 세부 지역 실패까지 확인된 경우에만 함께 재요청한다.
     // 세부 지역 요청이 아직 진행 중이면 그대로 두고 목록만 재요청한다.
@@ -501,9 +506,9 @@ export function BicycleExplore() {
 
         {error ? (
           <ErrorNotice title={error.title} description={error.description} onRetry={retry} />
-        ) : loading && res.facilities.length === 0 ? (
-          // 데이터가 아예 없을 때만(최초 진입 등) 로딩 문구를 보여준다. 이미 목록이
-          // 있는 상태에서 쿼리가 바뀌어 재조회되는 중에는 이전 목록을 그대로 유지해
+        ) : (loading && res.facilities.length === 0) || pageMismatch ? (
+          // 데이터가 아예 없을 때(최초 진입 등)와 받아 둔 목록이 지금 페이지가 아닐 때만 로딩 문구를 보여준다.
+          // 필터·탭이 바뀌어 재조회되는 중에는 이전 목록을 그대로 유지해
           // "불러오는 중..."으로 화면이 깜빡이며 지워지는 것을 막는다.
           <p className="py-10 text-center text-sm text-gray-400">불러오는 중...</p>
         ) : (
