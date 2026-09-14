@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router";
 import type { SupportDetail as SupportDetailType } from "../support.types";
 import { fetchSupportDetail } from "../supportApi";
 import { toUserError, type UserError } from "../../../components/error/userError";
+import { HttpError } from "../../../lib/http";
 import { SupportErrorText } from "./SupportErrorText";
 
 const STORAGE_KEY = (id: number) => `support_checklist_${id}`;
@@ -11,6 +12,12 @@ const STORAGE_KEY = (id: number) => `support_checklist_${id}`;
 const INVALID_ID_ERROR: UserError = {
   title: "지원 제도를 찾을 수 없어요",
   description: "주소가 잘못되었어요. 목록에서 다시 선택해 주세요.",
+};
+
+// 없는 제도(404). 다시 시도해도 같은 결과라 재시도 안내를 띄우지 않는다.
+const NOT_FOUND_ERROR: UserError = {
+  title: "지원 제도를 찾을 수 없어요",
+  description: "존재하지 않거나 삭제된 제도예요. 목록에서 다시 선택해 주세요.",
 };
 
 function loadChecked(id: number): Record<number, boolean> {
@@ -55,7 +62,14 @@ export function SupportDetail({ id }: Props) {
       })
       .catch((err) => {
         if (cancelled) return;
-        setLoaded({ id, detail: null, error: toUserError(err, "지원 제도를 불러오지 못했어요") });
+        setLoaded({
+          id,
+          detail: null,
+          error:
+            err instanceof HttpError && err.status === 404
+              ? NOT_FOUND_ERROR
+              : toUserError(err, "지원 제도를 불러오지 못했어요"),
+        });
       });
     return () => {
       cancelled = true;
