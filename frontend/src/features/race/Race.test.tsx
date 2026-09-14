@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createMemoryRouter, RouterProvider } from "react-router";
+import { MemoryRouter, Routes, Route, useLocation, useNavigate } from "react-router";
 import Race from "./Race";
 import { fetchAllRaces } from "./raceApi";
 import type { Race as RaceType } from "./types";
@@ -30,11 +30,36 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+function LocationProbe() {
+  return <div data-testid="location-search">{useLocation().search}</div>;
+}
+
+// 뒤로가기를 테스트에서 트리거할 방법이 필요 — declarative MemoryRouter는
+// history 객체를 밖으로 안 꺼내주므로, useNavigate()를 쓰는 숨은 버튼을 하나 심는다.
+function BackButton() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate(-1)}>뒤로</button>;
+}
+
 async function open(url = "/race?eventId=1&keep=yes") {
-  const router = createMemoryRouter([{ path: "/race", element: <Race /> }], { initialEntries: [url] });
-  render(<RouterProvider router={router} />);
+  render(
+    <MemoryRouter initialEntries={[url]}>
+      <Routes>
+        <Route path="/race" element={<Race />} />
+      </Routes>
+      <LocationProbe />
+      <BackButton />
+    </MemoryRouter>,
+  );
   await screen.findByRole("button", { name: "대회 A" });
-  return router;
+}
+
+function currentSearch() {
+  return screen.getByTestId("location-search").textContent;
+}
+
+function goBack() {
+  fireEvent.click(screen.getByRole("button", { name: "뒤로" }));
 }
 
 it("화면을 떠나면 전체 조회 요청을 취소한다", async () => {
@@ -46,16 +71,16 @@ it("화면을 떠나면 전체 조회 요청을 취소한다", async () => {
 });
 
 it("선택·닫기를 URL에 반영하고 뒤로가기와 재진입 시 선택을 복원한다", async () => {
-  const router = await open();
+  await open();
   fireEvent.click(screen.getByRole("button", { name: "대회 B" }));
-  expect(router.state.location.search).toBe("?eventId=2&keep=yes");
+  await waitFor(() => expect(currentSearch()).toBe("?eventId=2&keep=yes"));
   expect(screen.getByTestId("selected").textContent).toBe("2");
-  const reloadUrl = router.state.location.pathname + router.state.location.search;
+  const reloadUrl = "/race" + currentSearch();
   fireEvent.click(screen.getByRole("button", { name: "대회 B" }));
-  expect(router.state.location.search).toBe("?keep=yes");
+  await waitFor(() => expect(currentSearch()).toBe("?keep=yes"));
   expect(screen.getByTestId("selected").textContent).toBe("none");
-  await act(async () => { await router.navigate(-1); });
-  expect(screen.getByTestId("selected").textContent).toBe("2");
+  goBack();
+  await waitFor(() => expect(screen.getByTestId("selected").textContent).toBe("2"));
   cleanup();
   await open(reloadUrl);
   expect(screen.getByTestId("selected").textContent).toBe("2");
@@ -68,41 +93,44 @@ it("최초 딥링크만 스크롤하고 닫았다 다시 선택해도 재실행�
   fireEvent.click(screen.getByRole("button", { name: "대회 A" }));
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
   expect(scroll).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(currentSearch()).toBe("?eventId=1&keep=yes"));
+  expect(screen.getByTestId("selected").textContent).toBe("1");
 });
 
 it("검색으로 선택을 닫을 때 입력한 검색어를 유지한다", async () => {
-  const router = await open();
+  await open();
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "대회 B" } });
   expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("대회 B");
-  expect(router.state.location.search).toBe("?keep=yes");
+  await waitFor(() => expect(currentSearch()).toBe("?keep=yes"));
   expect(screen.queryByRole("button", { name: "대회 A" })).toBeNull();
-  await act(async () => { await router.navigate(-1); });
-  expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
+  goBack();
+  await waitFor(() => expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe(""));
   expect(screen.getByTestId("selected").textContent).toBe("1");
 });
 
 it("필터로 선택을 닫을 때 적용한 필터를 유지한다", async () => {
-  const router = await open();
+  await open();
   fireEvent.click(screen.getByRole("button", { name: "자전거" }));
-  expect(router.state.location.search).toBe("?keep=yes");
+  await waitFor(() => expect(currentSearch()).toBe("?keep=yes"));
   expect(screen.queryByRole("button", { name: "대회 A" })).toBeNull();
   expect(screen.queryByRole("button", { name: "대회 B" })).toBeNull();
 });
 
 it("예정 대회 필터와 캘린더 전환도 내부 URL 변경 후 유지한다", async () => {
-  const router = await open();
+  await open();
   fireEvent.click(screen.getByRole("checkbox", { name: "예정된 대회만" }));
   expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
-  expect(router.state.location.search).toBe("?keep=yes");
-  await act(async () => { await router.navigate(-1); });
+  await waitFor(() => expect(currentSearch()).toBe("?keep=yes"));
+  goBack();
+  await waitFor(() => expect(currentSearch()).toBe("?eventId=1&keep=yes")); // 복원 확인
   fireEvent.click(screen.getByRole("button", { name: "캘린더" }));
-  expect(router.state.location.search).toBe("?keep=yes");
+  await waitFor(() => expect(currentSearch()).toBe("?keep=yes"));
   expect(screen.queryByRole("searchbox")).toBeNull();
 });
 
 it.each(["999", "invalid"])("잘못된 eventId %s 안내를 닫으면 URL에서도 제거한다", async (id) => {
-  const router = await open(`/race?eventId=${id}&keep=yes`);
+  await open(`/race?eventId=${id}&keep=yes`);
   fireEvent.click(screen.getByRole("button", { name: "안내 닫기" }));
   expect(screen.queryByText(/선택한 대회를 찾을 수 없어요/)).toBeNull();
-  expect(router.state.location.search).toBe("?keep=yes");
+  await waitFor(() => expect(currentSearch()).toBe("?keep=yes"));
 });
