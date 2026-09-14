@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from .api.router import api_router
@@ -13,6 +14,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# '가까운 순'을 브라우저에서 정렬하려고 목록 전체를 받는 경우(코스 약 870KB, 자전거 실시간 약 1.7MB)가 있어 압축한다.
+# JSON은 4분의 1 이하로 줄어든다. 1KB 미만 응답은 압축 이득보다 비용이 커서 그대로 보낸다.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(api_router)
 

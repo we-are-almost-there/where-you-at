@@ -30,6 +30,19 @@ export interface Course {
   path_bicycle: LatLng[]; // 자전거 없으면 []
 }
 
+// GET /api/courses/starts 응답 항목 — 홈 '가까운 코스'를 브라우저에서 고르기 위한 가벼운 목록.
+// 도보 경로가 있는 코스만 담고(위치를 못 얻었을 때의 기본 목록과 같은 범위), 썸네일 경로 대신 출발점만 담는다.
+// 이용자 위치는 서버로 보내지 않는다.
+export interface CourseStart {
+  id: number;
+  title: string;
+  start_address: string;
+  image_url: string;
+  region_code: string;
+  routes: CourseRoute[];
+  start: LatLng | null; // 도보 경로 출발점 (좌표가 비어 있으면 null)
+}
+
 // GET /api/courses 응답 본문 (페이지네이션 래퍼)
 export interface CourseListResponse {
   total_count: number;

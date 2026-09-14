@@ -110,7 +110,6 @@ export function buildCourseQuery(
   routeType: RouteType,
   page: number,
   size: number,
-  userLoc?: LatLng | null,
 ): Record<string, string> {
   const q: Record<string, string> = {
     type: routeType, // 주행 타입 (도보/자전거)
@@ -121,16 +120,9 @@ export function buildCourseQuery(
   if (filters.distance) q.distance = filters.distance; // 거리 버킷 (short/mid/long)
   if (filters.difficulty && routeType === "도보") q.difficulty = filters.difficulty; // 난이도는 도보 전용
   if (filters.keyword.trim()) q.keyword = filters.keyword.trim();
-  // 가까운 순은 사용자 위치가 있어야 정렬 가능. 없으면 sort 생략 → 기본 순서.
-  if (filters.sort === "nearest") {
-    if (userLoc) {
-      q.sort = "nearest";
-      q.lat = String(userLoc.lat);
-      q.lng = String(userLoc.lng);
-    }
-  } else if (filters.sort) {
-    q.sort = filters.sort;
-  }
+  // 가까운 순은 서버로 보내지 않는다. 이용자 위치를 서버에 주지 않기 위해 화면(CourseExplore)이
+  // 전체 목록을 받아 브라우저에서 정렬한다(nearestSort.ts). 서버에는 기본 순서로 요청한다.
+  if (filters.sort && filters.sort !== "nearest") q.sort = filters.sort;
   return q;
 }
 
@@ -163,20 +155,7 @@ export function getCoursesMock(query: Record<string, string>): CourseListRespons
   else if (query.sort === "distance_desc") list = [...list].sort((a, b) => val(b).distance - val(a).distance);
   else if (query.sort === "time_asc") list = [...list].sort((a, b) => val(a).estimated_time - val(b).estimated_time);
   else if (query.sort === "time_desc") list = [...list].sort((a, b) => val(b).estimated_time - val(a).estimated_time);
-  else if (query.sort === "nearest" && query.lat && query.lng) {
-    // 사용자 위치 → 코스 출발점까지 근사 거리(제곱)로 정렬. 경도는 위도로 보정.
-    const ulat = Number(query.lat);
-    const ulng = Number(query.lng);
-    const origin = (c: Course) => c.path_trail[0] ?? c.path_bicycle[0];
-    const dist2 = (c: Course) => {
-      const p = origin(c);
-      if (!p) return Number.POSITIVE_INFINITY;
-      const dlat = p.lat - ulat;
-      const dlng = (p.lng - ulng) * Math.cos((ulat * Math.PI) / 180);
-      return dlat * dlat + dlng * dlng;
-    };
-    list = [...list].sort((a, b) => dist2(a) - dist2(b));
-  }
+  // 가까운 순은 서버(여기서는 목)가 하지 않는다. 화면이 전체를 받아 브라우저에서 정렬한다(nearestSort.ts).
 
   const total_count = list.length;
   const start = (page - 1) * size;

@@ -15,9 +15,10 @@ import { Pagination } from "./components/Pagination";
 import { ErrorNotice } from "../../components/error/ErrorNotice";
 import { toUserError, type UserError } from "../../components/error/userError";
 import { buildCourseQuery, DEFAULT_PAGE_SIZE } from "./coursesMock";
-import { getCourses, getRegions } from "./coursesApi";
+import { getAllCourses, getCourses, getRegions } from "./coursesApi";
+import { slicePage, sortByDistance } from "./nearestSort";
 import { buildRegionOptions, type RegionSelectItem } from "./regionOptions";
-import type { CourseFilterState, CourseListResponse, LatLng, RouteType } from "./types";
+import type { Course, CourseFilterState, CourseListResponse, LatLng, RouteType } from "./types";
 import { buildCourseSearchParams, parseCourseUrlState, type CourseUrlState } from "./courseUrlState";
 import AppHeader from "../../components/layout/AppHeader";
 
@@ -27,6 +28,15 @@ const EMPTY_RES: CourseListResponse = {
   size: DEFAULT_PAGE_SIZE,
   courses: [],
 };
+
+/** 서버가 페이지를 나눠 준 응답이거나, '가까운 순'을 위해 받은 필터 결과 전체. */
+type FetchedCourses = { mode: "page"; res: CourseListResponse } | { mode: "all"; courses: Course[] };
+
+/** 가까운 순 기준점. 지금 탭 경로의 출발점(썸네일 경로의 첫 점), 없으면 가진 경로의 출발점. */
+function courseStart(course: Course, routeType: RouteType): LatLng | null {
+  const primary = routeType === "자전거" ? course.path_bicycle : course.path_trail;
+  return primary[0] ?? course.path_trail[0] ?? course.path_bicycle[0] ?? null;
+}
 
 export function CourseExplore() {
   const navigate = useNavigate();
@@ -103,12 +113,21 @@ export function CourseExplore() {
     );
   }, [filters.sort, userLoc, geoDenied]);
 
+  // '가까운 순'이고 위치를 얻었으면 필터에 맞는 코스 전체를 받아 브라우저에서 정렬한다.
+  // 이용자 위치를 서버로 보내지 않기 위해서다(nearestSort.ts). 위치를 아직 못 얻었거나 거부했으면 기본 순서다.
+  const nearestOrigin = filters.sort === "nearest" ? userLoc : null;
+
   // 필터 상태 → 쿼리 파라미터 → 실제 /api/courses 응답.
+  // 전체를 받을 때는 화면에서 페이지를 나누므로 page를 1로 고정해, 페이지를 넘겨도 다시 요청하지 않는다.
   const query = useMemo(
-    () => buildCourseQuery(filters, routeType, page, DEFAULT_PAGE_SIZE, userLoc),
-    [filters, routeType, page, userLoc],
+    () => buildCourseQuery(filters, routeType, nearestOrigin ? 1 : page, DEFAULT_PAGE_SIZE),
+    [filters, routeType, page, nearestOrigin],
   );
-  const [res, setRes] = useState<CourseListResponse>(EMPTY_RES);
+  // 재조회 여부는 query의 값으로 비교한다. 페이지를 넘기면 URL이 바뀌어 filters·query가 값은 같아도
+  // 새 객체로 만들어지는데, 객체 참조로 비교하면 '가까운 순'에서도 페이지마다 전체를 다시 받는다.
+  // 같은 query라도 받는 방식(한 페이지 / 전체)이 달라서 위치 유무도 키에 넣는다(BicycleExplore와 같은 방식).
+  const queryKey = useMemo(() => JSON.stringify([nearestOrigin != null, query]), [query, nearestOrigin]);
+  const [fetched, setFetched] = useState<FetchedCourses>({ mode: "page", res: EMPTY_RES });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<UserError | null>(null);
   const [retryTick, setRetryTick] = useState(0); // '다시 시도' 트리거
@@ -116,10 +135,13 @@ export function CourseExplore() {
   // 쿼리 변경 시 재조회. stale-while-revalidate: 새 응답이 올 때까지 기존 목록을 유지한다.
   useEffect(() => {
     let cancelled = false;
-    getCourses(query)
-      .then((r) => {
+    const request: Promise<FetchedCourses> = nearestOrigin
+      ? getAllCourses(query).then((courses) => ({ mode: "all", courses }))
+      : getCourses(query).then((r) => ({ mode: "page", res: r }));
+    request
+      .then((result) => {
         if (cancelled) return;
-        setRes(r);
+        setFetched(result);
         setError(null);
       })
       .catch((e) => !cancelled && setError(toUserError(e, "코스를 불러오지 못했어요")))
@@ -127,7 +149,34 @@ export function CourseExplore() {
     return () => {
       cancelled = true;
     };
-  }, [query, retryTick]);
+    // query·nearestOrigin 대신 둘을 값으로 묶은 queryKey로 변경 여부를 비교한다(위 queryKey 주석 참고).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryKey, retryTick]);
+
+  // 전체를 받았으면 가까운 순으로 정렬한다. 정렬은 목록·위치·탭이 바뀔 때만 다시 하고, 페이지 이동은 자르기만 한다.
+  const sortedAll = useMemo(() => {
+    if (fetched.mode !== "all") return null;
+    // 다른 정렬로 바꾼 직후 새 응답을 기다리는 동안에는 받은 순서 그대로 보여 준다.
+    if (!nearestOrigin) return fetched.courses;
+    return sortByDistance(fetched.courses, nearestOrigin, (course) => courseStart(course, routeType));
+  }, [fetched, nearestOrigin, routeType]);
+
+  const res = useMemo<CourseListResponse>(() => {
+    if (!sortedAll) return fetched.mode === "page" ? fetched.res : EMPTY_RES;
+    return {
+      total_count: sortedAll.length,
+      page,
+      size: DEFAULT_PAGE_SIZE,
+      courses: slicePage(sortedAll, page, DEFAULT_PAGE_SIZE),
+    };
+  }, [sortedAll, fetched, page]);
+
+  // 받아 둔 한 페이지 응답이 지금 페이지와 다르면 그 목록을 보여 주지 않고 로딩으로 둔다.
+  // '가까운 순'에서 전체 목록을 받는 중에 페이지를 넘기면 요청 page가 1로 고정돼 새 요청이 없어서,
+  // 그대로 두면 전체 목록이 올 때까지 페이지 번호만 바뀌고 카드는 이전 페이지로 남는다.
+  // 일반 페이지 이동에서도 새 응답이 오기 전까지 같은 어긋남이 생겨 함께 막는다.
+  // 2페이지 이상에서 필터를 바꿔 1페이지로 돌아갈 때도 받아 둔 목록이 1페이지가 아니라서 로딩으로 둔다.
+  const pageMismatch = fetched.mode === "page" && fetched.res.page !== page;
 
   // 이벤트 핸들러에서 로딩 표시 후 재조회 트리거 (effect 안 setState 아님)
   const retry = () => {
@@ -337,23 +386,25 @@ export function CourseExplore() {
                 description={error.description}
                 onRetry={retry}
               />
-            ) : loading ? (
+            ) : loading || pageMismatch ? (
               <p className="py-16 text-center text-[14px] text-caption">코스를 불러오는 중…</p>
             ) : (
-              <>
-                <CourseList
-                  courses={res.courses}
-                  routeType={routeType}
-                  onSelect={(course) => openCourse(course.id)}
-                  onHover={(id) => setHovered(id == null ? null : { ids: [id], from: "card" })}
-                  activeIds={mapPointedIds}
-                />
-                <Pagination
-                  page={page}
-                  totalPages={totalPages}
-                  onChange={(nextPage) => updateUrlState({ routeType, filters, page: nextPage })}
-                />
-              </>
+              <CourseList
+                courses={res.courses}
+                routeType={routeType}
+                onSelect={(course) => openCourse(course.id)}
+                onHover={(id) => setHovered(id == null ? null : { ids: [id], from: "card" })}
+                activeIds={mapPointedIds}
+              />
+            )}
+            {/* 페이지를 넘겨 새 목록을 기다리는 동안에도 페이지 버튼을 남겨, 버튼이 사라졌다 나타나며 화면이 흔들리지 않게 한다.
+              첫 로딩에는 전체 개수가 0이라 Pagination이 그리지 않는다(BicycleExplore와 같은 배치). */}
+            {!error && (
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                onChange={(nextPage) => updateUrlState({ routeType, filters, page: nextPage })}
+              />
             )}
           </div>
         </section>
