@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import { Map, MapMarker } from "react-kakao-maps-sdk";
 import { EVENT_TYPE_COLOR } from "../types";
 
@@ -16,15 +16,46 @@ function pinImageSrc(color: string, size: number): { src: string; height: number
   return { src: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, height };
 }
 
-const RACE_MARKER_COLOR = EVENT_TYPE_COLOR.running; // 대회 위치 강조 (러닝 accent 재사용)
+// EVENT_TYPE_COLOR.running은 "var(--color-race-running)" 형태라 DOM style에는 바로 쓸 수 있지만,
+// 아래 핀은 SVG를 data URI로 만들어 <img>에 박아 넣는 방식이라 페이지 CSS 캐스케이드 밖이다.
+// var()가 그 안에서는 안 풀려 fill이 검정으로 떨어지므로, 실제 hex 값으로 풀어서 넘겨야 한다.
+function resolveCssVar(varExpr: string): string {
+  const match = varExpr.match(/^var\((--[\w-]+)\)$/);
+  if (!match) return varExpr; // 이미 raw 색상 값이면 그대로 사용
+  return getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim() || varExpr;
+}
 
+// SDK 로딩과 별개로, 카카오 지도 코어(new kakao.maps.Map) 생성 중 던져지는 동기 예외를 잡는다.
+// react-kakao-maps-sdk의 <Map>은 onError 콜백이 없어 이 방법 외에는 감지할 수 없다.
+class MapErrorBoundary extends Component<{ onError: () => void; children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch() {
+    this.props.onError();
+  }
+  render() {
+    if (this.state.hasError) return null; // 부모가 실패 UI로 대체한다
+    return this.props.children;
+  }
+}
+
+// 예외 없이 onCreate가 그냥 안 불리는(조용한 실패) 경우를 대비한 마운트 타임아웃.
+const MAP_MOUNT_TIMEOUT_MS = 8_000;
 
 export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, compact = false }: RaceMapProps) {
   const [sdkReady, setSdkReady] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false); // SDK 로더 실패
+  const [mapFailed, setMapFailed] = useState(false); // 지도 코어 생성 실패
   const [retryCount, setRetryCount] = useState(0);
   const [map, setMap] = useState<kakao.maps.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<kakao.maps.Map | null>(null);
+
+  useEffect(() => {
+    mapRef.current = map;
+  }, [map]);
 
   useEffect(() => {
     let active = true;
@@ -77,6 +108,17 @@ export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, compac
     };
   }, [retryCount]);
 
+  // SDK는 로딩됐는데 지도 코어가 onCreate를 끝내 호출하지 않는 경우를 잡는다.
+  // 예외를 던지는 경우는 MapErrorBoundary가 별도로 처리하므로, 여기서는 mapRef로
+  // "이미 성공했는지"만 확인해 중복 실패 처리를 막는다.
+  useEffect(() => {
+    if (!sdkReady) return;
+    const timeout = window.setTimeout(() => {
+      if (!mapRef.current) setMapFailed(true);
+    }, MAP_MOUNT_TIMEOUT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [sdkReady, retryCount]);
+
   // KakaoMap.tsx와 동일한 이유: 바텀시트/인라인 패널 애니메이션 도중 지도가 마운트되면
   // 카카오맵 SDK가 그 순간의(아직 확정 안 된) 컨테이너 크기를 캐싱해버려 지도가
   // 실제보다 좁게 그려지거나 리사이즈 시 어긋난다. 컨테이너 크기 변화를 감지해 relayout으로 보정한다.
@@ -114,12 +156,15 @@ export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, compac
     };
   }, [sdkReady, lat, lng, onAddressResolved]);
 
-  if (loadFailed) {
+  const failed = loadFailed || mapFailed;
+
+  if (failed) {
     return (
       <div className={`${compact ? "h-40" : "h-64"} flex w-full flex-col items-center justify-center gap-3 rounded-t-lg bg-gray-100 px-4 text-center`}>
         <p role="status" className="text-sm text-gray-500">지도를 불러오지 못했어요.</p>
         <button type="button" onClick={() => {
           setLoadFailed(false);
+          setMapFailed(false);
           setSdkReady(false);
           setMap(null);
           setRetryCount((count) => count + 1);
@@ -135,27 +180,30 @@ export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, compac
   }
 
   const racePinSize = 32;
-  const racePin = pinImageSrc(RACE_MARKER_COLOR, racePinSize);
+  const racePin = pinImageSrc(resolveCssVar(EVENT_TYPE_COLOR.running), racePinSize);
 
   return (
     <div ref={mapContainerRef} className={`${compact ? "h-40" : "h-64"} w-full overflow-hidden rounded-t-lg`}>
-      <Map
-        center={{ lat, lng }}
-        style={{ width: "100%", height: "100%" }}
-        level={5}
-        onCreate={setMap}
-      >
-        <MapMarker
-          position={{ lat, lng }}
-          title={raceTitle}
-          image={{
-            src: racePin.src,
-            size: { width: racePinSize, height: racePin.height },
-            options: { offset: { x: racePinSize / 2, y: racePin.height } },
-          }}
-          zIndex={10}
-        />
-      </Map>
+      {/* key={retryCount}: 재시도 시 이전 지도 인스턴스를 완전히 버리고 새로 마운트한다 */}
+      <MapErrorBoundary key={retryCount} onError={() => setMapFailed(true)}>
+        <Map
+          center={{ lat, lng }}
+          style={{ width: "100%", height: "100%" }}
+          level={5}
+          onCreate={setMap}
+        >
+          <MapMarker
+            position={{ lat, lng }}
+            title={raceTitle}
+            image={{
+              src: racePin.src,
+              size: { width: racePinSize, height: racePin.height },
+              options: { offset: { x: racePinSize / 2, y: racePin.height } },
+            }}
+            zIndex={10}
+          />
+        </Map>
+      </MapErrorBoundary>
     </div>
   );
 }
