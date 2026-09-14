@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-
+import { createRef } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Nearby } from "./Nearby";
+import { Nearby, type NearbyHandle } from "./Nearby";
 import { getNearbySpots } from "./nearbyApi";
 import type { NearbySpotsPage } from "./nearbyApi";
 import type { NearbySpot } from "./types";
@@ -304,5 +304,93 @@ describe("Nearby 무한 스크롤", () => {
 
     await scrollToEnd();
     expect(api).toHaveBeenCalledTimes(2);
+  });
+
+  it("부모가 매 렌더마다 새 콜백을 넘겨도 목록을 재요청하지 않는다", async () => {
+    api.mockResolvedValueOnce(makePage(["A", "B"]));
+
+    const view = render(
+      <Nearby
+        courseId={1}
+        category="attraction"
+        onCategoryChange={() => {}}
+        onSpotsChange={() => {}}
+        onSelectedChange={() => {}}
+      />,
+    );
+    await act(async () => {});
+
+    expect(api).toHaveBeenCalledTimes(1);
+
+    // 부모(CourseDetail)의 리렌더를 흉내낸다: onReset이 의존하는
+    // onSpotsChange/onSelectedChange/onCategoryChange를 매번 새 참조로 넘긴다.
+    for (let index = 0; index < 3; index += 1) {
+      view.rerender(
+        <Nearby
+          courseId={1}
+          category="attraction"
+          onCategoryChange={() => {}}
+          onSpotsChange={() => {}}
+          onSelectedChange={() => {}}
+        />,
+      );
+      await act(async () => {});
+    }
+
+    // effect가 재실행되지 않았다면 첫 페이지 요청은 여전히 1회여야 한다.
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(visibleIds()).toEqual(["A", "B"]);
+
+    view.unmount();
+  });
+
+  it("부모 리렌더로 상세 시트가 즉시 닫히지 않는다(선택 상태 유지)", async () => {
+    api.mockResolvedValueOnce(makePage(["A", "B"]));
+
+    const nearbyRef = createRef<NearbyHandle>();
+    const onSelectedChange = vi.fn();
+
+    const view = render(
+      <Nearby
+        ref={nearbyRef}
+        courseId={1}
+        category="attraction"
+        onCategoryChange={() => {}}
+        onSelectedChange={onSelectedChange}
+      />,
+    );
+    await act(async () => {});
+
+    // 지도 마커 클릭과 동일한 경로로 스팟을 선택한다(=상세 시트 오픈).
+    act(() => {
+      nearbyRef.current?.selectSpotById("A");
+    });
+
+    // 마운트 시 loadFirstPage가 onReset()을 통해 onSelectedChange(null)을 1회 호출하므로,
+    // 이후 selectSpotById로 인한 호출까지 합쳐 기준선은 2회다.
+    const callsAfterSelect = onSelectedChange.mock.calls.length;
+    expect(onSelectedChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "A" }),
+    );
+
+    // 부모가 리렌더되며 onSelectedChange를 새 참조로 다시 내려준다
+    // (예: 스팟 선택 자체가 부모 state를 바꿔 재렌더를 유발하는 상황).
+    view.rerender(
+      <Nearby
+        ref={nearbyRef}
+        courseId={1}
+        category="attraction"
+        onCategoryChange={() => {}}
+        onSelectedChange={onSelectedChange}
+      />,
+    );
+    await act(async () => {});
+
+    // 리렌더만으로 목록이 재조회되어 onReset()이 불리면 안 된다 —
+    // 불렸다면 onSelectedChange(null)로 시트가 즉시 닫혔을 것이다.
+    expect(onSelectedChange).toHaveBeenCalledTimes(callsAfterSelect);
+    expect(api).toHaveBeenCalledTimes(1);
+
+    view.unmount();
   });
 });
