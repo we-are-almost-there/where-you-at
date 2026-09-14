@@ -123,7 +123,7 @@ export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, compac
           setSdkReady(false);
           setMap(null);
           setRetryCount((count) => count + 1);
-        }} className="rounded-lg border border-divider bg-white px-3 py-2 text-xs text-ink focus-visible:outline-2 focus-visible:outline-accent">
+        }} className="cursor-pointer rounded-lg bg-accent px-3 py-2 text-xs font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
           지도 다시 불러오기
         </button>
       </div>

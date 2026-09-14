@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Race } from "../types";
 import { EVENT_TYPE_COLOR, EVENT_TYPE_LABEL } from "../types";
 import RaceMap from "./RaceMap";
@@ -24,6 +24,36 @@ export default function RaceDetailSheet({ race, onClose, backLabel, inline = fal
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
   const hasMap = race.map_x != null && race.map_y != null;
 
+  useEffect(() => {
+    if (inline) return;
+    const mobile = window.matchMedia("(max-width: 767px)");
+    let unlock: (() => void) | undefined;
+    const syncScrollLock = () => {
+      unlock?.();
+      unlock = undefined;
+      if (!mobile.matches) return;
+      const root = document.documentElement;
+      const body = document.body;
+      const rootOverflow = root.style.overflow;
+      const bodyOverflow = body.style.overflow;
+      const gutter = root.style.scrollbarGutter;
+      root.style.overflow = "hidden";
+      body.style.overflow = "hidden";
+      root.style.scrollbarGutter = "auto";
+      unlock = () => {
+        root.style.overflow = rootOverflow;
+        body.style.overflow = bodyOverflow;
+        root.style.scrollbarGutter = gutter;
+      };
+    };
+    syncScrollLock();
+    mobile.addEventListener("change", syncScrollLock);
+    return () => {
+      mobile.removeEventListener("change", syncScrollLock);
+      unlock?.();
+    };
+  }, [inline]);
+
   const decodedHomepageUrl = race.homepage_url ? decodeHtmlEntities(race.homepage_url) : null;
   const homepageHref = decodedHomepageUrl
     ? decodedHomepageUrl.startsWith("http")
@@ -37,7 +67,7 @@ export default function RaceDetailSheet({ race, onClose, backLabel, inline = fal
       {!inline && <div className="fixed inset-0 z-40 bg-black/30 md:hidden" onClick={onClose} />}
 
       {/* 바텀시트 본체 - 모바일: 하단에서 fixed로 표시(거의 풀스크린) / 데스크톱(md+): static으로 부모 컬럼에 인라인 배치 */}
-      <div className={inline ? "border-t border-[#ebe8f7] bg-white" : "fixed inset-x-0 bottom-0 top-2 z-50 overflow-y-auto rounded-t-2xl bg-white shadow-xl md:static md:inset-auto md:z-auto md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none"}>
+      <div className={inline ? "border-t border-[#ebe8f7] bg-white" : "fixed inset-x-0 bottom-0 top-2 z-50 overflow-y-auto overscroll-y-contain rounded-t-2xl bg-white shadow-xl md:static md:inset-auto md:z-auto md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none"}>
         <div className={inline
           ? (hasMap
               ? "grid grid-cols-[minmax(0,1fr)_minmax(240px,32%)] items-start gap-x-8 gap-y-4 p-5 pl-24"
