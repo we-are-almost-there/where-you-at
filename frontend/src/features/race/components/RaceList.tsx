@@ -62,7 +62,7 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
             Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())
           ) / 86_400_000) + 1;
           const isEnded = end.getTime() < today;
-          const color = race.event_type ? EVENT_TYPE_COLOR[race.event_type] : "#9CA3AF";
+          const color = race.event_type ? EVENT_TYPE_COLOR[race.event_type] : "var(--color-race-unspecified)";
           const textColor = race.event_type === "cycling" ? "var(--color-race-cycling-text)" : color;
           const location = race.location_name?.replace(/\s*·\s*/g, " | ");
 
@@ -70,7 +70,7 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
             <div
               key={race.event_id}
               className={`overflow-hidden rounded-2xl border bg-white transition-colors duration-200 ${
-                isSelected ? "relative z-10 border-accent" : "border-[#ebe8f7]"
+                isSelected ? "relative z-10 border-accent" : "border-divider-soft"
               }`}
             >
               <button
@@ -80,7 +80,7 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
                 aria-expanded={isDesktop ? isSelected : undefined}
                 aria-controls={isDesktop && isSelected ? `race-detail-${race.event_id}` : undefined}
                 className={`flex w-full items-start gap-4 px-4 py-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
-                  isSelected ? "bg-[#F7F6FF]" : "hover:bg-[#faf9fd]"
+                  isSelected ? "bg-surface-selected" : "hover:bg-surface-hover"
                 }`}
               >
                 <span
@@ -127,8 +127,8 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
 
                 <span
                   aria-hidden="true"
-                  className={`shrink-0 px-1 pt-0.5 ${isDesktop ? "text-3xl" : "text-lg"} ${isSelected ? "" : "text-[#c5bfde]"}`}
-                  style={isSelected ? { color: EVENT_TYPE_COLOR.running } : undefined}
+                  className={`shrink-0 px-1 pt-0.5 ${isDesktop ? "text-3xl" : "text-lg"} ${isSelected ? "" : "text-icon-muted"}`}
+                  style={isSelected ? { color: "var(--color-accent)" } : undefined}
                 >
                   {isDesktop ? (isSelected ? "▴" : "▾") : "›"}
                 </span>

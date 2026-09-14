@@ -69,7 +69,7 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
 
   return (
     <div className="w-full min-w-0 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#ebe8f7] pb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-divider-soft pb-3">
         <button
           type="button"
           onClick={goToday}
@@ -84,7 +84,7 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
             type="button"
             onClick={goPrevMonth}
             aria-label="이전 달"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#e2ddf5] text-sm text-gray-500 transition-colors hover:bg-[#f6f4fc] focus-visible:outline-2 focus-visible:outline-accent"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-control-border text-sm text-gray-500 transition-colors hover:bg-control-hover focus-visible:outline-2 focus-visible:outline-accent"
           >
             ‹
           </button>
@@ -92,7 +92,7 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
             type="button"
             onClick={goNextMonth}
             aria-label="다음 달"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#e2ddf5] text-sm text-gray-500 transition-colors hover:bg-[#f6f4fc] focus-visible:outline-2 focus-visible:outline-accent"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-control-border text-sm text-gray-500 transition-colors hover:bg-control-hover focus-visible:outline-2 focus-visible:outline-accent"
           >
             ›
           </button>
@@ -106,9 +106,9 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
       </div>
 
       <div className="md:min-h-[775px]">
-        <div className="grid auto-rows-[104px] grid-cols-7 gap-px border border-[#ebe8f7] bg-[#ebe8f7] md:auto-rows-[128px]">
+        <div className="grid auto-rows-[104px] grid-cols-7 gap-px border border-divider-soft bg-divider-soft md:auto-rows-[128px]">
           {cells.map(({ date, key }) => {
-            if (!date) return <div key={key} aria-hidden="true" className="bg-[#f9f8fc]" />;
+            if (!date) return <div key={key} aria-hidden="true" className="bg-surface-muted" />;
 
             const dateKey = formatDateKey(date);
             const dayRaces = dateMap.get(dateKey) ?? [];
@@ -121,7 +121,7 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
                   className={`flex h-[22px] w-6 shrink-0 items-center justify-center rounded-md text-[11px] ${
                     isToday ? "font-semibold text-white" : "text-gray-500"
                   }`}
-                  style={isToday ? { backgroundColor: EVENT_TYPE_COLOR.running } : undefined}
+                  style={isToday ? { backgroundColor: "var(--color-accent)" } : undefined}
                 >
                   {date.getDate()}
                 </span>
@@ -141,7 +141,7 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
                         style={{
                           backgroundColor: race.event_type
                             ? EVENT_TYPE_COLOR[race.event_type]
-                            : "#9CA3AF",
+                            : "var(--color-race-unspecified)",
                         }}
                         title={race.race_title}
                       >

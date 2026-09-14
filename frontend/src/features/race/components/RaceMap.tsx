@@ -1,6 +1,5 @@
 import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import { Map, MapMarker } from "react-kakao-maps-sdk";
-import { EVENT_TYPE_COLOR } from "../types";
 
 interface RaceMapProps {
   raceTitle: string;
@@ -16,7 +15,7 @@ function pinImageSrc(color: string, size: number): { src: string; height: number
   return { src: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, height };
 }
 
-// EVENT_TYPE_COLOR.running은 "var(--color-race-running)" 형태라 DOM style에는 바로 쓸 수 있지만,
+// 공통 강조색 var(--color-accent)는 DOM style에는 바로 쓸 수 있지만,
 // 아래 핀은 SVG를 data URI로 만들어 <img>에 박아 넣는 방식이라 페이지 CSS 캐스케이드 밖이다.
 // var()가 그 안에서는 안 풀려 fill이 검정으로 떨어지므로, 실제 hex 값으로 풀어서 넘겨야 한다.
 function resolveCssVar(varExpr: string): string {
@@ -180,7 +179,7 @@ export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, compac
   }
 
   const racePinSize = 32;
-  const racePin = pinImageSrc(resolveCssVar(EVENT_TYPE_COLOR.running), racePinSize);
+  const racePin = pinImageSrc(resolveCssVar("var(--color-accent)"), racePinSize);
 
   return (
     <div ref={mapContainerRef} className={`${compact ? "h-40" : "h-64"} w-full overflow-hidden rounded-t-lg`}>

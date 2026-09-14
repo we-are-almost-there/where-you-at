@@ -67,7 +67,7 @@ export default function RaceDetailSheet({ race, onClose, backLabel, inline = fal
       {!inline && <div className="fixed inset-0 z-40 bg-black/30 md:hidden" onClick={onClose} />}
 
       {/* 바텀시트 본체 - 모바일: 하단에서 fixed로 표시(거의 풀스크린) / 데스크톱(md+): static으로 부모 컬럼에 인라인 배치 */}
-      <div className={inline ? "border-t border-[#ebe8f7] bg-white" : "fixed inset-x-0 bottom-0 top-2 z-50 overflow-y-auto overscroll-y-contain rounded-t-2xl bg-white shadow-xl md:static md:inset-auto md:z-auto md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none"}>
+      <div className={inline ? "border-t border-divider-soft bg-white" : "fixed inset-x-0 bottom-0 top-2 z-50 overflow-y-auto overscroll-y-contain rounded-t-2xl bg-white shadow-xl md:static md:inset-auto md:z-auto md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none"}>
         <div className={inline
           ? (hasMap
               ? "grid grid-cols-[minmax(0,1fr)_minmax(240px,32%)] items-start gap-x-8 gap-y-4 p-5 pl-24"
@@ -128,7 +128,7 @@ export default function RaceDetailSheet({ race, onClose, backLabel, inline = fal
               target="_blank"
               rel="noreferrer"
               className={`rounded-lg py-3 text-center text-sm font-semibold text-white ${inline ? "col-start-1 w-fit px-5" : ""}`}
-              style={{ backgroundColor: EVENT_TYPE_COLOR.running }}
+              style={{ backgroundColor: "var(--color-accent)" }}
             >
               대회 홈페이지 바로가기
             </a>
