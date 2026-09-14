@@ -94,7 +94,7 @@ export default function RaceDetailSheet({ race, onClose, backLabel, inline = fal
             </span>
           )}
 
-          <h2 className="text-xl font-bold text-gray-900">{race.race_title}</h2>
+          <h2 className="text-xl font-bold text-ink">{race.race_title}</h2>
           </>}
 
           <dl className="flex min-w-0 flex-col gap-3 text-sm [&_dd]:min-w-0 [&_dd]:break-words">
@@ -123,7 +123,7 @@ export default function RaceDetailSheet({ race, onClose, backLabel, inline = fal
           </dl>
 
           {homepageHref && (
-            <a
+          <a
               href={homepageHref}
               target="_blank"
               rel="noreferrer"
