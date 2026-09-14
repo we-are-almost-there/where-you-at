@@ -85,8 +85,6 @@ def list_courses(
     keyword: str | None = None,
     distance: str | None = None,
     sort: str | None = None,
-    lat: float | None = None,
-    lng: float | None = None,
     page: int = 1,
     size: int = 20,
 ) -> tuple[int, list[dict]]:
@@ -120,20 +118,10 @@ def list_courses(
 
     where_sql = "WHERE " + " AND ".join(where)
 
-    # 정렬: 화이트리스트 컬럼 또는 '가까운 순'(사용자 좌표 기준 시작점 거리).
-    # nearest는 lat/lng가 있어야 계산 가능 — 없으면(권한 거부 등) 기본(c.id) 정렬로 폴백한다.
-    order_params: list = []
-    if sort == "nearest" and lat is not None and lng is not None:
-        # 시작점까지 근사 거리(제곱). 경도 차이는 위도로 보정한다(고위도일수록 경도 1도가 짧다).
-        # 값은 파라미터 바인딩이라 SQL injection 안전. NULLS LAST: 좌표 없는 코스가
-        # '가장 가까운' 자리로 잘못 올라오지 않게 뒤로 민다. c.id는 _SORT_COLUMNS와 같은 보조 정렬.
-        order_sql = (
-            "(power(cr.start_lat - %s, 2) + "
-            "power((cr.start_lng - %s) * cos(radians(%s)), 2)) ASC NULLS LAST, c.id"
-        )
-        order_params = [lat, lng, lat]
-    else:
-        order_sql = _SORT_COLUMNS.get(sort, "c.id")
+    # 정렬: 화이트리스트 컬럼만. '가까운 순'은 서버에서 하지 않는다.
+    # 이용자 위치를 서버로 받지 않기 위해 브라우저가 필터에 맞는 전체 목록을 받아 정렬한다
+    # (frontend/src/features/map/nearestSort.ts). sort=nearest가 와도 기본(c.id) 정렬이다.
+    order_sql = _SORT_COLUMNS.get(sort, "c.id")
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
@@ -154,7 +142,7 @@ def list_courses(
             ORDER BY {order_sql}
             LIMIT %s OFFSET %s
             """,
-            [*params, *order_params, size, (page - 1) * size],
+            [*params, size, (page - 1) * size],
         )
         rows = cur.fetchall()
 
@@ -171,6 +159,48 @@ def list_courses(
             r["start_address"] = normalize_address(r["start_address"], r["region_code"])
 
     return total, rows
+
+
+# 도보 경로가 있는 코스만 담는다. 홈 '가까운 코스'는 위치를 못 얻었을 때 GET /api/courses 기본값(type=trail)으로
+# 대체하므로, 위치 허용 여부에 따라 보이는 코스 범위(도보만 / 자전거 전용 포함)가 달라지지 않게 맞춘다.
+_STARTS_SQL = """
+SELECT
+    c.id, c.course_title AS title, c.start_address, c.image_url, c.region_code,
+    t.start_lat, t.start_lng
+FROM course c
+JOIN course_route t ON t.course_id = c.id AND t.route_type = 'trail'
+ORDER BY c.id
+"""
+
+
+def list_course_starts(conn) -> list[dict]:
+    """도보 경로가 있는 모든 코스의 출발점과 카드 정보(썸네일 경로 좌표 제외)를 반환한다.
+
+    홈 '가까운 코스'를 브라우저에서 고르기 위한 목록이라, 이용자 위치와 상관없이 항상 같은 결과를 준다.
+    출발점은 도보 경로의 출발점이며, 위도·경도 중 하나라도 없으면 None이다(좌표가 섞이지 않게).
+    """
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(_STARTS_SQL)
+        rows = cur.fetchall()
+    if not rows:
+        return []
+
+    routes = _fetch_routes(conn, [r["id"] for r in rows])
+    result = []
+    for r in rows:
+        has_start = r["start_lat"] is not None and r["start_lng"] is not None
+        result.append(
+            {
+                "id": r["id"],
+                "title": r["title"],
+                "start_address": normalize_address(r["start_address"], r["region_code"]),
+                "image_url": r["image_url"],
+                "region_code": r["region_code"],
+                "routes": routes.get(r["id"], []),
+                "start": {"lat": r["start_lat"], "lng": r["start_lng"]} if has_start else None,
+            }
+        )
+    return result
 
 
 _ROUTES_SQL = """

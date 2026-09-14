@@ -62,6 +62,25 @@ class TestListFacilitiesEndpoint(unittest.TestCase):
         self.assertEqual(kwargs["page"], 2)
         self.assertEqual(kwargs["size"], 10)
 
+    @patch("app.api.routers.bicycle_facilities.list_bicycle_facilities")
+    def test_coordinates_and_nearest_sort_are_not_forwarded(self, mock_list):
+        # 이용자 위치를 서버에서 쓰지 않는다. 좌표를 보내도 crud로 넘기지 않고, 정렬은 bicycle_id 고정이다.
+        mock_list.return_value = (0, [])
+        res = self.client.get(
+            "/api/bicycle-facilities",
+            params={"sort": "nearest", "lat": 37.5665, "lng": 126.978, "size": 5000},
+        )
+        self.assertEqual(res.status_code, 200)
+        _, kwargs = mock_list.call_args
+        self.assertNotIn("lat", kwargs)
+        self.assertNotIn("lng", kwargs)
+        self.assertNotIn("sort", kwargs)
+        self.assertEqual(kwargs["size"], 5000)
+
+    def test_size_above_limit_returns_422(self):
+        res = self.client.get("/api/bicycle-facilities", params={"size": 5001})
+        self.assertEqual(res.status_code, 422)
+
     def test_invalid_region_pattern_returns_422(self):
         # region은 2자리 또는 2+2~3자리(4~5자리)만 허용. 3자리는 패턴 불일치.
         res = self.client.get("/api/bicycle-facilities", params={"region": "111"})

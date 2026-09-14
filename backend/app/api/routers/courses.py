@@ -5,6 +5,7 @@ from ...crud import course as crud
 from ...crud import nearby as nearby_crud
 from ...schemas.course import (
     CourseListResponse,
+    CourseStart,
     CourseDetail,
     RouteDetail,
     Bounds,
@@ -24,11 +25,10 @@ def get_courses(
     difficulty: str | None = None,
     keyword: str | None = None,
     sort: str | None = None,
-    # 가까운 순 정렬용 사용자 좌표. sort=nearest일 때만 사용, 없으면 기본 정렬로 폴백.
-    lat: float | None = Query(None, ge=-90, le=90),
-    lng: float | None = Query(None, ge=-180, le=180),
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    # 이용자 위치를 서버로 받지 않으므로 '가까운 순'은 브라우저가 필터에 맞는 코스 전체를 받아 정렬한다.
+    # 그래서 한 번에 전체를 받을 수 있게 상한을 코스 수(약 300개)보다 넉넉히 둔다.
+    size: int = Query(20, ge=1, le=500),
     conn=Depends(get_db),
 ):
     total, rows = crud.list_courses(
@@ -39,12 +39,21 @@ def get_courses(
         keyword=keyword,
         distance=distance,
         sort=sort,
-        lat=lat,
-        lng=lng,
         page=page,
         size=size,
     )
     return {"total_count": total, "page": page, "size": size, "courses": rows}
+
+
+# /{id}보다 먼저 선언해야 "starts"가 id 경로로 잡히지 않는다.
+@router.get("/starts", response_model=list[CourseStart])
+def get_course_starts(conn=Depends(get_db)):
+    """도보 경로가 있는 모든 코스의 출발점과 카드 정보. 홈 '가까운 코스'를 브라우저에서 고르는 데 쓴다.
+
+    이용자 위치를 서버로 보내지 않기 위해, 위치와 상관없이 항상 같은 전체 목록을 준다.
+    목록(GET /api/courses)과 달리 썸네일 경로 좌표를 빼 크기를 줄였다.
+    """
+    return crud.list_course_starts(conn)
 
 
 @router.get("/{id}", response_model=CourseDetail)

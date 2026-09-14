@@ -41,6 +41,18 @@ class CourseListResponse(BaseModel):
     courses: list[CourseSummary]
 
 
+# 출발점 목록 (GET /api/courses/starts) ─────────────────
+class CourseStart(BaseModel):
+    """홈 '가까운 코스'를 브라우저에서 고르기 위한 가벼운 항목. 썸네일 경로 대신 출발점만 담는다."""
+    id: int
+    title: str
+    start_address: str | None
+    image_url: str | None
+    region_code: str | None
+    routes: list[RouteSummary]
+    start: LatLng | None                # 도보 경로 출발점 (위도·경도 중 하나라도 없으면 None)
+
+
 # 상세 (GET /api/courses/{id}) ─────────────────────────
 class RouteDetail(BaseModel):
     route_type: str

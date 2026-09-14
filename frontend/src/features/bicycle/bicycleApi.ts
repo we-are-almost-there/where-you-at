@@ -79,6 +79,37 @@ export async function getBicycleFacilities(
   };
 }
 
+// '가까운 순'을 브라우저에서 정렬하려고 전체 목록을 받을 때 한 번에 요청하는 개수. 백엔드 size 상한과 같다.
+const ALL_FACILITIES_PAGE_SIZE = 5000;
+
+// 전체 목록 요청에 실어 보낼 수 있는 필터. 이용자 위치(lat·lng)나 정렬이 섞여 나가지 않도록
+// 지워야 할 키를 고르는 대신 보낼 키만 고른다.
+// 자전거 필터를 새로 만들면(BicycleExplore의 query) 여기에도 추가한다. 빠뜨리면 '가까운 순'에서만 그 필터가 조용히 무시된다.
+const ALL_FACILITIES_FILTER_KEYS = ["region", "facility_type", "fee_type", "data_source"] as const;
+
+/**
+ * 필터에 맞는 시설을 모두 받는다. '가까운 순'을 브라우저에서 정렬할 때 쓴다(map/nearestSort.ts).
+ * 이용자 위치는 보내지 않는다. query에서 필터(ALL_FACILITIES_FILTER_KEYS)만 골라 서버 기본 순서(bicycle_id)로
+ * 전체를 모은다.
+ */
+export async function getAllBicycleFacilities(query: Record<string, string>): Promise<BicycleFacility[]> {
+  const filters: Record<string, string> = {};
+  for (const key of ALL_FACILITIES_FILTER_KEYS) {
+    if (query[key]) filters[key] = query[key];
+  }
+
+  const facilities: BicycleFacility[] = [];
+  for (let page = 1; ; page++) {
+    const res = await getBicycleFacilities({
+      ...filters,
+      page: String(page),
+      size: String(ALL_FACILITIES_PAGE_SIZE),
+    });
+    facilities.push(...res.facilities);
+    if (res.facilities.length === 0 || facilities.length >= res.total_count) return facilities;
+  }
+}
+
 /** GET /api/bicycle-facilities/regions — 자전거 시설 보유 지역(시/도+시/군/구), 현재 탭 기준. */
 export async function getBicycleRegions(dataSource: string): Promise<BicycleRegionOption[]> {
   return apiGet<BicycleRegionOption[]>(`/api/bicycle-facilities/regions?data_source=${dataSource}`);

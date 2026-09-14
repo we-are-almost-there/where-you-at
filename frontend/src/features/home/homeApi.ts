@@ -3,8 +3,10 @@
 
 import { fetchRaceList } from "../race/raceApi";
 import { EVENT_TYPE_LABEL } from "../race/types";
-import { getCourses } from "../map/coursesApi";
-import type { Course, LatLng } from "../map/types";
+import { getCourses, getCourseStarts } from "../map/coursesApi";
+import { haversineKm } from "../map/courseSegments";
+import { sortByDistance } from "../map/nearestSort";
+import type { Course, CourseRoute, CourseStart, LatLng } from "../map/types";
 
 export interface CourseItem {
   id: number;
@@ -46,30 +48,13 @@ function getCurrentPosition(): Promise<LatLng | null> {
   });
 }
 
-/** 두 좌표 사이 대권 거리(km) */
-function distanceKm(from: LatLng, to: LatLng): number {
-  const EARTH_RADIUS_KM = 6371;
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-
-  const dLat = toRad(to.lat - from.lat);
-  const dLng = toRad(to.lng - from.lng);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(from.lat)) * Math.cos(toRad(to.lat)) * Math.sin(dLng / 2) ** 2;
-
-  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h));
+/** routes 순서는 보장되지 않고 자전거 경로엔 난이도가 없어 도보를 우선한다 */
+function mainRoute(routes: CourseRoute[]): CourseRoute | undefined {
+  return routes.find((r) => r.route_type === "도보") ?? routes[0];
 }
 
-/** 단순화 경로는 sequence_order 순이라 첫 점이 곧 출발점이다 */
-function startPoint(course: Course): LatLng | null {
-  return course.path_trail[0] ?? course.path_bicycle[0] ?? null;
-}
-
-function toCourseItem(course: Course, origin: LatLng | null): CourseItem {
-  // routes 순서는 보장되지 않고 자전거 경로엔 난이도가 없어 도보를 우선한다
-  const route = course.routes.find((r) => r.route_type === "도보") ?? course.routes[0];
-  const start = startPoint(course);
-
+function toCourseItem(course: Course | CourseStart): CourseItem {
+  const route = mainRoute(course.routes);
   return {
     id: course.id,
     name: course.title,
@@ -77,7 +62,6 @@ function toCourseItem(course: Course, origin: LatLng | null): CourseItem {
     lengthKm: route?.distance ?? 0,
     level: route?.difficulty ?? null,
     imageUrl: course.image_url || null,
-    highlight: origin && start ? `${distanceKm(origin, start).toFixed(1)}km` : undefined,
   };
 }
 
@@ -115,7 +99,7 @@ export async function fetchFeaturedCourses(): Promise<CourseItem[]> {
   return picked
     .filter((entry) => entry !== null)
     .map(({ course, region }) => ({
-      ...toCourseItem(course, null),
+      ...toCourseItem(course),
       // 카드에 지역명이 안 드러나서 썸네일 배지 자리(주변 코스에선 거리)를 지역명으로 쓴다
       highlight: region.label,
       // 빈 배열이면 카드가 관광지 줄을 비운 채 그리므로 아예 넘기지 않는다
@@ -123,21 +107,28 @@ export async function fetchFeaturedCourses(): Promise<CourseItem[]> {
     }));
 }
 
-/** 현재 위치에서 가까운 코스. 위치를 못 얻으면 기본 목록으로 폴백한다 */
+/**
+ * 현재 위치에서 가까운 코스. 위치를 못 얻으면 기본 목록으로 폴백한다.
+ *
+ * 위치는 서버로 보내지 않는다. 도보 경로가 있는 모든 코스의 출발점 목록(위치와 상관없이 항상 같은 응답)을 받아
+ * 브라우저에서 가까운 순으로 고른다. 가까운 코스만 다시 요청하지 않는 것도 같은 이유다(nearestSort.ts).
+ */
 export async function fetchNearbyCourses(limit = 4): Promise<NearbyCourses> {
   const origin = await getCurrentPosition();
 
-  const query: Record<string, string> = { page: "1", size: String(limit) };
-  if (origin) {
-    query.sort = "nearest";
-    query.lat = String(origin.lat);
-    query.lng = String(origin.lng);
+  if (!origin) {
+    const { courses } = await getCourses({ page: "1", size: String(limit) });
+    return { items: courses.map(toCourseItem), isFallback: true };
   }
 
-  const { courses } = await getCourses(query);
+  const starts = await getCourseStarts();
+  const nearest = sortByDistance(starts, origin, (course) => course.start).slice(0, limit);
   return {
-    items: courses.map((course) => toCourseItem(course, origin)),
-    isFallback: origin === null,
+    items: nearest.map((course) => ({
+      ...toCourseItem(course),
+      highlight: course.start ? `${haversineKm(origin, course.start).toFixed(1)}km` : undefined,
+    })),
+    isFallback: false,
   };
 }
 
