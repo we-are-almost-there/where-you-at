@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ACTIVE_REGIONS_TIMEOUT_MS, fetchActiveRegionCodes } from "./supportApi";
+import { HttpError } from "../../lib/http";
+import { ACTIVE_REGIONS_TIMEOUT_MS, fetchActiveRegionCodes, fetchSupportDetail } from "./supportApi";
 
 /**
  * 활성 지역 조회의 취소·시간 제한.
@@ -22,6 +23,20 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
   vi.restoreAllMocks();
+});
+
+describe("fetchSupportDetail", () => {
+  // 제도 상세가 "찾을 수 없어요"와 재시도 안내를 status로 가르는 근거
+  it("없는 제도면 status 404인 HttpError를 throw한다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }),
+    );
+
+    const err = await fetchSupportDetail(99999).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpError);
+    expect((err as HttpError).status).toBe(404);
+  });
 });
 
 describe("fetchActiveRegionCodes", () => {
