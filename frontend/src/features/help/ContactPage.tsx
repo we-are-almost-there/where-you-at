@@ -14,6 +14,14 @@ const CONTENT_MAX = 2000;
 const EMAIL_MAX = 254;
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
+/**
+ * 글자 수를 서버·DB와 같은 기준(유니코드 코드 포인트)으로 센다.
+ * 문자열의 length는 UTF-16 단위라 이모지를 2자로 세서, 서버(Python len)·DB(char_length)와 어긋난다.
+ */
+function countChars(value: string): number {
+  return [...value].length;
+}
+
 // 코스 필터 검색칸(CourseFilters)과 같은 입력칸 모양
 const INPUT_CLASS =
   "w-full rounded-lg border border-divider bg-white px-3.5 py-2.5 text-[14px] text-ink placeholder:text-caption focus:border-accent focus:outline-none";
@@ -56,7 +64,7 @@ export default function ContactPage() {
   const policyButtonRef = useRef<HTMLButtonElement>(null);
 
   const trimmedEmail = email.trim();
-  const contentLength = content.trim().length;
+  const contentLength = countChars(content.trim());
   const emailValid = trimmedEmail.length <= EMAIL_MAX && EMAIL_PATTERN.test(trimmedEmail);
   const contentValid = contentLength >= CONTENT_MIN && contentLength <= CONTENT_MAX;
   const submitting = state.status === "submitting";
@@ -175,10 +183,15 @@ export default function ContactPage() {
           <textarea
             id="inquiry-content"
             rows={8}
-            maxLength={CONTENT_MAX}
             placeholder="어떤 화면에서 어떤 점이 궁금하거나 잘못되었는지 적어 주시면 더 빨리 확인할 수 있어요."
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            // maxLength는 UTF-16 단위라 이모지를 2자로 세서 서버 기준보다 일찍 입력을 막는다.
+            // 대신 서버와 같은 코드 포인트 기준으로 직접 자른다. 코드 포인트 수는 length보다 크지 않으므로
+            // length가 넘을 때만 잘라 본다.
+            onChange={(e) => {
+              const value = e.target.value;
+              setContent(value.length > CONTENT_MAX ? [...value].slice(0, CONTENT_MAX).join("") : value);
+            }}
             aria-describedby="inquiry-content-count"
             className={`${INPUT_CLASS} resize-y leading-relaxed`}
           />

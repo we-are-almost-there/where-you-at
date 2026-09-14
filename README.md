@@ -79,9 +79,10 @@ npm run dev --prefix frontend
 스키마와 초기 데이터는 `backend/sql/`에 있고, 번호 순서대로 적용합니다.
 
 ```
-01_schema.sql        테이블 정의
+01_schema.sql        테이블 정의 (고객지원 문의 자동 파기 예약 작업 포함)
 02_region_seed.sql   지역 코드
 03_support_seed.sql  지원금 제도
+04_help_seed.sql     공지사항·자주 묻는 질문 (python -m scripts.seed_help)
 ```
 
 외부 API에서 데이터를 받아오는 스크립트는 `backend/scripts/`에 있습니다.
@@ -114,3 +115,48 @@ python -m unittest discover -s tests -t .
 
 배포 환경에서 로드밸런서는 `/health/ready`를 보게 설정합니다. `/health`는 DB 상태를
 보지 않는데, 여기에 DB 확인을 넣으면 DB가 잠깐 끊겼을 때 서버 재시작만 반복하게 됩니다.
+
+## 배포
+
+개인정보처리방침(`frontend/src/features/help/PrivacyPolicyContent.tsx`)이 아래 배포 환경을 그대로 적고 있습니다.
+업체·리전·요금제를 바꾸면 방침도 함께 고칩니다.
+
+| 대상 | 업체 | 설정 |
+|---|---|---|
+| 웹사이트 | Vercel (Hobby) | `VITE_API_BASE_URL`에 API 서버의 `https://` 주소 |
+| API 서버 | Render (Hobby, **Singapore** 리전) | `backend/.env.example`의 값, 새 문의 알림을 쓰면 `INQUIRY_WEBHOOK_URL` |
+| DB | Supabase (Free, 서울 리전) | 문의 자동 파기 예약 작업 등록 (아래) |
+
+### 문의 자동 파기 예약 작업
+
+`backend/sql/01_schema.sql` inquiry 섹션 끝의 `do $$ ... $$` 블록을 Supabase SQL Editor에서 실행합니다.
+등록 뒤 `username`이 `postgres`인지 확인합니다. 다른 역할로 등록하면 RLS 때문에 한 건도 지우지 못합니다.
+
+```sql
+select jobname, schedule, username from cron.job;
+```
+
+### 문의 요청 제한의 이용자 IP 확인
+
+문의 API는 같은 IP에서 10분에 3건까지만 받습니다. Render 프록시 뒤에서는 `request.client.host`가
+프록시 IP가 되어, 설정하지 않으면 **모든 이용자가 한 묶음으로 제한**됩니다.
+
+Render 환경변수에 `FORWARDED_ALLOW_IPS=*`를 두면 uvicorn이 `X-Forwarded-For`의 맨 왼쪽 값을 IP로 씁니다.
+그런데 맨 왼쪽은 이용자가 직접 넣어 보낼 수 있는 자리라, Render가 그 값을 덮어쓰는지 배포 후 확인한 뒤 확정합니다.
+확정한 값은 Render 대시보드의 환경변수에 저장해 두고, 이 문서에도 결과를 적습니다.
+
+`*`로 모든 프록시를 믿는 설정은 **Render 프록시가 API 서버의 유일한 진입점**이라는 전제에서만 안전합니다.
+서버에 직접 접근할 수 있는 경로(다른 도메인, 공개 IP 등)를 열면 누구나 헤더를 조작할 수 있으니 이 설정을 다시 검토합니다.
+
+1. `backend/app/api/routers/inquiries.py`의 `create_inquiry` **맨 앞(숨긴 입력칸 확인보다 앞)**에
+   `print(request.client.host)`를 잠깐 넣어 배포합니다. 숨긴 입력칸 확인 뒤에 두면 아래 요청이 먼저 반환돼 찍히지 않습니다.
+2. 위조한 헤더로 요청합니다. `website`를 채워 보내므로 저장되지 않습니다.
+
+   ```bash
+   curl -X POST https://<API주소>/api/inquiries -H "Content-Type: application/json" -H "X-Forwarded-For: 1.2.3.4" -d '{"category":"기타","email":"a@b.co","content":"요청 제한 헤더 위조 확인용입니다","agreed":true,"website":"x"}'
+   ```
+
+3. Render 로그를 확인하고 임시 `print`를 지웁니다.
+   - `1.2.3.4`가 찍히지 않고 실제 IP가 찍히면: `FORWARDED_ALLOW_IPS=*`로 확정합니다.
+   - `1.2.3.4`가 찍히면: 헤더를 조작해 제한을 피할 수 있다는 한계를 주석에 남기고, 오른쪽 끝에서 정해진 칸 수만큼
+     떨어진 값을 쓰는 방식으로 따로 고칩니다.

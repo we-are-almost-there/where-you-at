@@ -15,8 +15,11 @@ inquiry_limiter = SlidingWindowLimiter(max_requests=3, window_seconds=600)
 
 def _client_key(request: Request) -> str:
     # X-Forwarded-For를 여기서 직접 읽지 않는다. 그 헤더는 누구나 바꿔 보낼 수 있어서, 믿으면
-    # 요청마다 값을 바꾸는 것만으로 제한을 피한다. 로드밸런서 뒤에 배포한다면 uvicorn을
-    # --proxy-headers --forwarded-allow-ips=<로드밸런서 주소>로 띄워 client.host에 실제 IP가 들어오게 한다.
+    # 요청마다 값을 바꾸는 것만으로 제한을 피한다.
+    # 프록시 뒤에 배포하면 client.host가 프록시 IP가 되어 모든 이용자가 한 묶음으로 제한된다.
+    # Render는 프록시 주소가 고정되지 않아 FORWARDED_ALLOW_IPS=*를 검토 중인데, 그러면 uvicorn이
+    # X-Forwarded-For의 맨 왼쪽 값을 쓴다. Render가 이용자가 보낸 값을 덮어쓰는지 확인한 뒤 정한다
+    # (README "배포" 참고).
     return request.client.host if request.client else "unknown"
 
 

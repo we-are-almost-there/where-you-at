@@ -133,4 +133,36 @@ describe("ContactPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "닫기" }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  // 서버(Python len)와 DB(char_length)는 코드 포인트로 센다. 화면이 UTF-16 단위로 세면 이모지 글에서 기준이 어긋난다.
+  it("이모지를 서버와 같은 기준(1자)으로 센다", () => {
+    renderPage();
+
+    fireEvent.change(screen.getByLabelText("문의 내용"), { target: { value: "😀".repeat(10) } });
+
+    expect(screen.getByText(/^10자 ·/)).toBeTruthy();
+  });
+
+  // ZWJ로 이어 붙인 이모지(👨‍👩‍👧)는 화면에는 한 글자로 보이지만 코드 포인트 5개다. 서버도 5자로 센다.
+  it("ZWJ 이모지도 서버와 같이 코드 포인트 수로 센다", () => {
+    renderPage();
+
+    fireEvent.change(screen.getByLabelText("문의 내용"), { target: { value: "👨‍👩‍👧".repeat(2) } });
+
+    expect(screen.getByText(/^10자 ·/)).toBeTruthy();
+  });
+
+  it("이모지 2000자는 보낼 수 있고, 2001자는 2000자로 잘린다", () => {
+    renderPage();
+    fillValidForm();
+
+    fireEvent.change(screen.getByLabelText("문의 내용"), { target: { value: "😀".repeat(2000) } });
+    expect(screen.getByText(/^2000자 ·/)).toBeTruthy();
+    expect(submitButton().disabled).toBe(false);
+
+    fireEvent.change(screen.getByLabelText("문의 내용"), { target: { value: "😀".repeat(2001) } });
+    const value = (screen.getByLabelText("문의 내용") as HTMLTextAreaElement).value;
+    expect([...value]).toHaveLength(2000);
+    expect(submitButton().disabled).toBe(false);
+  });
 });

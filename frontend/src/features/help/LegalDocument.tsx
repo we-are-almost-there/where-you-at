@@ -11,11 +11,6 @@ export interface LegalSectionInfo {
   label: string;
 }
 
-/** 팀이 채워야 하는 자리. 화면에서도 눈에 띄게 표시해 채우지 않은 채 배포되지 않게 한다. */
-export function Todo({ children }: { children: ReactNode }) {
-  return <mark className="rounded bg-lavender px-1 text-accent">[확인 필요: {children}]</mark>;
-}
-
 export function P({ children }: { children: ReactNode }) {
   return <p className="mt-3 break-keep text-[14px] leading-relaxed text-ink">{children}</p>;
 }
