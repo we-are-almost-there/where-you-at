@@ -174,7 +174,8 @@ export function CourseExplore() {
   // 받아 둔 한 페이지 응답이 지금 페이지와 다르면 그 목록을 보여 주지 않고 로딩으로 둔다.
   // '가까운 순'에서 전체 목록을 받는 중에 페이지를 넘기면 요청 page가 1로 고정돼 새 요청이 없어서,
   // 그대로 두면 전체 목록이 올 때까지 페이지 번호만 바뀌고 카드는 이전 페이지로 남는다.
-  // 일반 페이지 이동에서도 새 응답이 오기 전까지 같은 어긋남이 생겨 함께 막는다. 필터 변경은 해당하지 않는다.
+  // 일반 페이지 이동에서도 새 응답이 오기 전까지 같은 어긋남이 생겨 함께 막는다.
+  // 2페이지 이상에서 필터를 바꿔 1페이지로 돌아갈 때도 받아 둔 목록이 1페이지가 아니라서 로딩으로 둔다.
   const pageMismatch = fetched.mode === "page" && fetched.res.page !== page;
 
   // 이벤트 핸들러에서 로딩 표시 후 재조회 트리거 (effect 안 setState 아님)
@@ -388,20 +389,22 @@ export function CourseExplore() {
             ) : loading || pageMismatch ? (
               <p className="py-16 text-center text-[14px] text-caption">코스를 불러오는 중…</p>
             ) : (
-              <>
-                <CourseList
-                  courses={res.courses}
-                  routeType={routeType}
-                  onSelect={(course) => openCourse(course.id)}
-                  onHover={(id) => setHovered(id == null ? null : { ids: [id], from: "card" })}
-                  activeIds={mapPointedIds}
-                />
-                <Pagination
-                  page={page}
-                  totalPages={totalPages}
-                  onChange={(nextPage) => updateUrlState({ routeType, filters, page: nextPage })}
-                />
-              </>
+              <CourseList
+                courses={res.courses}
+                routeType={routeType}
+                onSelect={(course) => openCourse(course.id)}
+                onHover={(id) => setHovered(id == null ? null : { ids: [id], from: "card" })}
+                activeIds={mapPointedIds}
+              />
+            )}
+            {/* 페이지를 넘겨 새 목록을 기다리는 동안에도 페이지 버튼을 남겨, 버튼이 사라졌다 나타나며 화면이 흔들리지 않게 한다.
+              첫 로딩에는 전체 개수가 0이라 Pagination이 그리지 않는다(BicycleExplore와 같은 배치). */}
+            {!error && (
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                onChange={(nextPage) => updateUrlState({ routeType, filters, page: nextPage })}
+              />
             )}
           </div>
         </section>

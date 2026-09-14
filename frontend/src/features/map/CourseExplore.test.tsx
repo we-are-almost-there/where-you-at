@@ -127,6 +127,8 @@ describe("CourseExplore 가까운 순", () => {
     fireEvent.click(screen.getByRole("button", { name: "2" }));
     expect(await screen.findByText("코스를 불러오는 중…")).toBeTruthy();
     expect(shownIds(container)).toEqual([]);
+    // 기다리는 동안에도 페이지 버튼은 남아 있고, 누른 페이지가 현재 페이지로 표시된다.
+    expect(screen.getByRole("button", { name: "2" }).getAttribute("aria-current")).toBe("page");
 
     await act(async () => resolveAll(ALL));
     await waitFor(() => expect(shownIds(container)).toEqual([1]));
