@@ -69,7 +69,7 @@ export default function Race() {
       if (id === null) next.delete("eventId");
       else next.set("eventId", String(id));
       return next;
-    });
+    }, { replace: true });
   };
 
   useEffect(() => {

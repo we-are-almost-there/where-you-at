@@ -64,10 +64,13 @@ function BackButton() {
   return <button onClick={() => navigate(-1)}>뒤로</button>;
 }
 
+// 선택/닫기가 replace로 처리되므로, "뒤로가기가 실제로 페이지를 벗어나는지"를
+// 검증하려면 진입 전 엔트리가 하나 더 필요하다.
 async function open(url = "/race?eventId=1&keep=yes") {
   render(
-    <MemoryRouter initialEntries={[url]}>
+    <MemoryRouter initialEntries={["/", url]} initialIndex={1}>
       <Routes>
+        <Route path="/" element={<div>홈</div>} />
         <Route path="/race" element={<Race />} />
       </Routes>
       <LocationProbe />
@@ -100,17 +103,23 @@ it("화면을 떠나면 전체 조회 요청을 취소한다", async () => {
   expect(signal?.aborted).toBe(true);
 });
 
-it("선택·닫기를 URL에 반영하고 뒤로가기와 재진입 시 선택을 복원한다", async () => {
+it("선택·닫기는 history entry를 쌓지 않고, 뒤로가기 한 번이면 페이지를 벗어난다", async () => {
   await open();
   fireEvent.click(screen.getByRole("button", { name: "대회 B" }));
-  await waitFor(() => expect(currentSearch()).toBe("?eventId=2&keep=yes"));
+  await waitFor(() => expectSearchParams({ eventId: "2", keep: "yes" }));
   expect(screen.getByTestId("selected").textContent).toBe("2");
+
   const reloadUrl = "/race" + currentSearch();
-  fireEvent.click(screen.getByRole("button", { name: "대회 B" }));
-  await waitFor(() => expect(currentSearch()).toBe("?keep=yes"));
-  expect(screen.getByTestId("selected").textContent).toBe("none");
+
+  // 여러 번 선택을 바꿔도 entry가 쌓이지 않아야 한다.
+  fireEvent.click(screen.getByRole("button", { name: "대회 B" })); // 닫기
+  await waitFor(() => expectSearchParams({ keep: "yes" }));
+  fireEvent.click(screen.getByRole("button", { name: "대회 A" })); // 다시 선택
+  await waitFor(() => expectSearchParams({ eventId: "1", keep: "yes" }));
+
   goBack();
-  await waitFor(() => expect(screen.getByTestId("selected").textContent).toBe("2"));
+  await waitFor(() => screen.getByText("홈"));
+
   cleanup();
   await open(reloadUrl);
   expect(screen.getByTestId("selected").textContent).toBe("2");
@@ -123,11 +132,7 @@ it("최초 딥링크만 스크롤하고 닫았다 다시 선택해도 재실행�
   fireEvent.click(screen.getByRole("button", { name: "대회 A" }));
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
   expect(scroll).toHaveBeenCalledTimes(1);
-  await waitFor(() => {
-    const params = new URLSearchParams(currentSearch() ?? "");
-    expect(params.get("eventId")).toBe("1");
-    expect(params.get("keep")).toBe("yes");
-  });
+  await waitFor(() => expectSearchParams({ eventId: "1", keep: "yes" }));
   expect(screen.getByTestId("selected").textContent).toBe("1");
 });
 
@@ -135,17 +140,15 @@ it("검색으로 선택을 닫을 때 입력한 검색어를 유지한다", asyn
   await open();
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "대회 B" } });
   expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("대회 B");
-  await waitFor(() => expect(currentSearch()).toBe("?keep=yes"));
+  await waitFor(() => expectSearchParams({ keep: "yes" }));
   expect(screen.queryByRole("button", { name: "대회 A" })).toBeNull();
-  goBack();
-  await waitFor(() => expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe(""));
-  expect(screen.getByTestId("selected").textContent).toBe("1");
+  expect(screen.getByTestId("selected").textContent).toBe("none");
 });
 
 it("필터로 선택을 닫을 때 적용한 필터를 유지한다", async () => {
   await open();
   fireEvent.click(screen.getByRole("button", { name: "자전거" }));
-  await waitFor(() => expect(currentSearch()).toBe("?keep=yes"));
+  await waitFor(() => expectSearchParams({ keep: "yes" }));
   expect(screen.queryByRole("button", { name: "대회 A" })).toBeNull();
   expect(screen.queryByRole("button", { name: "대회 B" })).toBeNull();
 });
@@ -154,11 +157,9 @@ it("예정 대회 필터와 캘린더 전환도 내부 URL 변경 후 유지한�
   await open();
   fireEvent.click(screen.getByRole("checkbox", { name: "예정된 대회만" }));
   expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
-  await waitFor(() => expect(currentSearch()).toBe("?keep=yes"));
-  goBack();
-  await waitFor(() => expectSearchParams({ eventId: "1", keep: "yes" }));
+  await waitFor(() => expectSearchParams({ keep: "yes" }));
   fireEvent.click(screen.getByRole("button", { name: "캘린더" }));
-  await waitFor(() => expect(currentSearch()).toBe("?keep=yes"));
+  await waitFor(() => expectSearchParams({ keep: "yes" }));
   expect(screen.queryByRole("searchbox")).toBeNull();
 });
 
@@ -166,18 +167,15 @@ it.each(["999", "invalid"])("잘못된 eventId %s 안내를 닫으면 URL에서�
   await open(`/race?eventId=${id}&keep=yes`);
   fireEvent.click(screen.getByRole("button", { name: "안내 닫기" }));
   expect(screen.queryByText(/선택한 대회를 찾을 수 없어요/)).toBeNull();
-  await waitFor(() => expect(currentSearch()).toBe("?keep=yes"));
+  await waitFor(() => expectSearchParams({ keep: "yes" }));
 });
 
 it("모바일 캘린더에서 필터에 안 걸리는 대회를 선택한 뒤 데스크톱으로 전환해도 상세가 보인다", async () => {
   await open("/race?keep=yes");
   resizeToMobile();
 
-  // 예정된 대회만 필터를 켠 상태에서 캘린더로 전환
   fireEvent.click(screen.getByRole("checkbox", { name: "예정된 대회만" }));
   fireEvent.click(screen.getByRole("button", { name: "캘린더" }));
-
-  // 캘린더에서는 필터가 적용되지 않으므로 필터에 걸릴 대회도 선택 가능하다.
   fireEvent.click(screen.getByRole("button", { name: "대회 A" }));
   await waitFor(() => expect(screen.getByTestId("selected").textContent).toBe("1"));
 
@@ -188,4 +186,15 @@ it("모바일 캘린더에서 필터에 안 걸리는 대회를 선택한 뒤 �
   });
   expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
   expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
+});
+
+it("뒤로가기는 여러 번 조작을 거쳐도 페이지를 한 번에 벗어난다", async () => {
+  await open("/race?keep=yes");
+  fireEvent.click(screen.getByRole("button", { name: "대회 A" }));
+  fireEvent.click(screen.getByRole("button", { name: "자전거" }));
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "검색어" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "예정된 대회만" }));
+
+  goBack();
+  await waitFor(() => screen.getByText("홈"));
 });
