@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { useSearchParams } from "react-router";
 import RaceCalendar from "./components/RaceCalendar";
@@ -94,10 +94,13 @@ export default function Race() {
   }, [retryTick]);
 
   const selectedRaceId = selectedRace?.event_id;
+  const calendarScrollTarget = useRef<number | null>(null);
   useEffect(() => {
-    if (isLoading || !isDesktop || viewMode !== "list" || selectedRaceId !== linkedEventId) return;
+    if (isLoading || !isDesktop || viewMode !== "list" || selectedRaceId == null) return;
+    if (selectedRaceId !== linkedEventId && selectedRaceId !== calendarScrollTarget.current) return;
     const frame = requestAnimationFrame(() => {
-      document.getElementById(`race-trigger-${linkedEventId}`)?.scrollIntoView({ block: "center" });
+      document.getElementById(`race-trigger-${selectedRaceId}`)?.scrollIntoView({ block: "center" });
+      calendarScrollTarget.current = null;
     });
     return () => cancelAnimationFrame(frame);
   }, [isLoading, isDesktop, viewMode, selectedRaceId, linkedEventId]);
@@ -134,11 +137,9 @@ export default function Race() {
         Home.tsx의 BannerCarousel(banners.tsx)이 쓰는 max-w-6xl 기준을 그대로 따른 것.
         기준이 다르면 페이지를 옮길 때마다 헤더·본문 좌우 끝이 미묘하게 어긋나 보인다. */}
       <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-4">
-        {/* selectedRace가 없으면(좌측 블록만 있을 때) md:justify-center로 그 블록을
-          컨테이너 가운데로. 상세가 열리면 좌+우 두 블록이 나란히 있어야 하니 기본 정렬로 되돌림. */}
-        <div className={`flex flex-col gap-4 md:flex-row ${!selectedRace ? "md:justify-center" : ""}`}>
-          {/* 목록 상세는 항목 아래에 펼치고, 달력 상세는 옆 패널로 표시한다. */}
-          <div className={`w-full min-w-0 transition-all duration-500 ${selectedRace && viewMode === "calendar" ? "md:w-2/3" : ""}`}>
+        <div className="flex flex-col gap-4">
+          {/* 캘린더에서 선택해도 목록으로 전환해 동일한 상세 UI를 사용한다. */}
+          <div className="w-full min-w-0">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h1 className="font-bold text-ink text-[20px]">대회·행사 일정</h1>
               {!isLoading && !error && (
@@ -256,14 +257,20 @@ export default function Race() {
                 <RaceCalendar
                   races={filteredRaces}
                   selectedRaceId={selectedRace?.event_id ?? null}
-                  onSelectRace={setSelectedRace}
+                  onSelectRace={(race) => {
+                    setKeyword("");
+                    setUpcomingOnly(false);
+                    calendarScrollTarget.current = isDesktop ? race.event_id : null;
+                    setSelectedRace(race);
+                    if (isDesktop) setViewMode("list");
+                  }}
                 />
               )
             )}
           </div>
 
-          {selectedRace && (!isDesktop || viewMode === "calendar") && (
-            <div className="md:w-1/3">
+          {selectedRace && !isDesktop && (
+            <div>
               <RaceDetailSheet
                 key={selectedRace.event_id}
                 race={selectedRace}
