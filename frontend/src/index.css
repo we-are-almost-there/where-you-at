@@ -13,6 +13,19 @@
   --color-figure: #1a1533; /* 니어블랙 라벤더: 수치 */
   --color-caption: #888888; /* 라이트 그레이: 캡션 */
   --color-divider: #d9d7e1; /* 라이트 그레이: 구분선 */
+  --color-divider-soft: #ebe8f7; /* 카드·캘린더 구분선 */
+  --color-control-border: #e2ddf5;
+  --color-control-hover: #f6f4fc;
+  --color-surface-muted: #f9f8fc; /* 캘린더 빈 날짜 */
+  --color-surface-selected: #f7f6ff;
+  --color-surface-hover: #faf9fd;
+  --color-icon-muted: #c5bfde;
+
+  /* 종목 구분색: accent와 값이 겹치더라도 의미가 다르므로 별도 토큰으로 관리 */
+  --color-race-running: #6c5ce7; /* 러닝 종목색 (accent와 값이 우연히 동일) */
+  --color-race-cycling: #00b894; /* 자전거 종목색 */
+  --color-race-cycling-text: #008575; /* 자전거 옅은 배경 위 텍스트용 (대비 보정, race-cycling보다 어두움) */
+  --color-race-unspecified: #9ca3af; /* 종목 미지정 */
 }
 
 body {

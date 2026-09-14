@@ -174,6 +174,7 @@ def collect():
     upserted = 0
     skipped_no_date = 0
     skipped_past = 0
+    skipped_invalid_range = 0
     for content_id, (item, event_type) in seen.items():
         detail = fetch_detail_intro(content_id)
         time.sleep(REQUEST_INTERVAL_SEC)
@@ -186,6 +187,9 @@ def collect():
             continue  # race.start_date NOT NULL이라 없으면 스킵
 
         end_date = parse_yyyymmdd(detail.get("eventenddate"))
+        if end_date and end_date < start_date:
+            skipped_invalid_range += 1
+            continue
         # 이미 종료된 대회는 저장하지 않는다. end_date가 없으면(하루짜리
         # 대회 등) start_date로 판단한다.
         reference_date = end_date or start_date
@@ -248,7 +252,8 @@ def collect():
     conn.close()
     print(
         f"완료: {upserted}건 적재 "
-        f"(날짜 없어 스킵 {skipped_no_date}건, 이미 종료돼 스킵 {skipped_past}건)"
+        f"(날짜 없어 스킵 {skipped_no_date}건, 이미 종료돼 스킵 {skipped_past}건, "
+        f"날짜 역전 스킵 {skipped_invalid_range}건)"
     )
 
 

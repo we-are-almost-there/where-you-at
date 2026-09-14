@@ -46,7 +46,7 @@ def get_races(
                map_x, map_y, region_code, contact, homepage_url
         FROM race
         {where_clause}
-        ORDER BY start_date ASC
+        ORDER BY start_date ASC, event_id ASC
         LIMIT %(limit)s OFFSET %(offset)s
     """
     count_query = f"SELECT COUNT(*) AS total FROM race {where_clause}"

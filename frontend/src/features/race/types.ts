@@ -20,7 +20,10 @@ export const EVENT_TYPE_LABEL: Record<EventType, string> = {
   cycling: "자전거",
 };
 
+// 값의 출처는 index.css의 @theme 토큰(--color-race-running/--color-race-cycling)이며,
+// 여기서는 그 값을 그대로 참조만 한다. 인라인 style={{ backgroundColor: ... }}로 쓰는
+// 곳이 많아 var()로 넘겨도 문제없이 렌더링된다.
 export const EVENT_TYPE_COLOR: Record<EventType, string> = {
-  running: "#6C5CE7", // 프로젝트 기본 accent
-  cycling: "#00B894", // 러닝과 구분되는 보조 accent
+  running: "var(--color-race-running)",
+  cycling: "var(--color-race-cycling)",
 };

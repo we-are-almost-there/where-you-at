@@ -524,7 +524,8 @@ export default function Home() {
 
   useEffect(() => {
     let alive = true;
-    fetchUpcomingRaces(3)
+    const controller = new AbortController();
+    fetchUpcomingRaces(3, controller.signal)
       // 실패해도 홈 전체가 죽으면 안 되므로 빈 목록으로 두고 섹션만 감춘다
       .catch(() => [] as UpcomingRace[])
       .then((list) => {
@@ -534,6 +535,7 @@ export default function Home() {
       });
     return () => {
       alive = false;
+      controller.abort();
     };
   }, []);
 
@@ -620,7 +622,7 @@ export default function Home() {
             return (
               <li key={race.id}>
                 <Link
-                  to="/races"
+                  to={`/races?eventId=${race.id}`}
                   className="flex items-center gap-3 rounded-xl border border-divider p-3 transition-shadow hover:shadow-md"
                 >
                   {/* 1순위: 언제 — 날짜 블록을 채워서 가장 먼저 눈에 들어오게 */}
