@@ -28,6 +28,7 @@ function buildDateMap(races: Race[]): Map<string, Race[]> {
   for (const race of races) {
     const start = parseLocalDate(race.start_date);
     const end = race.end_date ? parseLocalDate(race.end_date) : start;
+    if (end < start) continue; // 잘못된 데이터는 건너뛴다 (목록 뷰는 그대로 노출)
     const cursor = new Date(start);
     while (cursor <= end) {
       const key = formatDateKey(cursor);

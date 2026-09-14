@@ -53,10 +53,18 @@ export default function Race() {
 
   useEffect(() => {
     const query = window.matchMedia("(min-width: 768px)");
-    const onChange = () => setIsDesktop(query.matches);
+    const onChange = () => {
+      setIsDesktop(query.matches);
+      // 캘린더 뷰는 데스크톱 상세 UI가 없어서(목록 인라인 상세만 있음), 모바일
+      // 바텀시트가 열린 채로 데스크톱 폭으로 넘어오면 selectedRace가 화면 어디에도
+      // 표시되지 않는 "고아 상태"가 된다. 그 경우 선택을 닫는다.
+      if (query.matches) {
+        setSelectedRace((current) => (viewMode === "calendar" ? null : current));
+      }
+    };
     query.addEventListener("change", onChange);
     return () => query.removeEventListener("change", onChange);
-  }, []);
+  }, [viewMode]);
 
   // 스크롤바 유무로 본문 폭이 흔들리지 않도록 opt-in으로 처리한다.
   // (index.css의 scrollbar-gutter-stable 참고)
@@ -143,7 +151,7 @@ export default function Race() {
             <div className="mb-3 flex items-center justify-between gap-3">
               <h1 className="font-bold text-ink text-[20px]">대회·행사 일정</h1>
               {!isLoading && !error && (
-                <p className="shrink-0 text-[20px] font-bold tabular-nums text-ink" aria-live="polite" aria-atomic="true">
+                <p className="shrink-0 text-[20px] font-bold tabular-nums text-ink" aria-live={keyword.trim() ? "off" : "polite"} aria-atomic="true">
                   {filteredRaces.length.toLocaleString("ko-KR")}개
                 </p>
               )}
@@ -258,11 +266,13 @@ export default function Race() {
                   races={filteredRaces}
                   selectedRaceId={selectedRace?.event_id ?? null}
                   onSelectRace={(race) => {
-                    setKeyword("");
-                    setUpcomingOnly(false);
-                    calendarScrollTarget.current = isDesktop ? race.event_id : null;
+                    if (isDesktop) {
+                      setKeyword("");
+                      setUpcomingOnly(false);
+                      calendarScrollTarget.current = race.event_id;
+                      setViewMode("list");
+                    }
                     setSelectedRace(race);
-                    if (isDesktop) setViewMode("list");
                   }}
                 />
               )
