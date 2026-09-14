@@ -4,7 +4,7 @@
 
 import type { Race } from "./types";
 import { mockRaces as raceMock } from "./raceMock";
-import { HttpError } from "../../components/error/userError";
+import { fetchOrNetworkError, HttpError } from "../../lib/http";
 
 // ??가 아니라 ||인 이유: .env에 VITE_API_BASE_URL=처럼 빈 값으로 두면 ??는 ""를
 // 그대로 통과시켜 요청이 상대경로로 나가고 404가 된다. 빈 값도 폴백으로 보낸다.
@@ -38,7 +38,7 @@ export async function fetchRaceList(query: RaceListQuery = {}): Promise<Race[]> 
   params.set("page", String(query.page ?? 1));
   params.set("per_page", String(query.per_page ?? 100));
 
-  const res = await fetch(`${API_BASE}/api/races?${params}`);
+  const res = await fetchOrNetworkError(`${API_BASE}/api/races?${params}`);
   if (!res.ok) throw new HttpError(res.status, `대회 목록 조회 실패 (${res.status})`);
 
   const data: ApiRaceListResponse = await res.json();
@@ -54,7 +54,7 @@ export async function fetchRaceDetail(eventId: number): Promise<Race> {
     return found;
   }
 
-  const res = await fetch(`${API_BASE}/api/races/${eventId}`);
+  const res = await fetchOrNetworkError(`${API_BASE}/api/races/${eventId}`);
   if (!res.ok) throw new HttpError(res.status, `대회 상세 조회 실패 (${res.status})`);
   return res.json();
 }
@@ -75,7 +75,7 @@ export async function fetchNearbyAccommodations(
   eventId: number,
   radiusKm: number = 5
 ): Promise<NearbyAccommodation[]> {
-  const res = await fetch(
+  const res = await fetchOrNetworkError(
     `${API_BASE}/api/races/${eventId}/nearby-accommodations?radius_km=${radiusKm}`
   );
   if (!res.ok) throw new HttpError(res.status, `주변 숙박 조회 실패 (${res.status})`);

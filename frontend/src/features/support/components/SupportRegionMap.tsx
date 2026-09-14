@@ -9,6 +9,7 @@ import {
 } from "../regionMatch";
 import { fetchActiveRegionCodes } from "../supportApi";
 import { toUserError, type UserError } from "../../../components/error/userError";
+import { fetchOrNetworkError } from "../../../lib/http";
 import { SupportErrorText } from "./SupportErrorText";
 
 // viewBox는 고정하지 않고 그리는 대상의 비율에 맞춰 뷰마다 계산한다.
@@ -164,7 +165,7 @@ export function SupportRegionMap() {
 
   useEffect(() => {
     const load = (url: string) =>
-      fetch(url).then((r) => {
+      fetchOrNetworkError(url).then((r) => {
         if (!r.ok) throw new Error(`지도 로드 실패 (${r.status})`);
         return r.json();
       });

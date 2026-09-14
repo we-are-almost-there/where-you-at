@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { HttpError, toUserError } from "./userError";
+import { HttpError, NetworkError } from "../../lib/http";
+import { toUserError } from "./userError";
 
 describe("toUserError", () => {
-  it("TypeError는 연결 실패 문구로 바꾼다 (기존 계약 유지: 응답 변환 중 TypeError도 연결 실패로 분류되는 한계)", () => {
-    const network = toUserError(new TypeError("Failed to fetch"), "코스를 불러오지 못했어요");
-    const parsing = toUserError(new TypeError("Cannot read properties of undefined"), "코스를 불러오지 못했어요");
+  it("NetworkError는 연결 실패 문구로 바꾼다", () => {
+    const network = toUserError(new NetworkError(new TypeError("Failed to fetch")), "코스를 불러오지 못했어요");
 
     expect(network.title).toBe("서버에 연결할 수 없어요");
-    expect(parsing.title).toBe("서버에 연결할 수 없어요");
+  });
+
+  it("응답 변환 중 난 일반 TypeError는 연결 실패가 아니라 화면별 제목으로 바꾼다", () => {
+    const parsing = new TypeError("Cannot read properties of undefined");
+
+    expect(toUserError(parsing, "주변 정보를 불러오지 못했어요")).toEqual({
+      title: "주변 정보를 불러오지 못했어요",
+      description: "잠시 후 다시 시도해 주세요.",
+    });
   });
 
   it("HttpError는 상태 코드 없이 화면별 제목으로 바꾼다", () => {
@@ -15,6 +23,7 @@ describe("toUserError", () => {
     const result = toUserError(err, "코스를 불러오지 못했어요");
 
     expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe("HttpError");
     expect(err.status).toBe(500);
     expect(result).toEqual({ title: "코스를 불러오지 못했어요", description: "잠시 후 다시 시도해 주세요." });
   });
