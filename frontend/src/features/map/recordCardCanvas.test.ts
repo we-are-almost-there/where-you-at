@@ -14,6 +14,7 @@ import {
   statsLayout,
   type Template,
 } from "./recordCardCanvas";
+import type { TrackingRecord } from "./trackingRecord";
 import type { RouteType } from "./types";
 
 const FEED_H = 1350;
@@ -94,19 +95,61 @@ describe("statsBoxAt", () => {
 
 describe("statsHitBox", () => {
   // jsdom에는 캔버스가 없으므로 폭 측정만 흉내 낸다(글자당 0.5em).
-  const fontState = { value: "" };
-  const fakeCtx = {
-    get font() {
-      return fontState.value;
-    },
-    set font(next: string) {
-      fontState.value = next;
-    },
-    measureText(text: string) {
-      const size = Number(/(\d+(?:\.\d+)?)px/.exec(fontState.value)?.[1] ?? 0);
-      return { width: text.length * size * 0.5 };
-    },
-  } as unknown as CanvasRenderingContext2D;
+  // 판정 폭을 실제 그림과 비교할 수 있게 그린 글자와 그때의 크기도 모은다.
+  function measuringCtx() {
+    const drawn: { text: string; x: number; size: number }[] = [];
+    let font = "";
+    const sizeOf = (value: string) => Number(/(\d+(?:\.\d+)?)px/.exec(value)?.[1] ?? 0);
+    const ctx = {
+      get font() {
+        return font;
+      },
+      set font(next: string) {
+        font = next;
+      },
+      measureText(text: string) {
+        return { width: text.length * sizeOf(font) * 0.5 };
+      },
+      fillText(text: string, x: number) {
+        drawn.push({ text, x, size: sizeOf(font) });
+      },
+      clearRect() {},
+      fillRect() {},
+    } as unknown as CanvasRenderingContext2D;
+    return { ctx, drawn };
+  }
+
+  const fakeCtx = measuringCtx().ctx;
+
+  /** draw()가 text를 그린 크기와 오른쪽 끝. */
+  function drawnValue(
+    record: TrackingRecord,
+    routeType: RouteType,
+    template: Template,
+    textScale: number,
+    text: string,
+  ) {
+    const { ctx, drawn } = measuringCtx();
+    const canvas = { width: CANVAS_W, height: FEED_H, getContext: () => ctx } as unknown as HTMLCanvasElement;
+    draw(canvas, {
+      record,
+      routeType,
+      image: null,
+      transform: { scale: 1, offsetX: 0, offsetY: 0 },
+      routePoints: [],
+      template,
+      textColor: "white",
+      fontChoice: "pretendard",
+      textScale,
+      showRoute: false,
+      routeOffset: { x: 0, y: 0 },
+      routeScale: 1,
+      statsOffset: { x: 0, y: 0 },
+    });
+    const found = drawn.find((item) => item.text === text);
+    if (!found) throw new Error(`그려지지 않은 값: ${text}`);
+    return { size: found.size, right: found.x + text.length * found.size * 0.5 };
+  }
 
   const record = { distanceKm: 9.73, durationMs: 3_688_000, paceSecPerKm: 379 };
 
@@ -130,6 +173,49 @@ describe("statsHitBox", () => {
     const long = { distanceKm: 1234.56, durationMs: 359_999_000, paceSecPerKm: 3599 };
     const hit = statsHitBox(fakeCtx, long, "도보", "top", FEED_H, 1.4, "blackhan", { x: 0, y: 0 });
     expect(hit.width).toBeLessThanOrEqual(CANVAS_W - PADDING * 2);
+  });
+
+  // 시간이 열 폭을 넘어 줄어 그려지는 기록. 판정도 줄어든 폭까지만 잡아야 오른쪽 빈 곳에서 사진이 끌린다.
+  it.each(["top", "bottom"] as const)("%s 배치는 줄어 그려진 시간의 끝까지만 잡는다", (template) => {
+    const long = { distanceKm: 0.51, durationMs: 14_403_000, paceSecPerKm: 28_241 };
+    const time = drawnValue(long, "도보", template, 1.4, "4:00:03");
+    const hit = statsHitBox(fakeCtx, long, "도보", template, FEED_H, 1.4, "pretendard", { x: 0, y: 0 });
+    expect(time.size).toBeLessThan(statsLayout(template, FEED_H, 1.4).sub);
+    expect(hit.left + hit.width).toBeCloseTo(time.right, 5);
+  });
+
+  // 페이스 문자열이 축소 크기를 정할 수 있어서 같은 기록도 종목에 따라 판정 폭이 갈린다.
+  it.each(["도보", "자전거"] as const)("%s 페이스 표기에 맞춘 축소 크기로 잰다", (routeType) => {
+    const slow = { distanceKm: 0.2, durationMs: 600_000, paceSecPerKm: 3000 };
+    const time = drawnValue(slow, routeType, "top", 1.4, "10:00");
+    const hit = statsHitBox(fakeCtx, slow, routeType, "top", FEED_H, 1.4, "pretendard", { x: 0, y: 0 });
+    expect(hit.left + hit.width).toBeCloseTo(time.right, 5);
+  });
+
+  // 가운데 배치의 아래 두 열은 폭이 넓어 아주 긴 값에서만 줄어든다.
+  it("center 배치는 아래 두 열의 축소 크기로 시간을 잰다", () => {
+    const long = { distanceKm: 0.01, durationMs: 3_600_000_000, paceSecPerKm: null };
+    const time = drawnValue(long, "도보", "center", 1.4, "1000:00:00");
+    const hit = statsHitBox(fakeCtx, long, "도보", "center", FEED_H, 1.4, "pretendard", { x: 0, y: 0 });
+    expect(time.size).toBeLessThan(statsLayout("center", FEED_H, 1.4).sub);
+    expect(hit.left + hit.width).toBeCloseTo(time.right, 5);
+  });
+
+  describe("center 배치의 큰 거리", () => {
+    // 거리가 가장 넓고, 페이스가 길어 아래 줄만 줄어드는 기록
+    const wide = { distanceKm: 12_345.67, durationMs: 60_000, paceSecPerKm: 6_000_000 };
+
+    it("아래 줄이 줄어도 거리는 원래 크기로 그린다", () => {
+      const layout = statsLayout("center", FEED_H, 1.4);
+      expect(drawnValue(wide, "도보", "center", 1.4, "1:00").size).toBeLessThan(layout.sub);
+      expect(drawnValue(wide, "도보", "center", 1.4, "12345.67").size).toBe(layout.hero);
+    });
+
+    it("판정은 줄지 않은 거리 폭까지 잡는다", () => {
+      const distance = drawnValue(wide, "도보", "center", 1.4, "12345.67");
+      const hit = statsHitBox(fakeCtx, wide, "도보", "center", FEED_H, 1.4, "pretendard", { x: 0, y: 0 });
+      expect(hit.left + hit.width).toBeCloseTo(distance.right, 5);
+    });
   });
 });
 
