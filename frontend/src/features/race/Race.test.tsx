@@ -64,8 +64,8 @@ function BackButton() {
   return <button onClick={() => navigate(-1)}>뒤로</button>;
 }
 
-// 선택/닫기가 replace로 처리되므로, "뒤로가기가 실제로 페이지를 벗어나는지"를
-// 검증하려면 진입 전 엔트리가 하나 더 필요하다.
+// 데스크톱에서는 선택/닫기가 replace로 처리되므로, "뒤로가기가 실제로 페이지를
+// 벗어나는지"를 검증하려면 진입 전 엔트리가 하나 더 필요하다.
 async function open(url = "/race?eventId=1&keep=yes") {
   render(
     <MemoryRouter initialEntries={["/", url]} initialIndex={1}>
@@ -103,7 +103,7 @@ it("화면을 떠나면 전체 조회 요청을 취소한다", async () => {
   expect(signal?.aborted).toBe(true);
 });
 
-it("선택·닫기는 history entry를 쌓지 않고, 뒤로가기 한 번이면 페이지를 벗어난다", async () => {
+it("데스크톱에서는 선택·닫기가 history entry를 쌓지 않고, 뒤로가기 한 번이면 페이지를 벗어난다", async () => {
   await open();
   fireEvent.click(screen.getByRole("button", { name: "대회 B" }));
   await waitFor(() => expectSearchParams({ eventId: "2", keep: "yes" }));
@@ -123,6 +123,21 @@ it("선택·닫기는 history entry를 쌓지 않고, 뒤로가기 한 번이면
   cleanup();
   await open(reloadUrl);
   expect(screen.getByTestId("selected").textContent).toBe("2");
+});
+
+it("모바일에서는 선택·닫기마다 history entry가 쌓이고 뒤로가기로 단계별 복원한다", async () => {
+  mediaMatches = false;
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "대회 B" }));
+  await waitFor(() => expectSearchParams({ eventId: "2", keep: "yes" }));
+  expect(screen.getByTestId("selected").textContent).toBe("2");
+
+  fireEvent.click(screen.getByRole("button", { name: "대회 B" })); // 닫기
+  await waitFor(() => expectSearchParams({ keep: "yes" }));
+  expect(screen.getByTestId("selected").textContent).toBe("none");
+
+  goBack();
+  await waitFor(() => expect(screen.getByTestId("selected").textContent).toBe("2"));
 });
 
 it("최초 딥링크만 스크롤하고 닫았다 다시 선택해도 재실행하지 않는다", async () => {
@@ -188,7 +203,7 @@ it("모바일 캘린더에서 필터에 안 걸리는 대회를 선택한 뒤 �
   expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
 });
 
-it("뒤로가기는 여러 번 조작을 거쳐도 페이지를 한 번에 벗어난다", async () => {
+it("데스크톱에서는 뒤로가기가 여러 번 조작을 거쳐도 페이지를 한 번에 벗어난다", async () => {
   await open("/race?keep=yes");
   fireEvent.click(screen.getByRole("button", { name: "대회 A" }));
   fireEvent.click(screen.getByRole("button", { name: "자전거" }));

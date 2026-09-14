@@ -69,7 +69,11 @@ export default function Race() {
       if (id === null) next.delete("eventId");
       else next.set("eventId", String(id));
       return next;
-    }, { replace: true });
+    // 데스크톱은 상세가 인라인 패널이라 여러 대회를 가볍게 훑어보는 게 자연스러운데,
+    // 그때마다 entry가 쌓이면 페이지를 나갈 때 뒤로가기를 여러 번 눌러야 한다.
+    // 모바일은 바텀시트라 뒤로가기(백 제스처)로 시트를 닫는 게 자연스러운 UX이므로
+    // 기존처럼 단계별 복원을 유지한다.
+    }, { replace: isDesktop });
   };
 
   useEffect(() => {
