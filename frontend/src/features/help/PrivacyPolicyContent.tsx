@@ -14,7 +14,7 @@ import { EFFECTIVE_DATE, OPERATOR, SERVICE } from "./legalInfo";
  * - 1:1 문의 항목·보유 기간: ContactPage 동의 안내, backend/app/schemas/inquiry.py, sql/01_schema.sql inquiry
  * - 접속 IP 주소(요청 제한): backend/app/api/routers/inquiries.py, backend/app/services/rate_limit.py
  * - 새 문의 메신저 알림에 담는 항목(7번 아래 문단): backend/app/services/inquiry_notify.py
- * - 기기 안에서만 처리하는 곳: 가까운 순 정렬(홈, 코스 탐색, 자전거 대여), features/map/useCourseTracking.ts,
+ * - 운영팀 서버로 보내지 않고 기기 안에서 처리하는 곳(2번 ③): 가까운 순 정렬(홈, 코스 탐색, 자전거 대여), features/map/useCourseTracking.ts,
  *   features/map/components/RecordCard.tsx, features/support/components/SupportDetail.tsx(localStorage)
  * - 배포 환경: Vercel(웹사이트), Render 싱가포르(API 서버), Supabase 서울 Free 요금제(DB).
  *   서버 접속 기록 보관 기간은 Vercel·Render Hobby 요금제 기준이다. 요금제나 업체를 바꾸면 2·4·5·7·8번을 고친다
@@ -23,8 +23,9 @@ import { EFFECTIVE_DATE, OPERATOR, SERVICE } from "./legalInfo";
  *   이 작업이 DB에 등록돼 있어야 5번이 사실이다.
  *
  * 현재 위치: 가까운 순 정렬은 서버로 좌표를 보내지 않고 브라우저에서 계산한다(위치기반서비스사업 신고 대상에서
- * 벗어나기 위한 결정). 좌표 전송을 없애는 작업은 별도 브랜치에서 하므로, 그 변경이 같은 배포에 포함되거나
- * 먼저 배포되어야 이 문서가 사실과 맞다.
+ * 벗어나기 위한 결정, #97). 보장하는 범위는 "원본 좌표를 운영팀 서버로 보내지 않는다"까지다.
+ * 지도(카카오)와 코스 사진(한국관광공사)은 외부 서버에서 불러오므로, 지도를 옮긴 위치나 불러온 사진으로 대략적인
+ * 지역이 그 서버에 드러날 수 있다(10번 아래 문단). "어떤 서버에도 위치가 전달되지 않는다"로 읽히게 쓰지 않는다.
  */
 
 const S = {
@@ -114,12 +115,13 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
           ]}
         />
 
-        <SubTitle>③ 이용자의 기기 안에서만 처리하는 정보</SubTitle>
-        <P>다음 기능은 정보를 이용자의 기기(브라우저) 안에서만 처리하며, 운영팀 서버로 보내지 않습니다.</P>
+        <SubTitle>③ 운영팀 서버로 보내지 않고 기기 안에서 처리하는 정보</SubTitle>
+        <P>다음 기능에 쓰는 정보는 운영팀 서버로 보내지 않고 이용자의 기기(브라우저) 안에서 처리합니다.</P>
         <Items>
           <li>
             <strong>가까운 코스·자전거 대여소 안내</strong>: 위치 사용을 허용한 경우의 현재 위치. 가까운 순서를 기기
-            안에서 계산하며, 현재 위치를 운영팀 서버로 보내거나 저장하지 않습니다.
+            안에서 계산하며, 현재 위치를 운영팀 서버로 보내거나 저장하지 않습니다. 지도와 코스 사진을 불러오는 외부
+            서비스에 관해서는 10번에서 안내합니다.
           </li>
           <li>
             <strong>코스 따라가기</strong>: 진행률과 코스 이탈 여부를 계산하는 데 쓰는 현재 위치. 따라가기를 끝내거나
@@ -299,8 +301,13 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
           담지 않으며, 브라우저 설정에서 사이트 데이터를 삭제하면 지워집니다.
         </P>
         <P>
-          지도를 보여 주기 위해 카카오맵을 불러오며, 이 과정에서 카카오가 이용자의 접속 정보를 처리할 수 있습니다. 이에
-          대해서는 카카오의 개인정보처리방침이 적용됩니다.
+          지도를 보여 주기 위해 카카오맵을 불러오고, 코스 사진은 한국관광공사 서버에서 불러옵니다. 이 과정에서 카카오와
+          한국관광공사가 이용자의 접속 정보를 처리할 수 있으며, 이에 대해서는 각자의 개인정보처리방침이 적용됩니다.
+        </P>
+        <P>
+          가까운 순으로 고른 코스의 사진을 불러오거나 지도를 현재 위치·가까운 코스 주변으로 옮기면, 그 요청으로 이용자가
+          있는 대략적인 지역이 카카오나 한국관광공사 서버에 드러날 수 있습니다. 이를 원하지 않으면 위치 사용을 허용하지
+          않고 이용할 수 있습니다(11번).
         </P>
       </LegalSection>
 
