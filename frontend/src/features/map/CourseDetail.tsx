@@ -797,7 +797,7 @@ export function CourseDetail() {
                       routeType={routeType === "자전거" ? "bicycle" : "trail"}
                       category={parseCategoryParam(searchParams)}
                       onCategoryChange={changeCategory}
-                      onBack={() => navigate(-1)}
+                      onBack={() => navigate("/courses")}
                       onSpotsChange={setNearbySpots}
                       onSelectedChange={(spot) => setSelectedNearbySpotId(spot?.id ?? null)}
                     />

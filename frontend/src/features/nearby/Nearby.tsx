@@ -162,6 +162,15 @@ function SpotList({
   const sentinelRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // onReset은 부모(Nearby)가 매 렌더마다 새로 만드는 콜백이라 의존성 배열에 넣으면
+  // 부모 리렌더만으로 loadFirstPage가 재생성되고, 그 아래 마운트 useEffect까지
+  // 다시 실행돼 요청이 처음부터 재시작된다. ref로 최신 값만 따라가게 하고
+  // loadFirstPage 의존성에서는 뺀다.
+  const onResetRef = useRef(onReset);
+  useEffect(() => {
+    onResetRef.current = onReset;
+  });
+
   const updateState = useCallback((patch: Partial<SpotListState>) => {
     const next = { ...stateRef.current, ...patch };
     stateRef.current = next;
@@ -176,7 +185,7 @@ function SpotList({
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    onReset();
+    onResetRef.current();
 
     updateState({
       spots: [],
@@ -231,7 +240,7 @@ function SpotList({
         updateState({ loading: false, loadingMore: false });
       }
     }
-  }, [courseId, category, routeType, updateState, onReset]);
+  }, [courseId, category, routeType, updateState]);
 
   useEffect(() => {
     autoRestartsRef.current = 0;
