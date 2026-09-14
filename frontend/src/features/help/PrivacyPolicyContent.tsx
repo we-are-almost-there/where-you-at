@@ -17,7 +17,8 @@ import { EFFECTIVE_DATE, OPERATOR, SERVICE } from "./legalInfo";
  * - 기기 안에서만 처리하는 곳: 가까운 순 정렬(홈, 코스 탐색, 자전거 대여), features/map/useCourseTracking.ts,
  *   features/map/components/RecordCard.tsx, features/support/components/SupportDetail.tsx(localStorage)
  * - 배포 환경: Vercel(웹사이트), Render 싱가포르(API 서버), Supabase 서울 Free 요금제(DB).
- *   서버 접속 기록 보관 기간은 Vercel·Render Hobby 요금제 기준이다. 요금제나 업체를 바꾸면 2·4·7·8번을 고친다.
+ *   서버 접속 기록 보관 기간은 Vercel·Render Hobby 요금제 기준이다. 요금제나 업체를 바꾸면 2·4·5·7·8번을 고친다
+ *   (5번: Supabase Free에는 자동 백업이 없다는 전제로 적었다).
  * - 파기: Supabase Cron 예약 작업이 매일 보유 기간이 지난 문의를 지운다(sql/05_inquiry_retention.sql).
  *   이 작업이 DB에 등록돼 있어야 5번이 사실이다.
  *
@@ -179,9 +180,15 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             <strong>파기 절차</strong>: 보유 기간이 지난 1:1 문의는 데이터베이스의 예약 작업이 매일 자동으로 찾아
             파기합니다. 서버 접속 기록은 각 업체가 정한 로그 보관 기간(4번)에 따라 처리됩니다.
           </li>
+          {/* "복구할 수 없도록 삭제"는 수탁자 시스템에 남을 수 있는 사본까지 운영팀이 보장할 수 없어 쓰지 않는다.
+            운영팀이 복원할 수 없다는 것은 Supabase Free 요금제에 자동 백업이 없어서 사실이다
+            (https://supabase.com/docs/guides/platform/backups, 2026.9. 확인). Pro 이상으로 바꾸면 일일 백업이 생기므로
+            이 항목에 백업 보관 기간을 적는다. */}
           <li>
-            <strong>파기 방법</strong>: 전자 파일 형태로 저장된 개인정보는 복구할 수 없도록 데이터베이스에서 삭제합니다.
-            운영팀은 개인정보가 담긴 데이터베이스를 따로 백업해 두지 않으며, 종이 문서로도 보관하지 않습니다.
+            <strong>파기 방법</strong>: 전자 파일 형태로 저장된 개인정보는 데이터베이스에서 삭제해 운영팀이 다시 조회하거나
+            복원할 수 없게 합니다. 운영팀은 개인정보가 담긴 데이터베이스를 따로 내려받아 백업해 두지 않으며, 종이 문서로도
+            보관하지 않습니다. 수탁자(7번)가 시스템 운영 과정에서 보관하는 사본이 있는 경우, 그 사본은 수탁자의 정책에 따라
+            삭제됩니다.
           </li>
         </Items>
       </LegalSection>
