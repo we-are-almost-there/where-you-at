@@ -39,5 +39,7 @@ export function parsePage(value: string | null): number {
 /** 경로의 :id 값 → 1 이상의 정수. 형식이 맞지 않으면 null이고, 이때는 요청을 보내지 않는다. */
 export function parseNoticeId(value: string | undefined): number | null {
   if (!value || !/^[1-9]\d*$/.test(value)) return null;
-  return Number(value);
+  const id = Number(value);
+  // 2^53 이상은 반올림돼 다른 공지를 가리키고, 아주 긴 숫자는 Infinity가 된다. 없는 공지와 같이 취급한다.
+  return Number.isSafeInteger(id) ? id : null;
 }

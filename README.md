@@ -155,7 +155,11 @@ Render 환경변수에 `FORWARDED_ALLOW_IPS=*`를 두면 uvicorn이 `X-Forwarded
 코드를 고쳐 배포하지 않고, uvicorn 접속 로그와 실제 요청 결과로 확인합니다.
 uvicorn은 프록시 헤더를 반영한 **뒤의** 주소를 접속 로그에 남기므로, 로그에 찍힌 IP가 곧 요청 제한에 쓰는 IP입니다.
 
-1. Render 환경변수에 `FORWARDED_ALLOW_IPS=*`를 넣고 배포합니다. 시작 명령에 `--no-access-log`가 있으면 접속 로그가 남지 않으니 빼 둡니다.
+1. Render 환경변수에 `FORWARDED_ALLOW_IPS=*`를 넣고 배포합니다. `backend/.env`에 적으면 uvicorn이 읽지 않으니 대시보드에 넣습니다.
+   시작 명령도 함께 확인합니다. 아래 결과를 잘못 읽지 않으려면 세 가지가 맞아야 합니다.
+   - `--no-access-log`가 없어야 합니다. 있으면 접속 로그가 남지 않습니다.
+   - `--log-level`이 info 이하(기본값)여야 합니다. warning 이상이면 접속 로그가 찍히지 않습니다.
+   - `--workers`가 1(기본값)이어야 합니다. 여럿이면 요청 제한을 worker마다 따로 세서 4단계의 4번째 요청도 접수될 수 있습니다.
 2. 위조한 헤더로 요청합니다. `website`를 채워 보내므로 저장되지 않고, 요청 횟수에도 들어가지 않습니다.
 
    ```bash

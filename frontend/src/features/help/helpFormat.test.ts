@@ -59,6 +59,10 @@ describe("parseNoticeId", () => {
     ["1.5", null],
     ["abc", null],
     [undefined, null],
+    // 안전 정수의 끝까지는 그대로, 넘으면 반올림·Infinity가 되므로 null
+    [String(Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER],
+    ["9007199254740992", null],
+    ["1".repeat(400), null],
   ])("%s → %s", (value, expected) => {
     expect(parseNoticeId(value)).toBe(expected);
   });
