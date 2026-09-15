@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
 import { CircleAlert, CircleCheck } from "lucide-react";
 import { KakaoMap } from "./KakaoMap";
 import { ErrorNotice } from "../../components/error/ErrorNotice";
@@ -196,11 +196,20 @@ export function CourseDetail() {
   // 일시정지도 세션이 살아 있는 상태다. 멈춘 사이에 코스나 진행 방향을 갈아타면
   // 이미 쌓인 기록·진행률과 어긋나므로, 그런 조작은 tracking/paused를 가리지 않고 잠근다.
   const sessionActive = trackingStatus !== "idle";
-  const confirmLeave = () => !sessionActive || window.confirm(
-    "이 화면을 나가면 지금까지의 따라가기 기록이 사라집니다. 이동할까요?",
+  // 탭·필터 변경은 허용하고, 다른 화면으로 향하는 모든 라우트 이동을 보호한다.
+  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+    sessionActive && currentLocation.pathname !== nextLocation.pathname,
   );
+  useEffect(() => {
+    if (blocker.state !== "blocked") return;
+    if (window.confirm("이 화면을 나가면 지금까지의 따라가기 기록이 사라집니다. 이동할까요?")) {
+      blocker.proceed();
+    } else {
+      blocker.reset();
+    }
+  }, [blocker]);
   const backToCourses = () => {
-    if (confirmLeave()) navigate("/courses");
+    navigate("/courses");
   };
   const [waypoints, setWaypoints] = useState<LatLng[]>([]);
   const [startAddress, endAddress] = useEndpointAddresses(waypoints);
@@ -701,7 +710,7 @@ export function CourseDetail() {
                   이 버튼이 모바일·데스크톱 공통으로 유일한 뒤로 이동 수단이라 md:hidden 없이 항상 노출된다. */}
                 <button
                   type="button"
-                  onClick={() => { if (confirmLeave()) navigate(-1); }}
+                  onClick={() => navigate(-1)}
                   aria-label="뒤로"
                   className="cursor-pointer text-[20px] leading-none text-ink"
                 >

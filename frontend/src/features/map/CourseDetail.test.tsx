@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { StrictMode } from "react";
+import { createMemoryRouter } from "react-router";
+import { RouterProvider } from "react-router/dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CourseDetail } from "./CourseDetail";
 
@@ -20,8 +22,6 @@ vi.mock("./endpointAddress", () => ({
     { caption: "", main: "코스 시작점" }, { caption: "", main: "코스 종료점" },
   ],
 }));
-vi.mock("../../components/layout/SidebarDrawer", () => ({ default: () => null }));
-vi.mock("../../components/layout/AppHeader", () => ({ default: () => null }));
 vi.mock("../nearby/nearbyApi", () => ({
   getNearbySpots: async () => { throw new TypeError("Failed to fetch"); },
 }));
@@ -49,19 +49,68 @@ afterEach(() => {
 });
 
 async function mount() {
+  const router = createMemoryRouter([
+    { path: "/", element: <p>홈 화면</p> },
+    { path: "/races", element: <p>대회 화면</p> },
+    { path: "/courses", element: <p>코스 목록 화면</p> },
+    { path: "/courses/:id", element: <CourseDetail /> },
+  ], { initialEntries: ["/courses", "/courses/1?tab=nearby"] });
   await act(async () => {
-    render(
-      <MemoryRouter initialEntries={["/courses", "/courses/1?tab=nearby"]}>
-        <Routes>
-          <Route path="/courses" element={<p>코스 목록 화면</p>} />
-          <Route path="/courses/:id" element={<CourseDetail />} />
-        </Routes>
-      </MemoryRouter>,
-    );
+    render(<StrictMode><RouterProvider router={router} /></StrictMode>);
   });
+  return router;
 }
 
 describe("CourseDetail 기록이 있는 화면에서 이동", () => {
+  it.each([
+    ["paused", "logo", "/"], ["tracking", "logo", "/"],
+    ["paused", "header", "/races"], ["tracking", "header", "/races"],
+    ["paused", "sidebar", "/races"], ["tracking", "sidebar", "/races"],
+  ] as const)("%s 중 %s 이동은 취소하면 유지하고 확인하면 목적지로 이동한다", async (status, source, destination) => {
+    tracking.status = status;
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const router = await mount();
+    if (source === "sidebar") fireEvent.click(screen.getByRole("button", { name: "메뉴" }));
+    const container = source === "sidebar" ? screen.getByRole("complementary") : screen.getByRole("banner");
+    const link = () => within(container).getAllByRole("link").find((item) => item.getAttribute("href") === destination)!;
+    fireEvent.click(link());
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(router.state.location.pathname).toBe("/courses/1");
+    expect(screen.getByText("테스트 코스")).toBeTruthy();
+    expect(tracking.stopTracking).not.toHaveBeenCalled();
+    if (source === "sidebar") fireEvent.click(screen.getByRole("button", { name: "메뉴" }));
+    confirm.mockReturnValue(true);
+    fireEvent.click(link());
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(router.state.location.pathname).toBe(destination);
+    expect(screen.queryByText("테스트 코스")).toBeNull();
+  });
+
+  it.each([-1, "/courses/2"] as const)("기록이 있으면 %s 이동도 확인한다", async (destination) => {
+    tracking.status = "paused";
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const router = await mount();
+    const move = () => typeof destination === "number" ? router.navigate(destination) : router.navigate(destination);
+    await act(async () => { await move(); });
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(router.state.location.pathname).toBe("/courses/1");
+    confirm.mockReturnValue(true);
+    await act(async () => { await move(); });
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(router.state.location.pathname).toBe(destination === -1 ? "/courses" : destination);
+  });
+
+  it("일시정지 중 같은 코스의 탭 변경은 확인하지 않는다", async () => {
+    tracking.status = "paused";
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const router = await mount();
+    fireEvent.click(screen.getByRole("tab", { name: "코스 정보" }));
+    expect(screen.getByRole("tab", { name: "코스 정보" }).getAttribute("aria-selected")).toBe("true");
+    expect(router.state.location.pathname).toBe("/courses/1");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(tracking.stopTracking).not.toHaveBeenCalled();
+  });
+
   it.each(["paused", "tracking"] as const)("%s 중 목록 이동 취소는 세션을 유지하고 승인은 이동한다", async (status) => {
     tracking.status = status;
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
