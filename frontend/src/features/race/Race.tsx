@@ -199,13 +199,13 @@ export default function Race() {
               <button
                 type="button"
                 onClick={() => {setActiveType(null); selectRace(null);}}
-                className={`relative pb-2 text-sm font-medium transition-colors ${
-                  activeType === null ? "text-gray-900" : "text-gray-400"
+                className={`relative pb-2 text-[15px] font-bold transition-colors ${
+                  activeType === null ? "text-ink" : "text-gray-400"
                 }`}
               >
                 전체
                 {activeType === null && (
-                  <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-gray-900" />
+                  <span className="absolute inset-x-0 -bottom-px h-[3px] rounded-full bg-ink" />
                 )}
               </button>
               {(Object.keys(EVENT_TYPE_LABEL) as EventType[]).map((type) => {
@@ -215,14 +215,13 @@ export default function Race() {
                     key={type}
                     type="button"
                     onClick={() => {setActiveType(isActive ? null : type);  selectRace(null);}}
-                    className={`relative pb-2 text-sm font-medium transition-colors ${
-                      isActive ? "text-gray-900" : "text-gray-400"
-                    }`}
+                    className="relative pb-2 text-[15px] font-bold transition-colors"
+                    style={{ color: isActive ? EVENT_TYPE_COLOR[type] : undefined }}
                   >
-                    {EVENT_TYPE_LABEL[type]}
+                    <span className={isActive ? "" : "text-gray-400"}>{EVENT_TYPE_LABEL[type]}</span>
                     {isActive && (
                       <span
-                        className="absolute inset-x-0 -bottom-px h-0.5 rounded-full"
+                        className="absolute inset-x-0 -bottom-px h-[3px] rounded-full"
                         style={{ backgroundColor: EVENT_TYPE_COLOR[type] }}
                       />
                     )}
@@ -240,7 +239,7 @@ export default function Race() {
                   selectRace(null);
                 }}
                 className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-                  viewMode === "list" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"
+                  viewMode === "list" ? "bg-white text-ink shadow-sm" : "text-gray-500"
                 }`}
               >
                 목록
@@ -252,7 +251,7 @@ export default function Race() {
                   selectRace(null);
                 }}
                 className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-                  viewMode === "calendar" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"
+                  viewMode === "calendar" ? "bg-white text-ink shadow-sm" : "text-gray-500"
                 }`}
               >
                 캘린더
