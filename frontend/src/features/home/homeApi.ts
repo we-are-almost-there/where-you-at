@@ -113,8 +113,8 @@ export async function fetchFeaturedCourses(): Promise<CourseItem[]> {
  * 위치는 서버로 보내지 않는다. 도보 경로가 있는 모든 코스의 출발점 목록(위치와 상관없이 항상 같은 응답)을 받아
  * 브라우저에서 가까운 순으로 고른다. 가까운 코스만 다시 요청하지 않는 것도 같은 이유다(nearestSort.ts).
  */
-export async function fetchNearbyCourses(limit = 4): Promise<NearbyCourses> {
-  const origin = await getCurrentPosition();
+export async function fetchNearbyCourses(limit: number, locationAllowed: boolean): Promise<NearbyCourses> {
+  const origin = locationAllowed ? await getCurrentPosition() : null;
 
   if (!origin) {
     const { courses } = await getCourses({ page: "1", size: String(limit) });

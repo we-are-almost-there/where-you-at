@@ -19,6 +19,7 @@ import AppHeader from "../../components/layout/AppHeader";
 import { BicycleRegionSelect } from "./components/BicycleRegionSelect";
 import { buildBicycleRegionOptions, buildBicycleSubregionOptions } from "./regionOptions";
 import { slicePage, sortByDistance } from "../map/nearestSort";
+import { useLocationConsent } from "../location";
 
 // 페이지당 20개. 24로 늘리면 3열(태블릿) 구간의 마지막 줄은 꽉 채울 수 있지만,
 // 2열(모바일) 구간이 10줄→12줄로 늘어나 스크롤 부담이 커진다. 3열 마지막 줄이
@@ -70,6 +71,7 @@ const DATA_SOURCE_TO_TAB: Record<string, DataSourceTab> = {
 };
 
 export function BicycleExplore() {
+  const { requestConsent } = useLocationConsent();
   // 필터·탭에 따라 스크롤바가 나타나거나 사라져도 본문 너비를 유지한다.
   // AppHeader의 보정은 헤더 내부에만 적용되므로 본문 정렬을 위해 opt-in을 유지한다.
   useEffect(() => {
@@ -170,16 +172,27 @@ export function BicycleExplore() {
   // 그 결과 순서만 "가까운 순"으로 자연스럽게 바뀐다. 거부/미지원이면 그대로 ID순 유지.
   useEffect(() => {
     if (userLoc || geoDenied || !geoSupported) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setGeoDenied(true), // 타임아웃도 이 error 콜백으로 들어옴
-      {
-        timeout: 5000, // 5초 안에 응답 없으면 실패 처리 → ID순 유지
-        maximumAge: 60000, // 1분 이내 캐시된 위치는 재사용 (즉시 응답 가능)
-        enableHighAccuracy: false, // GPS 대신 wifi/IP 기반 등 빠른 방식 우선
-      },
-    );
-  }, [userLoc, geoDenied, geoSupported]);
+    let cancelled = false;
+    requestConsent().then((allowed) => {
+      if (cancelled) return;
+      if (!allowed) {
+        setGeoDenied(true);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => !cancelled && setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => !cancelled && setGeoDenied(true), // 타임아웃도 이 error 콜백으로 들어옴
+        {
+          timeout: 5000, // 5초 안에 응답 없으면 실패 처리 → ID순 유지
+          maximumAge: 60000, // 1분 이내 캐시된 위치는 재사용 (즉시 응답 가능)
+          enableHighAccuracy: false, // GPS 대신 wifi/IP 기반 등 빠른 방식 우선
+        },
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userLoc, geoDenied, geoSupported, requestConsent]);
 
   const regionOptions = useMemo(() => buildBicycleRegionOptions(regions), [regions]);
 

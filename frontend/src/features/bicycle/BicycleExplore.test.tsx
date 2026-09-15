@@ -23,6 +23,7 @@ vi.mock("./bicycleApi", () => ({
 }));
 // 상단바는 브라우저 API를 써서 jsdom에서 그릴 수 없고, 이 테스트의 대상도 아니다.
 vi.mock("../../components/layout/AppHeader", () => ({ default: () => null }));
+vi.mock("../location", () => ({ useLocationConsent: () => ({ requestConsent: async () => true }) }));
 
 const SEOUL = { latitude: 37.5665, longitude: 126.978 };
 

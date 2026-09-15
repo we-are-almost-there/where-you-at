@@ -16,6 +16,7 @@ const tracking = vi.hoisted(() => ({
 }));
 
 vi.mock("./useCourseTracking", () => ({ useCourseTracking: () => tracking }));
+vi.mock("../location", () => ({ useLocationConsent: () => ({ requestConsent: async () => true }) }));
 vi.mock("./KakaoMap", () => ({ KakaoMap: () => null }));
 vi.mock("./endpointAddress", () => ({
   useEndpointAddresses: () => [

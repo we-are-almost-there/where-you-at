@@ -16,6 +16,7 @@ import type { LucideIcon } from "lucide-react";
 import AppHeader from "../../components/layout/AppHeader";
 import Footer from "../../components/layout/Footer";
 import { fetchFeaturedCourses, fetchNearbyCourses, fetchUpcomingRaces } from "./homeApi";
+import { useLocationConsent } from "../location";
 import type { CourseItem, UpcomingRace } from "./homeApi";
 import { BANNERS } from "./banners";
 import type { Banner } from "./banners";
@@ -481,6 +482,7 @@ function MenuIcon({ item }: { item: MenuItem }) {
 }
 
 export default function Home() {
+  const { requestConsent } = useLocationConsent();
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [races, setRaces] = useState<UpcomingRace[]>([]);
   const [isRaceLoading, setIsRaceLoading] = useState(true);
@@ -504,10 +506,12 @@ export default function Home() {
       setIsFeaturedLoading(false);
     });
 
-    const nearbyPromise = fetchNearbyCourses(8).catch(() => ({
-      items: [] as CourseItem[],
-      isFallback: true,
-    }));
+    const nearbyPromise = requestConsent()
+      .then((allowed) => fetchNearbyCourses(8, allowed))
+      .catch(() => ({
+        items: [] as CourseItem[],
+        isFallback: true,
+      }));
 
     Promise.all([featuredPromise, nearbyPromise]).then(([featuredList, nearbyResult]) => {
       if (!alive) return;
@@ -520,7 +524,7 @@ export default function Home() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [requestConsent]);
 
   useEffect(() => {
     let alive = true;

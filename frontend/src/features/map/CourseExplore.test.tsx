@@ -13,6 +13,7 @@ vi.mock("./coursesApi", () => ({ getAllCourses: vi.fn(), getCourses: vi.fn(), ge
 // 지도와 상단바는 카카오 SDK·브라우저 API를 써서 jsdom에서 그릴 수 없고, 이 테스트의 대상도 아니다.
 vi.mock("./KakaoMap", () => ({ KakaoMap: () => null }));
 vi.mock("../../components/layout/AppHeader", () => ({ default: () => null }));
+vi.mock("../location", () => ({ useLocationConsent: () => ({ requestConsent: async () => true }) }));
 
 const SEOUL = { latitude: 37.5665, longitude: 126.978 };
 

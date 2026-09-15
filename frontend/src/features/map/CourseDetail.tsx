@@ -22,6 +22,7 @@ import { paceStat, type TrackingRecord } from "./trackingRecord";
 import SidebarDrawer from "../../components/layout/SidebarDrawer";
 import AppHeader from "../../components/layout/AppHeader";
 import { parseRouteTypeParam, setRouteTypeParam, parseInfoTabParam, setInfoTabParam, parseCategoryParam, setCategoryParam } from "./courseUrlState";
+import { useLocationConsent } from "../location";
 
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
@@ -158,6 +159,7 @@ type DetailError =
   | { kind: "request"; value: UserError };
 
 export function CourseDetail() {
+  const { requestConsent } = useLocationConsent();
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -403,7 +405,12 @@ export function CourseDetail() {
   // 새 추적 세션은 항상 0%에서 시작한다(이전 세션이 어떻게 끝났든).
   // 이탈 상태도 여기서만 지운다 — 추적이 멈출 때 지울 필요는 없다.
   // 배너·유도선은 showOffCourse가 isTracking을 요구하므로 값이 남아 있어도 그려지지 않는다.
-  const handleStartTracking = () => {
+  const handleStartTracking = async () => {
+    // iOS 음성 API는 사용자 동작 안에서 먼저 깨워야 한다. 동의 창을 기다린 뒤 호출하면
+    // 사용자 동작으로 인정되지 않을 수 있으므로 위치 요청보다 앞에서 실행한다.
+    primeSpeech();
+    const allowed = await requestConsent({ promptWhenDeclined: true });
+    if (!allowed) return;
     setProgress(0);
     setNow(Date.now());
     setLivePace(null); // 지난 세션의 페이스가 새 세션 첫 30초 동안 남아 있으면 안 된다
@@ -413,7 +420,6 @@ export function CourseDetail() {
     setOffCourseGuidePoint(null);
     wasOffCourseRef.current = false;
     wasFinishedRef.current = false;
-    primeSpeech(); // 버튼 탭(사용자 제스처) 시점에 iOS 음성 잠금 해제
     startTracking();
   };
 

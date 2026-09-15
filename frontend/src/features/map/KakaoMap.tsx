@@ -4,6 +4,7 @@ import type { Direction } from "./courseProgress";
 import { splitIntoSegments } from "./courseSegments";
 import type { LatLng } from "./types";
 import { getGeolocationErrorMessage } from "./useCourseTracking";
+import { useLocationConsent } from "../location";
 import { Menu } from "lucide-react";
 
 const ACCENT = "#6c5ce7"; // --color-accent (시그니처 바이올렛)
@@ -346,6 +347,7 @@ export function KakaoMap({
   onCourseLineHover,
   focusCourseId = null,
 }: Props) {
+  const { requestConsent } = useLocationConsent();
   const [sdkReady, setSdkReady] = useState(false);
   const [map, setMap] = useState<kakao.maps.Map | null>(null);
   const forward = direction === "forward";
@@ -524,10 +526,15 @@ export function KakaoMap({
     if (locating) setLocating(false);
   }
 
-  const handleLocate = () => {
+  const handleLocate = async () => {
     // 추적 중이면 이미 살아있는 현위치가 있으니, 새 GPS 요청·미리보기 없이 그 위치로 리센터만 한다.
     if (currentLocation) {
       panToVisibleCenter(currentLocation.lat, currentLocation.lng);
+      return;
+    }
+    const allowed = await requestConsent({ promptWhenDeclined: true });
+    if (!allowed) {
+      showLocateError("현재 위치를 사용하려면 위치 사용에 동의해 주세요.");
       return;
     }
     if (!navigator.geolocation) {

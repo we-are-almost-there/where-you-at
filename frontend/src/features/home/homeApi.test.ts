@@ -43,7 +43,7 @@ describe("fetchNearbyCourses", () => {
       .mockResolvedValue(okJson([start(1, "부산", 35.18, 129.08), start(2, "인천", 37.46, 126.71)]));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await fetchNearbyCourses(1);
+    const result = await fetchNearbyCourses(1, true);
 
     expect(result.isFallback).toBe(false);
     expect(result.items.map((item) => item.id)).toEqual([2]);
@@ -66,10 +66,33 @@ describe("fetchNearbyCourses", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await fetchNearbyCourses(4);
+    const result = await fetchNearbyCourses(4, true);
 
     expect(result.isFallback).toBe(true);
     expect(result.items.map((item) => item.id)).toEqual([5]);
+    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe("/api/courses");
+  });
+
+  it("위치 사용에 동의하지 않으면 브라우저 위치를 요청하지 않고 기본 목록을 사용한다", async () => {
+    const getCurrentPosition = vi.fn();
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition },
+    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      okJson({
+        total_count: 1,
+        page: 1,
+        size: 4,
+        courses: [{ id: 5, title: "기본", start_address: null, image_url: null, region_code: null }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchNearbyCourses(4, false);
+
+    expect(result.isFallback).toBe(true);
+    expect(getCurrentPosition).not.toHaveBeenCalled();
     expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe("/api/courses");
   });
 });

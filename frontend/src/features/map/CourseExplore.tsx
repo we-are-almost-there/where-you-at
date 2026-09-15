@@ -21,6 +21,7 @@ import { buildRegionOptions, type RegionSelectItem } from "./regionOptions";
 import type { Course, CourseFilterState, CourseListResponse, LatLng, RouteType } from "./types";
 import { buildCourseSearchParams, parseCourseUrlState, type CourseUrlState } from "./courseUrlState";
 import AppHeader from "../../components/layout/AppHeader";
+import { useLocationConsent } from "../location";
 
 const EMPTY_RES: CourseListResponse = {
   total_count: 0,
@@ -39,6 +40,7 @@ function courseStart(course: Course, routeType: RouteType): LatLng | null {
 }
 
 export function CourseExplore() {
+  const { requestConsent } = useLocationConsent();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { routeType, filters, page } = useMemo(() => parseCourseUrlState(searchParams), [searchParams]);
@@ -107,11 +109,22 @@ export function CourseExplore() {
   useEffect(() => {
     if (filters.sort !== "nearest" || userLoc || geoDenied) return;
     if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setGeoDenied(true),
-    );
-  }, [filters.sort, userLoc, geoDenied]);
+    let cancelled = false;
+    requestConsent().then((allowed) => {
+      if (cancelled) return;
+      if (!allowed) {
+        setGeoDenied(true);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => !cancelled && setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => !cancelled && setGeoDenied(true),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.sort, userLoc, geoDenied, requestConsent]);
 
   // '가까운 순'이고 위치를 얻었으면 필터에 맞는 코스 전체를 받아 브라우저에서 정렬한다.
   // 이용자 위치를 서버로 보내지 않기 위해서다(nearestSort.ts). 위치를 아직 못 얻었거나 거부했으면 기본 순서다.
