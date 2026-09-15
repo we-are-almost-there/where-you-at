@@ -1,9 +1,8 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ...crud import inquiry as inquiry_crud
 from ...deps import get_db
 from ...schemas.inquiry import InquiryCreate, InquiryCreated
-from ...services.inquiry_notify import notify_new_inquiry
 from ...services.rate_limit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api/inquiries", tags=["inquiries"])
@@ -27,7 +26,6 @@ def _client_key(request: Request) -> str:
 def create_inquiry(
     body: InquiryCreate,
     request: Request,
-    background_tasks: BackgroundTasks,
     conn=Depends(get_db),
 ):
     # 숨긴 입력칸이 채워졌으면 봇으로 보고 저장하지 않는다. 성공처럼 응답해야 봇이 다른 방법을 찾지 않는다.
@@ -37,8 +35,7 @@ def create_inquiry(
     if not inquiry_limiter.allow(_client_key(request)):
         raise HTTPException(status_code=429, detail="문의를 너무 자주 보냈어요. 잠시 후 다시 시도해 주세요.")
 
+    # 새 문의 알림은 두지 않는다. 운영팀이 콘솔의 inquiry 테이블을 정해 둔 주기로 확인한다.
+    # 외부 알림(메신저 등)을 붙이려면 그 업체를 개인정보처리방침 7·8번에 먼저 추가한다.
     inquiry_crud.create_inquiry(conn, category=body.category, email=body.email, content=body.content)
-    # 응답을 먼저 보내고 알림은 뒤에서 보낸다. 웹훅이 느리거나 실패해도 이용자는 기다리지 않는다.
-    # 알림에는 문의 유형만 넘긴다 (services/inquiry_notify.py).
-    background_tasks.add_task(notify_new_inquiry, body.category)
     return InquiryCreated()

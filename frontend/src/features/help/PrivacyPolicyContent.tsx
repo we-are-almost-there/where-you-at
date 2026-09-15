@@ -13,7 +13,7 @@ import { EFFECTIVE_DATE, OPERATOR, SERVICE } from "./legalInfo";
  * 방침은 실제 처리 현황과 일치해야 한다. 아래가 바뀌면 이 문서도 함께 고친다.
  * - 1:1 문의 항목·보유 기간: ContactPage 동의 안내, backend/app/schemas/inquiry.py, sql/01_schema.sql inquiry
  * - 접속 IP 주소(요청 제한): backend/app/api/routers/inquiries.py, backend/app/services/rate_limit.py
- * - 새 문의 메신저 알림에 담는 항목(7번 아래 문단): backend/app/services/inquiry_notify.py
+ * - 새 문의 외부 알림(메신저 등)은 두지 않는다. 붙이려면 업체를 7·8번에 먼저 추가한다(backend/app/api/routers/inquiries.py).
  * - 운영팀 서버로 보내지 않고 기기 안에서 처리하는 곳(2번 ③): 가까운 순 정렬(홈, 코스 탐색, 자전거 대여), features/map/useCourseTracking.ts,
  *   features/map/components/RecordCard.tsx, features/support/components/SupportDetail.tsx(localStorage)
  * - 배포 환경: Vercel(웹사이트), Render 싱가포르(API 서버), Supabase 서울 Free 요금제(DB).
@@ -213,10 +213,6 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
           ]}
         />
         <P>위탁하는 업무의 내용이나 수탁자가 바뀌면 지체 없이 이 개인정보처리방침을 통해 알리겠습니다.</P>
-        <P>
-          새 문의가 들어왔음을 운영팀에 알리는 메신저 알림에는 문의 유형만 담으며, 이메일과 문의 내용 등 문의한 사람을
-          알아볼 수 있는 정보는 담지 않습니다.
-        </P>
       </LegalSection>
 
       <LegalSection section={S.overseas} level={level}>

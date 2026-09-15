@@ -125,7 +125,7 @@ python -m unittest discover -s tests -t .
 | 대상 | 업체 | 설정 |
 |---|---|---|
 | 웹사이트 | Vercel (Hobby) | `VITE_API_BASE_URL`에 API 서버의 `https://` 주소 |
-| API 서버 | Render (Hobby, **Singapore** 리전) | `backend/.env.example`의 값, 새 문의 알림을 쓰면 `INQUIRY_WEBHOOK_URL` |
+| API 서버 | Render (Hobby, **Singapore** 리전) | `backend/.env.example`의 값, `FORWARDED_ALLOW_IPS` (아래 확인 절차) |
 | DB | Supabase (Free, 서울 리전) | 문의 자동 파기 예약 작업 등록 (아래) |
 
 ### 문의 자동 파기 예약 작업
