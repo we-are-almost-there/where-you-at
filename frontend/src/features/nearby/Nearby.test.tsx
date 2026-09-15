@@ -2,6 +2,7 @@
 import { createRef } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NetworkError } from "../../lib/http";
 import { Nearby, type NearbyHandle } from "./Nearby";
 import { getNearbySpots } from "./nearbyApi";
 import type { NearbySpotsPage } from "./nearbyApi";
@@ -136,7 +137,9 @@ describe("Nearby 무한 스크롤", () => {
     api
       .mockResolvedValueOnce(makePage(["A"]))
       .mockResolvedValueOnce(makePage(["B"]))
-      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockRejectedValueOnce(
+        new NetworkError(new TypeError("Failed to fetch")),
+      )
       .mockReturnValueOnce(pending.promise);
     const nearbyRef = createRef<NearbyHandle>();
     const onSelectedChange = vi.fn();
@@ -163,16 +166,33 @@ describe("Nearby 무한 스크롤", () => {
   });
 
   it("연결 오류에 공통 안내와 재시도·목록 이동 버튼을 표시한다", async () => {
-    api.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    api.mockRejectedValueOnce(
+      new NetworkError(new TypeError("Failed to fetch")),
+    );
+
     const onBack = vi.fn();
+
     await act(async () => {
       render(
-        <Nearby courseId={1} category="attraction" onCategoryChange={() => {}} onBack={onBack} />,
+        <Nearby
+          courseId={1}
+          category="attraction"
+          onCategoryChange={() => {}}
+          onBack={onBack}
+        />,
       );
     });
-    expect(screen.getByRole("heading", { name: "서버에 연결할 수 없어요" })).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toContain("일시적인 통신 문제로 정보를 불러오지 못했습니다.");
+
+    expect(
+      screen.getByRole("heading", { name: "서버에 연결할 수 없어요" }),
+    ).toBeTruthy();
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "일시적인 통신 문제로 정보를 불러오지 못했습니다.",
+    );
+
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
+
     fireEvent.click(screen.getByRole("button", { name: "목록으로" }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
