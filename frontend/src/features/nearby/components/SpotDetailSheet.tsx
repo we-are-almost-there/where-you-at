@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { NearbySpot } from "../types";
 import { getTourSpotDetail, getBicycleFacilityDetail } from "../nearbyApi";
+import { toSafeHttpUrl } from "../../../lib/externalUrl";
 
 interface Props {
   spot: NearbySpot;
@@ -97,6 +98,8 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
     setDragDeltaPx(null);
   };
 
+  const reservationHref = toSafeHttpUrl(detail?.reservation_url);
+
   return (
     <>
       <div className="absolute inset-0 z-40 bg-black/30" onClick={onClose} />
@@ -168,11 +171,11 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
                       }
                     />
                     <Row label="주차" value={detail?.parking} />
-                    {detail?.reservation_url ? (
+                    {reservationHref ? (
                       <div className="flex gap-2">
                         <dt className="w-24 shrink-0 text-caption">예약</dt>
                         <dd>
-                          <a href={detail.reservation_url} target="_blank" rel="noreferrer" className="text-accent underline">
+                          <a href={reservationHref} target="_blank" rel="noreferrer" className="text-accent underline">
                             예약 페이지로 이동
                           </a>
                         </dd>
