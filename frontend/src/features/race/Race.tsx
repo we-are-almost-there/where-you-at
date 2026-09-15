@@ -216,7 +216,7 @@ export default function Race() {
                     type="button"
                     onClick={() => {setActiveType(isActive ? null : type);  selectRace(null);}}
                     className="relative pb-2 text-[15px] font-bold transition-colors"
-                    style={{ color: isActive ? EVENT_TYPE_COLOR[type] : undefined }}
+                    style={{ color: isActive ? (type === "cycling" ? "var(--color-race-cycling-text)" : EVENT_TYPE_COLOR[type]) : undefined }}
                   >
                     <span className={isActive ? "" : "text-gray-400"}>{EVENT_TYPE_LABEL[type]}</span>
                     {isActive && (
