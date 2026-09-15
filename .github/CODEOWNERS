@@ -1,0 +1,3 @@
+# 워크플로가 Repository Secrets를 사용할 수 있으므로 운영팀의 리뷰를 거치게 한다.
+/.github/CODEOWNERS @chaaance @yesungyoo @parksoovin
+/.github/workflows/** @chaaance @yesungyoo @parksoovin
