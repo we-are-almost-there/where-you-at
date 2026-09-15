@@ -335,3 +335,141 @@ alter table restaurant       enable row level security;
 alter table bicycle_facility enable row level security;
 alter table nearby_spot      enable row level security;
 alter table race             enable row level security;
+
+
+-- ============================================
+-- 어디까지왔니 — 고객지원 테이블
+-- ============================================
+-- 별도 관리자 화면이 없어 Supabase 테이블 편집기에서 행을 직접 넣고 고친다.
+-- 본문(content, answer)은 제한된 마크다운이다. 문단(빈 줄), 목록(- , 하위 항목은 두 칸 들여쓰기 한 단계까지),
+--   굵게(**), 링크([글자](주소))만 쓴다.
+--   제목·표·이미지·HTML은 화면에서 그리지 않는다. 미리보기가 없는 콘솔에서 쓰므로 요소를 줄였다.
+--   줄바꿈 한 번은 공백으로 이어지니, 줄을 나누려면 빈 줄을 넣어 문단을 나눈다.
+
+
+-- updated_at 자동 갱신 함수
+--   해당 섹션의 테이블은 코드가 아니라 콘솔에서 고치므로 수정 시각을 사람이 넣지 않는다.
+--   default now()는 insert 때만 채워져서, 트리거가 없으면 행을 고쳐도 생성 시각에 머문다.
+create or replace function set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+
+-- 1. notice (공지사항)
+-- published_at 하나로 비공개·예약·공개를 함께 정한다.
+--   null      → 작성 중 (비공개)
+--   미래 시각  → 그 시각부터 공개 (예약 게시)
+--   현재·과거  → 공개. 화면에는 이 값을 게시일로 표시
+create table notice (
+  id           bigint generated always as identity primary key,
+  title        varchar(200) not null,
+  content      text not null,
+  is_pinned    boolean not null default false,
+  published_at timestamptz,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+create trigger trg_notice_updated_at
+  before update on notice
+  for each row execute function set_updated_at();
+
+
+-- 2. faq_category (FAQ 카테고리)
+-- 화면에서 FAQ를 묶는 단위. sort_order가 카테고리끼리의 순서를 정한다 (작을수록 위에 위치).
+-- 공개 여부는 따로 두지 않는다. 공개된 FAQ가 하나도 없는 카테고리는 화면에 출력되지 않는다.
+create table faq_category (
+  id         bigint generated always as identity primary key,
+  name       varchar(30) not null unique,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create trigger trg_faq_category_updated_at
+  before update on faq_category
+  for each row execute function set_updated_at();
+
+
+-- 3. faq (자주 묻는 질문)
+-- category_id: 속한 카테고리. FAQ가 남아 있는 카테고리는 지울 수 없다 (on delete restrict).
+-- sort_order: 같은 카테고리 안에서의 순서 (작을수록 위에 위치). 카테고리끼리의 순서는 faq_category.sort_order가 정한다.
+-- is_published: 공개 여부. 화면에 게시일이 없어 boolean으로 충분하다. 기본은 비공개다.
+--   notice(published_at을 비우면 비공개)와 방향을 맞춰, 콘솔에서 실수로 작성한 행이 바로 노출되지 않게 한다.
+create table faq (
+  id           bigint generated always as identity primary key,
+  category_id  bigint not null references faq_category(id) on delete restrict,
+  question     varchar(300) not null,
+  answer       text not null,
+  sort_order   integer not null default 0,
+  is_published boolean not null default false,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+create trigger trg_faq_updated_at
+  before update on faq
+  for each row execute function set_updated_at();
+
+
+-- 4. inquiry (1:1 문의)
+-- 로그인 없이 받는 문의라 답변은 email로 직접 회신한다. 조회 API는 두지 않고 콘솔에서만 본다.
+-- category: 문의 유형. 목록을 바꾸면 app/schemas/inquiry.py의 INQUIRY_CATEGORIES와 프론트 문의 폼도 함께 바꾼다.
+-- status: 접수 → 처리중 → 완료. 완료로 바꾸면 resolved_at이 자동으로 채워진다.
+-- consented_at: 개인정보 수집·이용에 동의한 시각. 동의하지 않으면 API가 저장하지 않는다.
+-- 보유 기간: 처리 완료 후 1년 (개인정보처리방침과 같아야 한다). 기간이 지난 행은 05_inquiry_retention.sql로
+--   등록하는 예약 작업이 매일 자동으로 지운다. 답변이 끝나지 않은(완료가 아닌) 문의는 지우지 않으므로 처리 후 반드시 완료로 바꾼다.
+create table inquiry (
+  id           bigint generated always as identity primary key,
+  category     varchar(20) not null,
+  email        varchar(254) not null,
+  content      text not null,
+  status       varchar(10) not null default '접수',
+  consented_at timestamptz not null,
+  resolved_at  timestamptz,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  check (category in ('코스 탐색', '대회 행사', '방문 혜택', '자전거 대여', '정보 오류 신고', '기타')),
+  check (status in ('접수', '처리중', '완료')),
+  check (char_length(content) between 10 and 2000)
+);
+
+create trigger trg_inquiry_updated_at
+  before update on inquiry
+  for each row execute function set_updated_at();
+
+-- 완료로 바뀌거나 처음부터 완료로 넣으면 resolved_at을 채우고, 완료가 아닌 상태면 비운다.
+-- 보유 기간(처리 완료 후 1년)을 이 값으로 계산한다.
+-- insert일 때 old는 null이라 old.status is distinct from '완료'가 참이 된다.
+create or replace function set_inquiry_resolved_at()
+returns trigger as $$
+begin
+  if new.status = '완료' and old.status is distinct from '완료' then
+    new.resolved_at = now();
+  elsif new.status <> '완료' then
+    new.resolved_at = null;
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+-- insert에도 건다. 콘솔에서 처음부터 '완료'로 넣은 행의 resolved_at이 비면 자동 파기에서 빠진다.
+-- 05_inquiry_retention.sql이 기존 DB에 같은 트리거를 다시 만드므로, 바꾸면 두 곳을 함께 고친다.
+create trigger trg_inquiry_resolved_at
+  before insert or update of status on inquiry
+  for each row execute function set_inquiry_resolved_at();
+
+-- 보유 기간이 지난 문의 자동 파기 작업은 05_inquiry_retention.sql에 있다.
+-- 이 파일을 실행한 뒤 Supabase SQL Editor에서 05를 postgres 역할로 실행하고, 파일 끝의 확인 쿼리로 등록을 확인한다.
+
+
+-- 행 수준 보안(RLS)
+-- 이유와 주의사항은 지원금/환급 섹션 끝의 RLS 주석 참고. 새 테이블을 추가하면 여기에도 한 줄 추가한다.
+alter table notice       enable row level security;
+alter table faq_category enable row level security;
+alter table faq          enable row level security;
+alter table inquiry      enable row level security;
