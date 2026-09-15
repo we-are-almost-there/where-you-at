@@ -4,7 +4,7 @@ import { SpotCard } from "./components/SpotCard";
 import { SpotDetailSheet } from "./components/SpotDetailSheet";
 import { getNearbySpots } from "./nearbyApi";
 import type { NearbySpot, SpotCategory } from "./types";
-import { ErrorNotice } from "../map/components/ErrorNotice";
+import { ErrorNotice } from "../../components/error/ErrorNotice";
 import { toUserError, type UserError } from "../../components/error/userError";
 
 interface NearbyProps {
@@ -122,7 +122,6 @@ interface SpotListState {
   exhausted: boolean;
   error: UserError | null;
   failedLoad?: "first" | "more";
-
 }
 
 const MAX_AUTO_RESTARTS = 3;
@@ -235,7 +234,6 @@ function SpotList({
       updateState({
         error: toUserError(error, "주변 정보를 불러오지 못했어요"),
         failedLoad: "first",
-
       });
     } finally {
       if (generation === generationRef.current) {
@@ -308,7 +306,6 @@ function SpotList({
           updateState({
             error: { title: "목록이 계속 변경되고 있어요", description: "다시 불러와 주세요." },
             failedLoad: "first",
-
           });
           return;
         }
@@ -340,7 +337,6 @@ function SpotList({
       updateState({
         error: toUserError(error, "주변 정보를 더 불러오지 못했어요"),
         failedLoad: "more",
-
       });
     } finally {
       if (generation === generationRef.current) {
