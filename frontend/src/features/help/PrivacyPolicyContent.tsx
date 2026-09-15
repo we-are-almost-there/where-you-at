@@ -13,7 +13,8 @@ import { EFFECTIVE_DATE, OPERATOR, SERVICE } from "./legalInfo";
  * 방침은 실제 처리 현황과 일치해야 한다. 아래가 바뀌면 이 문서도 함께 고친다.
  * - 1:1 문의 항목·보유 기간: ContactPage 동의 안내, backend/app/schemas/inquiry.py, sql/01_schema.sql inquiry
  * - 접속 IP 주소(요청 제한): backend/app/api/routers/inquiries.py, backend/app/services/rate_limit.py
- * - 새 문의 외부 알림(메신저 등)은 두지 않는다. 붙이려면 업체를 7·8번에 먼저 추가한다(backend/app/api/routers/inquiries.py).
+ * - 새 문의 Slack 알림: 문의 유형·이메일·내용을 보낸다(backend/app/services/inquiry_notify.py). 항목·업체·보존 설정이
+ *   바뀌면 7·8번과 README "새 문의 알림"을 함께 고친다.
  * - 운영팀 서버로 보내지 않고 기기 안에서 처리하는 곳(2번 ③): 가까운 순 정렬(홈, 코스 탐색, 자전거 대여), features/map/useCourseTracking.ts,
  *   features/map/components/RecordCard.tsx, features/support/components/SupportDetail.tsx(localStorage)
  * - 배포 환경: Vercel(웹사이트), Render 싱가포르(API 서버), Supabase 서울 Free 요금제(DB).
@@ -210,6 +211,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             ["Supabase, Inc.", "1:1 문의 정보를 보관하는 데이터베이스(클라우드) 운영"],
             ["Vercel Inc.", "웹사이트 호스팅 (웹사이트 전송 과정에서 서버 접속 기록 처리)"],
             ["Render Services, Inc.", "API 서버 운영 (1:1 문의 정보와 서버 접속 기록 처리)"],
+            ["Slack Technologies Limited", "새 1:1 문의 접수 알림 전송 및 보관"],
           ]}
         />
         <P>위탁하는 업무의 내용이나 수탁자가 바뀌면 지체 없이 이 개인정보처리방침을 통해 알리겠습니다.</P>
@@ -255,6 +257,14 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
               "데이터베이스 운영과 장애 대응 등 기술 지원이 필요할 때 원격으로 접근",
               "데이터베이스(클라우드) 운영과 기술 지원",
               "1:1 문의 보유 기간(문의 처리 완료 후 1년)과 같음",
+            ],
+            [
+              "Slack Technologies Limited (privacy@slack.com / dpo@slack.com)",
+              "미국 등",
+              "이메일, 문의 유형, 문의 내용, 알림 전송 일시",
+              "새 1:1 문의가 접수될 때 Incoming Webhook을 통해 전송",
+              "새 문의 접수 알림",
+              "전송 후 90일 (Slack 워크스페이스 보존 설정)",
             ],
           ]}
         />

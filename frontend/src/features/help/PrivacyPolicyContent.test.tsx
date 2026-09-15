@@ -47,4 +47,16 @@ describe("PrivacyPolicyContent", () => {
     expect(retention.textContent).toContain("1:1 문의 (이메일, 문의 유형, 문의 내용)");
     expect(retention.textContent).toContain("문의 처리 완료 후 1년");
   });
+
+  it("Slack 문의 알림의 위탁과 국외 이전 내용을 안내한다", () => {
+    render(<PrivacyPolicyContent />);
+
+    const outsourcing = screen.getByRole("region", { name: /개인정보 처리업무의 위탁/ });
+    expect(outsourcing.textContent).toContain("Slack Technologies Limited");
+    expect(outsourcing.textContent).toContain("새 1:1 문의 접수 알림 전송 및 보관");
+
+    const overseas = screen.getByRole("region", { name: /개인정보의 국외 수집 및 이전/ });
+    expect(overseas.textContent).toContain("이메일, 문의 유형, 문의 내용, 알림 전송 일시");
+    expect(overseas.textContent).toContain("전송 후 90일");
+  });
 });
