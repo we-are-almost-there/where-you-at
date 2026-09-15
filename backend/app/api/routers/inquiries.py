@@ -35,7 +35,7 @@ def create_inquiry(
     if not inquiry_limiter.allow(_client_key(request)):
         raise HTTPException(status_code=429, detail="문의를 너무 자주 보냈어요. 잠시 후 다시 시도해 주세요.")
 
-    # 새 문의 알림은 두지 않는다. 운영팀이 콘솔의 inquiry 테이블을 정해 둔 주기로 확인한다.
+    # 새 문의 알림은 두지 않는다. 운영팀이 콘솔의 inquiry 테이블을 정해 둔 주기로 확인한다(README "새 문의 확인").
     # 외부 알림(메신저 등)을 붙이려면 그 업체를 개인정보처리방침 7·8번에 먼저 추가한다.
     inquiry_crud.create_inquiry(conn, category=body.category, email=body.email, content=body.content)
     return InquiryCreated()
