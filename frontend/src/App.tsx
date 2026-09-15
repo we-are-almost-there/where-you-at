@@ -5,6 +5,7 @@ import { Support } from "./features/support";
 import { Race } from "./features/race";
 import { BicycleExplore } from "./features/bicycle";
 import { ContactPage, FaqPage, HelpPage, NoticeDetail, NoticeList, PrivacyPage, TermsPage } from "./features/help";
+import { NotFoundPage } from "./features/notFound";
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/bicycle-facilities" element={<BicycleExplore />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }
