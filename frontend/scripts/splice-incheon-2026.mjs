@@ -1,5 +1,6 @@
 // 지도 도형(public/korea-all-regions.json)에 2026-07-01 인천 행정체제 개편을 반영하고,
 // 도형 코드(sgg_code)를 통계청 코드에서 행안부 코드로 바꾼 스크립트. (#77)
+// 기준 도형에 있던 서구·부평구·미추홀구 경계의 꼬임도 함께 보정한다. (#101)
 //
 // ── 원본 ─────────────────────────────────────────────────────────────
 // 1) 기준 도형: 이 변환 직전 main(BASE_REV)의 public/korea-all-regions.json
@@ -24,8 +25,18 @@
 //     가까운 서구 꼭짓점에 붙이고, 그 선으로 서구 외곽을 둘로 나눈다. 선의 안쪽 점은 기준 도형과
 //     같은 소수 2자리로 반올림한다.
 //   - 외곽 링은 반시계 방향, 구멍은 시계 방향(RFC 7946, 기준 도형과 같음).
-// 기준 서구 링 남쪽 끝에는 원래 자기교차가 1건 있다. 부평구·미추홀구와 꼭짓점을 공유하고 있어
-// 여기서 고치지 않고, 분할로 새로 생긴 교차만 실패로 본다.
+//
+// ── 기준 도형 꼬임 보정 (#101) ───────────────────────────────────────────
+// 기준 도형은 좌표를 소수 2자리로 반올림하면서 서구 링 남쪽 끝이 8자로 꼬였다. 꼬인 아래쪽
+// 삼각형(약 0.164km²)을 서구·부평구·미추홀구가 함께 가지고 있었다. 분할 전에 다음처럼 푼다.
+//   - 서구 A→B→C→D 와 부평구 D→C→B 를, 꼬인 두 선분의 교점 X를 지나는 A→X→D, D→X→B 로 바꾼다.
+//   - 미추홀구 B→A 에 X를 넣어 세 구가 X에서 만나게 한다. 서구 꼭짓점 M이 미추홀구 변 A→P
+//     한가운데 놓여 두 구의 경계선이 달랐던 곳(T자 접합)에도 M을 넣는다. 둘 다 면적은 그대로다.
+// 삼각형은 미추홀구에만 남는다. admdongkor 2026.7 행정동으로 보면 이 삼각형은 미추홀구 68%,
+// 남동구 31%, 부평구 0.4%, 서구(서해구) 0%인데, 소수 2자리 격자에서는 미추홀구·남동구 사이의
+// 경계점이 한 좌표로 뭉개져 나눌 수 없다. 가장 많이 겹치는 미추홀구에 몰아준 것은 웹 지도용
+// 단순화에 따른 근사이고, 정확한 법정 경계가 아니다.
+// X는 교점이라 소수 6자리(약 0.1m)로 둔다. 이 파일에서 소수 2자리가 아닌 유일한 좌표다.
 //
 // ── 실행 (frontend 폴더에서) ─────────────────────────────────────────
 //   curl -L -o HangJeongDong_ver20260701.geojson https://raw.githubusercontent.com/vuski/admdongkor/7360288277dfd12d74e54b959c59bdd66f852e3a/ver20260701/HangJeongDong_ver20260701.geojson
@@ -52,6 +63,8 @@ const ADM_SHA256 = "c01ef44a0eb00978662ba7a6240ccb1da287fb52abd85104a1758969d391
 const OLD_JUNG = "23010";
 const OLD_DONG = "23020";
 const OLD_SEO = "23080";
+const NAMDONG = "23050";
+const BUPYEONG = "23060";
 const MICHUHOL = "23090"; // 새 구를 이 뒤에 넣는다 (기존 파일의 코드 순서 유지)
 // admdongkor에서 새 구의 행정동을 고를 때 쓰는 통계청 코드(adm_cd 앞 5자리)
 const JEMULPO = "23100";
@@ -61,6 +74,21 @@ const SEOHAE = "23130";
 const NEW_GU = [JEMULPO, YEONGJONG, GEOMDAN, SEOHAE];
 
 const SHARED_KM = 0.02; // 두 구 경계가 맞닿았다고 볼 거리
+
+// #101 보정 지점의 기준 도형 좌표 (위 "기준 도형 꼬임 보정" 설명의 이름과 같다)
+const A = [126.67, 37.48];
+const B = [126.69, 37.47];
+const C = [126.68, 37.47];
+const D = [126.69, 37.48];
+const M = [126.66, 37.48];
+const P = [126.65, 37.48];
+
+// 고치지 않고 남겨 둔 자기교차. 결과 파일의 자기교차가 이 목록과 정확히 같아야 한다 —
+// 다른 곳에 새로 생기거나, 같은 지역이라도 다른 선분이거나, 고쳐졌는데 목록에 남아 있으면 실패한다.
+const KNOWN_SELF_INTERSECTIONS = [
+  // 울산 동구: SGIS 원본을 소수 2자리로 반올림하며 생긴 꼬임. #101 범위 밖이라 남겨 둔다.
+  { code: "31170", name: "동구", segments: [[[129.39, 35.53], [129.4, 35.51]], [[129.4, 35.52], [129.39, 35.52]]] },
+];
 
 const args = process.argv.slice(2);
 const CHECK_ONLY = args.includes("--check");
@@ -83,7 +111,8 @@ const fromBase = (file) =>
       maxBuffer: 1 << 28,
     }).toString("utf8"),
   );
-const base = fromBase("korea-all-regions.json");
+const base = fromBase("korea-all-regions.json"); // 0단계에서 보정한다
+const baseUnfixed = fromBase("korea-all-regions.json"); // 보정 전과 비교하는 검증용
 const baseIndex = fromBase("region-index.json");
 
 // ── 기하 유틸 ─────────────────────────────────────────────────────────
@@ -152,34 +181,39 @@ function gridPoints(pl, n = 40) {
 }
 
 const round2 = (v) => Math.round(v * 100) / 100;
+const round6 = (v) => Math.round(v * 1e6) / 1e6;
 const same = (a, b) => a[0] === b[0] && a[1] === b[1];
 const dedupe = (pts) => pts.filter((p, i) => i === 0 || !same(p, pts[i - 1]));
+const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
 
 function selfIntersections(ring) {
-  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
   const n = ring.length - 1;
   const hits = [];
   for (let i = 0; i < n; i++) {
     for (let j = i + 2; j < n; j++) {
       if (i === 0 && j === n - 1) continue;
       const [p1, p2, p3, p4] = [ring[i], ring[i + 1], ring[j], ring[j + 1]];
-      const d1 = cross(p3, p4, p1);
-      const d2 = cross(p3, p4, p2);
-      const d3 = cross(p1, p2, p3);
-      const d4 = cross(p1, p2, p4);
-      if (d1 * d2 < 0 && d3 * d4 < 0) hits.push([i, j]);
+      if (cross(p3, p4, p1) * cross(p3, p4, p2) < 0 && cross(p1, p2, p3) * cross(p1, p2, p4) < 0) hits.push([i, j]);
     }
   }
   return hits;
 }
-const segmentId = (r, k) => [r[k], r[k + 1]].map((c) => c.join(",")).sort().join("|");
-const hitId = (r, [a, b]) => [segmentId(r, a), segmentId(r, b)].sort().join(" x ");
+const segmentKey = (a, b) => [a, b].map((c) => c.join(",")).sort().join("|");
+const hitKey = (s1, s2) => [segmentKey(...s1), segmentKey(...s2)].sort().join(" x ");
 
-/** 소수 2자리, 연속 중복 제거, 닫힌 링, 외곽 반시계·구멍 시계 */
+/** 점 p가 선분 a–b의 끝점이 아닌 안쪽에 놓이는지 (T자 접합 판정) */
+function onSegmentInterior(p, a, b) {
+  if (same(p, a) || same(p, b)) return false;
+  const len2 = (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2;
+  const t = ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / len2;
+  return Math.abs(cross(a, b, p)) / Math.sqrt(len2) < 1e-9 && t > 0 && t < 1;
+}
+
+/** 좌표 반올림(소수 6자리 — 격자 좌표는 그대로, 교점 X도 유지), 연속 중복 제거, 닫힌 링, 외곽 반시계·구멍 시계 */
 const normalize = (ps) =>
   ps.map((pl) =>
     pl.map((ring, k) => {
-      let r = dedupe(ring.map(([x, y]) => [round2(x), round2(y)]));
+      let r = dedupe(ring.map(([x, y]) => [round6(x), round6(y)]));
       if (!same(r[0], r[r.length - 1])) r.push(r[0]);
       if (counterClockwise(r) !== (k === 0)) r = r.reverse();
       return r;
@@ -189,11 +223,43 @@ const toGeometry = (ps) =>
   ps.length === 1 ? { type: "Polygon", coordinates: ps[0] } : { type: "MultiPolygon", coordinates: ps };
 
 // ── 입력 정리 ─────────────────────────────────────────────────────────
-const baseFeature = (code) => {
-  const f = base.features.find((x) => x.properties.sgg_code === code);
-  if (!f) throw new Error(`기준 도형에 ${code}가 없다`);
+const featureOf = (fc, code) => {
+  const f = fc.features.find((x) => x.properties.sgg_code === code);
+  if (!f) throw new Error(`도형에 ${code}가 없다`);
   return f;
 };
+const baseFeature = (code) => featureOf(base, code);
+
+// ── 0. 기준 도형 꼬임 보정 (#101) ─────────────────────────────────────────
+/** 두 직선 p1–p2, p3–p4의 교점 */
+function lineIntersection(p1, p2, p3, p4) {
+  const d = (p1[0] - p2[0]) * (p3[1] - p4[1]) - (p1[1] - p2[1]) * (p3[0] - p4[0]);
+  const t = ((p1[0] - p3[0]) * (p3[1] - p4[1]) - (p1[1] - p3[1]) * (p3[0] - p4[0])) / d;
+  return [p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1])];
+}
+const X = lineIntersection(A, B, C, D).map(round6);
+
+/** 닫힌 링에서 연속한 점 seq를 rep로 바꾼다. 링의 시작점은 원래대로 둔다. */
+function replaceRun(ring, seq, rep, label) {
+  const open = ring.slice(0, -1);
+  const n = open.length;
+  const s = open.findIndex((_, i) => seq.every((p, k) => same(open[(i + k) % n], p)));
+  if (s < 0) throw new Error(`${label}: 보정할 점 ${JSON.stringify(seq)}을 찾지 못했다`);
+  const rotated = [...open.slice(s), ...open.slice(0, s)];
+  const next = [...rep, ...rotated.slice(seq.length)];
+  const home = next.findIndex((p) => same(p, open[0]));
+  const result = home < 0 ? next : [...next.slice(home), ...next.slice(0, home)];
+  return [...result, result[0]];
+}
+const fixRing = (code, seq, rep) => {
+  const g = baseFeature(code).geometry;
+  if (g.type !== "Polygon" || g.coordinates.length !== 1) throw new Error(`${code}가 구멍 없는 단일 폴리곤이 아니다`);
+  g.coordinates[0] = replaceRun(g.coordinates[0], seq, rep, code);
+};
+fixRing(OLD_SEO, [A, B, C, D], [A, X, D]);
+fixRing(BUPYEONG, [D, C, B], [D, X, B]);
+fixRing(MICHUHOL, [B, A, P], [B, X, A, M, P]);
+console.log(`  #101 보정: 교점 X(${X.join(", ")})로 서구·부평구·미추홀구 경계 꼬임을 풀고, 미추홀구 변에 M(${M.join(", ")})을 넣음`);
 
 const newGu = {};
 for (const code of NEW_GU) {
@@ -291,12 +357,9 @@ const [geomdan, seohae] = geomdanShare(ringA) >= geomdanShare(ringB) ? [ringA, r
 built[GEOMDAN] = normalize([[geomdan]]);
 built[SEOHAE] = normalize([[seohae]]);
 
-const closedOutline = [...outline, outline[0]];
-const inherited = new Set(selfIntersections(closedOutline).map((h) => hitId(closedOutline, h)));
 for (const code of [GEOMDAN, SEOHAE]) {
-  const ring = built[code][0][0];
-  const fresh = selfIntersections(ring).filter((h) => !inherited.has(hitId(ring, h)));
-  if (fresh.length) throw new Error(`${newGu[code].name} 링에 분할로 새 자기교차 ${fresh.length}건이 생겼다`);
+  const hits = selfIntersections(built[code][0][0]);
+  if (hits.length) throw new Error(`${newGu[code].name} 링이 자기 자신과 교차한다 (${hits.length}건)`);
 }
 
 // ── 3. 검증: 옛 영역과 새 영역이 정확히 같은지 ────────────────────────────
@@ -304,7 +367,7 @@ const oldZone = (codes) => pc.union(...codes.map((c) => polysOf(baseFeature(c).g
 const newZone = (codes) => pc.union(...codes.map((c) => built[c]));
 for (const [label, olds, news] of [
   ["중구+동구 / 제물포구+영종구", [OLD_JUNG, OLD_DONG], [JEMULPO, YEONGJONG]],
-  ["서구 / 검단구+서해구", [OLD_SEO], [GEOMDAN, SEOHAE]],
+  ["서구(보정 후) / 검단구+서해구", [OLD_SEO], [GEOMDAN, SEOHAE]],
 ]) {
   const diff = areaKm2(pc.xor(oldZone(olds), newZone(news)));
   console.log(`  ${label}: ${areaKm2(oldZone(olds)).toFixed(1)}km², 차이 ${diff.toFixed(4)}km²`);
@@ -334,8 +397,77 @@ for (const f of base.features) {
 const codes = features.map((f) => f.properties.sgg_code);
 if (new Set(codes).size !== codes.length) throw new Error("sgg_code가 중복된다");
 if (features.length !== base.features.length + 1) throw new Error(`도형 수가 ${features.length}개다`);
+const result = { type: "FeatureCollection", features };
 
-const serialized = JSON.stringify({ type: "FeatureCollection", features });
+// ── 5. 검증: #101 보정 지점의 네 구 ────────────────────────────────────────
+// 겹침만 보면 영역을 잘못 지워 틈이 생겨도 통과하므로, 보정 전후 합집합이 같은지도 본다.
+// 공유 꼭짓점이 같아도 한쪽 변 한가운데에 다른 쪽 꼭짓점이 놓이면(T자 접합) 경계선이 다르므로 그것도 본다.
+const AROUND = {
+  [newGu[SEOHAE].moisCode]: "서해구",
+  [baseIndex.byShape[BUPYEONG]]: "부평구",
+  [baseIndex.byShape[MICHUHOL]]: "미추홀구",
+  [baseIndex.byShape[NAMDONG]]: "남동구",
+};
+const aroundCodes = Object.keys(AROUND);
+const shapeOf = (code) => polysOf(featureOf(result, code).geometry);
+const problems = [];
+
+for (let i = 0; i < aroundCodes.length; i++) {
+  for (let j = i + 1; j < aroundCodes.length; j++) {
+    const overlap = areaKm2(pc.intersection(shapeOf(aroundCodes[i]), shapeOf(aroundCodes[j])));
+    if (overlap >= 0.001) problems.push(`${AROUND[aroundCodes[i]]}·${AROUND[aroundCodes[j]]}가 ${overlap.toFixed(6)}km² 겹친다`);
+  }
+}
+
+// 보정 전(기준 도형)의 서구에는 검단구 영역이 들어 있으므로, 보정 후 쪽에 검단구를 더해 같은 범위를 비교한다
+const before = pc.union(...[OLD_SEO, BUPYEONG, MICHUHOL, NAMDONG].map((c) => polysOf(featureOf(baseUnfixed, c).geometry)));
+const after = pc.union(...[...aroundCodes, newGu[GEOMDAN].moisCode].map(shapeOf));
+const unionDiff = areaKm2(pc.xor(before, after));
+if (unionDiff >= 0.001) problems.push(`보정 전후 네 구(+검단구) 합집합이 ${unionDiff.toFixed(6)}km² 다르다`);
+
+const ringsOf = (code) => shapeOf(code).flat();
+for (const c1 of aroundCodes) {
+  const vertices = ringsOf(c1).flatMap((r) => r.slice(0, -1));
+  for (const c2 of aroundCodes) {
+    if (c1 === c2) continue;
+    for (const r of ringsOf(c2)) {
+      for (let k = 0; k < r.length - 1; k++) {
+        for (const p of vertices) {
+          if (onSegmentInterior(p, r[k], r[k + 1])) {
+            problems.push(`${AROUND[c1]} 꼭짓점 ${p}가 ${AROUND[c2]} 변 ${r[k]}–${r[k + 1]} 가운데에 있다`);
+          }
+        }
+      }
+    }
+  }
+}
+console.log(`  #101 검증: 네 구 쌍별 겹침·합집합 차이(${unionDiff.toFixed(6)}km²)·T자 접합`);
+
+// ── 6. 검증: 전국 자기교차가 허용 목록과 정확히 같은지 ─────────────────────
+const allowed = new Map(
+  KNOWN_SELF_INTERSECTIONS.map((k) => [`${k.code} ${hitKey(...k.segments)}`, `${k.code} ${k.name}`]),
+);
+const found = new Set();
+for (const f of features) {
+  for (const r of polysOf(f.geometry).flat()) {
+    for (const [a, b] of selfIntersections(r)) {
+      const key = `${f.properties.sgg_code} ${hitKey([r[a], r[a + 1]], [r[b], r[b + 1]])}`;
+      found.add(key);
+      if (!allowed.has(key)) problems.push(`허용 목록에 없는 자기교차: ${f.properties.sgg_code} ${f.properties.name} ${key}`);
+    }
+  }
+}
+for (const [key, label] of allowed) {
+  if (!found.has(key)) problems.push(`KNOWN_SELF_INTERSECTIONS의 ${label} 교차가 더는 없다 — 목록에서 지울 것`);
+}
+console.log(`  전국 자기교차 ${found.size}건 (허용 목록 ${allowed.size}건)`);
+
+if (problems.length) {
+  for (const p of problems) console.error(`  실패: ${p}`);
+  process.exit(1);
+}
+
+const serialized = JSON.stringify(result);
 if (CHECK_ONLY) {
   if (fs.readFileSync(OUT, "utf8") !== serialized) {
     console.error("\npublic/korea-all-regions.json이 이 스크립트 결과와 다르다.");
