@@ -41,6 +41,17 @@ beforeEach(() => {
     observe() {}
     disconnect() {}
   });
+  // jsdom 환경에서는 AbortSignal은 jsdom 구현이고 Request는 Node(undici) 구현이라, 데이터 라우터가
+  // 이동마다 new Request(url, { signal })을 만들면 타입 오류로 이동이 멈춘다. 이 라우트들에는
+  // loader가 없어 취소 신호가 필요 없으므로 signal을 빼고 만든다.
+  const NodeRequest = globalThis.Request;
+  vi.stubGlobal("Request", class extends NodeRequest {
+    constructor(input: RequestInfo | URL, init?: RequestInit) {
+      const rest = { ...init };
+      delete rest.signal;
+      super(input, rest);
+    }
+  });
 });
 afterEach(() => {
   cleanup();

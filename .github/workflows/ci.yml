@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# 공개 레포에서 워크플로가 레포에 쓰기 권한을 갖지 않게 한다.
+permissions:
+  contents: read
+
+# 같은 PR에 새 커밋이 올라오면 이전 실행은 끝까지 볼 필요가 없다.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      # 전체를 받는다. 빌드 전 region-index 검사가 backend/sql의 시드 파일을 읽는다.
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      # Vercel과 같은 명령. tsc -b와 region-index 검사가 여기 들어 있다.
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      # DB에 붙는 테스트는 스스로 건너뛴다. CI에는 DB 접속 정보를 넣지 않는다.
+      - run: python -m unittest discover -s tests
