@@ -149,12 +149,30 @@ describe("region-index.json + 실제 지도 도형", () => {
   });
 
   it("한 지역 코드에 도형이 둘 이상 붙지 않는다", () => {
+    // byShape는 키와 값이 같아 값만 봐서는 겹칠 수 없다. 실제 도형마다 붙은 코드를 센다.
     const seen = new Set<string>();
     const dup: string[] = [];
-    for (const code of Object.values(index.byShape)) {
-      if (seen.has(code)) dup.push(code);
-      seen.add(code);
+    for (const { regionCode } of entries) {
+      if (!regionCode) continue;
+      if (seen.has(regionCode)) dup.push(regionCode);
+      seen.add(regionCode);
     }
     expect(dup).toEqual([]);
+  });
+
+  it("모든 도형이 DB 지역에 연결된다", () => {
+    // 지원 대상이 아닌 지역은 연결이 빠져도 다른 검사에 걸리지 않고 옛 이름으로 회색 표시만 된다.
+    // 행정 개편 뒤 도형이 옛 경계로 남아 있던 인천 중구·동구·서구가 그런 사례다(#77).
+    const unmatched = entries
+      .filter((e) => !e.regionCode)
+      .map((e) => `${e.feature.properties?.sgg_code} ${e.name}`);
+    expect(entries.length).toBeGreaterThan(200); // 파일을 못 읽으면 통과해버리는 걸 막는다
+    expect(unmatched).toEqual([]);
+  });
+
+  it("도형 코드는 DB와 같은 행안부 코드다", () => {
+    // 도형 파일에 통계청 코드가 다시 섞이면 코드와 이름이 가리키는 지역이 갈린다
+    const differ = Object.entries(index.byShape).filter(([shape, region]) => shape !== region);
+    expect(differ).toEqual([]);
   });
 });
