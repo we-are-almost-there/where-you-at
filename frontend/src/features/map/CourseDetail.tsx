@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
 import { CircleAlert, CircleCheck } from "lucide-react";
 import { KakaoMap } from "./KakaoMap";
 import { ErrorNotice } from "../../components/error/ErrorNotice";
@@ -196,6 +196,21 @@ export function CourseDetail() {
   // 일시정지도 세션이 살아 있는 상태다. 멈춘 사이에 코스나 진행 방향을 갈아타면
   // 이미 쌓인 기록·진행률과 어긋나므로, 그런 조작은 tracking/paused를 가리지 않고 잠근다.
   const sessionActive = trackingStatus !== "idle";
+  // 탭·필터 변경은 허용하고, 다른 화면으로 향하는 모든 라우트 이동을 보호한다.
+  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+    sessionActive && currentLocation.pathname !== nextLocation.pathname,
+  );
+  useEffect(() => {
+    if (blocker.state !== "blocked") return;
+    if (window.confirm("이 화면을 나가면 지금까지의 따라가기 기록이 사라집니다. 이동할까요?")) {
+      blocker.proceed();
+    } else {
+      blocker.reset();
+    }
+  }, [blocker]);
+  const backToCourses = () => {
+    navigate("/courses");
+  };
   const [waypoints, setWaypoints] = useState<LatLng[]>([]);
   const [startAddress, endAddress] = useEndpointAddresses(waypoints);
   const [direction, setDirection] = useState<Direction>("forward"); // 기본 정방향, 토글로 역방향
@@ -668,18 +683,18 @@ export function CourseDetail() {
             <ErrorNotice
               title="잘못된 코스예요"
               description="존재하지 않는 코스 주소예요."
-              onBack={() => navigate("/courses")}
+              onBack={backToCourses}
             />
           ) : error?.kind === "not-found" ? (
             // 없는 코스(404) — 다시 시도해도 같으니 목록으로만
-            <ErrorNotice title="코스를 찾을 수 없어요" onBack={() => navigate("/courses")} />
+            <ErrorNotice title="코스를 찾을 수 없어요" onBack={backToCourses} />
           ) : error?.kind === "request" ? (
             // 조회 실패(연결/서버) — 재시도 + 목록으로
             <ErrorNotice
               title={error.value.title}
               description={error.value.description}
               onRetry={retry}
-              onBack={() => navigate("/courses")}
+              onBack={backToCourses}
             />
           ) : !detail ? null : (
             <>
@@ -797,6 +812,7 @@ export function CourseDetail() {
                       routeType={routeType === "자전거" ? "bicycle" : "trail"}
                       category={parseCategoryParam(searchParams)}
                       onCategoryChange={changeCategory}
+                      onBack={backToCourses}
                       onSpotsChange={setNearbySpots}
                       onSelectedChange={(spot) => setSelectedNearbySpotId(spot?.id ?? null)}
                     />

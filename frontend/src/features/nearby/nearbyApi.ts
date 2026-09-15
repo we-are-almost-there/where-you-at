@@ -1,5 +1,5 @@
 import type { NearbySpot, SpotCategory } from "./types";
-import { fetchOrNetworkError, HttpError } from "../../lib/http";
+import { fetchOrNetworkError, HttpError, NetworkError } from "../../lib/http";
 
 // ??가 아니라 ||인 이유: .env에 VITE_API_BASE_URL=처럼 빈 값으로 두면 ??는 ""를
 // 그대로 통과시켜 요청이 상대경로로 나가고 404가 된다. 빈 값도 폴백으로 보낸다.
@@ -20,21 +20,53 @@ interface ApiNearbySpot {
 interface ApiNearbyResponse {
   total_count: number;
   spots: ApiNearbySpot[];
+  list_version: string;
 }
 
 export interface NearbySpotsPage {
   totalCount: number;
   spots: NearbySpot[];
+  listVersion: string;
 }
 
 export const PAGE_SIZE = 20;
 
+const REQUEST_TIMEOUT_MS = 10000;
+
 // 사용자 문구로 바꾸지 않는다. 네트워크 실패는 NetworkError로,
 // HTTP 오류는 HttpError로 던진다. 화면 문구 변환은 컴포넌트가 toUserError로 한다.
-export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetchOrNetworkError(`${API_BASE}${path}`);
-  if (!res.ok) throw new HttpError(res.status, `불러오지 못했어요 (${res.status})`);
-  return res.json();
+export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
+  if (signal?.aborted) {
+    throw new DOMException("Aborted", "AbortError");
+  }
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+
+  const onExternalAbort = () => controller.abort();
+  signal?.addEventListener("abort", onExternalAbort);
+
+  try {
+    const res = await fetchOrNetworkError(`${API_BASE}${path}`, { signal: controller.signal });
+    if (!res.ok) throw new HttpError(res.status, `불러오지 못했어요 (${res.status})`);
+    return await res.json();
+  } catch (err) {
+    if (timedOut) {
+      // 타임아웃도 연결 실패와 동일하게 취급한다 — toUserError가 NetworkError를 연결 실패 문구로 분류한다.
+      throw new NetworkError(err);
+    }
+    if (signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+    signal?.removeEventListener("abort", onExternalAbort);
+  }
 }
 
 function fromApiSpot(s: ApiNearbySpot): NearbySpot {
@@ -58,7 +90,8 @@ export async function getNearbySpots(
   courseId: number,
   category: SpotCategory,
   routeType: "trail" | "bicycle" = "trail",
-  page: number = 1
+  page: number = 1,
+  signal?: AbortSignal
 ): Promise<NearbySpotsPage> {
   const params = new URLSearchParams({
     category,
@@ -66,8 +99,12 @@ export async function getNearbySpots(
     page: String(page),
     size: String(PAGE_SIZE),
   });
-  const data = await apiGet<ApiNearbyResponse>(`/api/courses/${courseId}/nearby?${params}`);
-  return { totalCount: data.total_count, spots: data.spots.map(fromApiSpot) };
+  const data = await apiGet<ApiNearbyResponse>(`/api/courses/${courseId}/nearby?${params}`, signal);
+  return {
+    totalCount: data.total_count,
+    spots: data.spots.map(fromApiSpot),
+    listVersion: data.list_version,
+  };
 }
 
 interface ApiBicycleFacilityDetail {

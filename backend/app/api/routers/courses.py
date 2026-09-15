@@ -119,6 +119,11 @@ def get_course_nearby(
     if not crud.course_exists(conn, id):
         raise HTTPException(status_code=404, detail="Course not found")
 
-    total, spots = nearby_crud.list_nearby_spots(conn, id, category, route_type, page, size)
-    return {"total_count": total, "spots": spots}
-
+    total, spots, version = nearby_crud.list_nearby_spots(
+        conn, id, category, route_type, page, size
+    )
+    return {
+        "total_count": total,
+        "spots": spots,
+        "list_version": version,
+    }

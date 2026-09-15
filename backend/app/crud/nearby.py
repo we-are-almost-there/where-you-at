@@ -1,5 +1,9 @@
+import logging
 from datetime import datetime, timedelta, timezone
+import psycopg2
 from psycopg2.extras import RealDictCursor, execute_values
+import hashlib
+import json
 
 _CATEGORY_CONTENT_TYPES = {
     "attraction": ["12", "14", "38"],
@@ -18,6 +22,15 @@ _SPEED_M_PER_MIN = {
 }
 
 _CACHE_TTL_DAYS = 30
+# 정상 조회 0건 표시. tour_spot ID(varchar(20))보다 길고 자전거 숫자 ID와도 겹치지 않는다.
+_EMPTY_CONTENT_ID = "__empty_nearby_result__"
+
+_EMPTY_CACHE_LOOKUP_SQL = """
+SELECT 1 FROM nearby_spot
+WHERE base_type = 'course' AND base_id = %(course_id)s AND nearby_type = %(category)s
+    AND nearby_content_id = %(empty_id)s
+    AND route_type = %(route_type)s AND expires_at > now()
+"""
 
 _CACHE_LOOKUP_SQL = """
 SELECT ns.nearby_content_id, ns.distance_km, ts.tour_spot_title AS name,
@@ -29,7 +42,7 @@ WHERE ns.base_type = 'course' AND ns.base_id = %(course_id)s
     AND ns.nearby_type = %(category)s
     AND ns.route_type = %(route_type)s
     AND ns.expires_at > now()
-ORDER BY ns.distance_km
+ORDER BY ns.distance_km, ns.nearby_content_id
 """
 
 _BICYCLE_CACHE_LOOKUP_SQL = """
@@ -42,7 +55,7 @@ WHERE ns.base_type = 'course' AND ns.base_id = %(course_id)s
     AND ns.nearby_type = 'bicycle'
     AND ns.route_type = %(route_type)s
     AND ns.expires_at > now()
-ORDER BY ns.distance_km
+ORDER BY ns.distance_km, ns.nearby_content_id
 """
 
 _LIVE_QUERY_SQL = """
@@ -63,7 +76,7 @@ FROM tour_spot ts, course_line cl
 WHERE ts.content_type_id = ANY(%(content_types)s)
     AND cl.geom IS NOT NULL
     AND ST_DWithin(ts.geom::geography, cl.geom::geography, %(radius)s)
-ORDER BY distance_m
+ORDER BY distance_m, ts.content_id
 """
 
 _BICYCLE_LIVE_QUERY_SQL = """
@@ -83,7 +96,7 @@ SELECT
 FROM bicycle_facility bf, course_line cl
 WHERE cl.geom IS NOT NULL
     AND ST_DWithin(bf.geom::geography, cl.geom::geography, %(radius)s)
-ORDER BY distance_m
+ORDER BY distance_m, bf.bicycle_id::text
 """
 
 _UPSERT_CACHE_SQL = """
@@ -118,37 +131,135 @@ def _fetch_bicycle_live(conn, course_id: int, route_type: str, radius: int) -> l
         )
         return cur.fetchall()
 
+logger = logging.getLogger(__name__)
 
-def _refresh_cache(conn, course_id: int, category: str, route_type: str, rows: list[dict]) -> None:
-    """기존 캐시를 지우고 새로 계산한 결과로 채운다(30일 만료)."""
-    now = datetime.now(timezone.utc)
-    expires = now + timedelta(days=_CACHE_TTL_DAYS)
-    with conn.cursor() as cur:
-        cur.execute(
-            _DELETE_STALE_CACHE_SQL,
-            {"course_id": str(course_id), "category": category, "route_type": route_type},
-        )
-        if rows:
-            values = [
-                ("course", str(course_id), category, row["content_id"], route_type, row["distance_m"] / 1000, now, expires)
-                for row in rows
-            ]
-            execute_values(cur, _UPSERT_CACHE_SQL, values)
-    conn.commit()
-
-
-def list_nearby_spots(
+def _refresh_cache(
     conn,
     course_id: int,
     category: str,
-    route_type: str = "trail",
-    page: int = 1,
-    size: int = 20,
-) -> tuple[int, list[dict]]:
-    """코스 경로 주변의 관광지/음식점/숙박/자전거 시설 목록을 (total_count, 목록)으로 반환한다.
-    nearby_spot 캐시(30일, route_type별 구분)를 우선 조회하고, 없거나 만료됐으면 PostGIS로 재계산 후 캐시에 저장한다.
-    캐시 조회 경로는 좌표를 원본 테이블(tour_spot/bicycle_facility)에서 매번 다시 조인해 가져오므로,
-    좌표가 바뀌어도(예: 표준데이터 재수집) 캐시가 오래된 좌표를 들고 있지 않는다.
+    route_type: str,
+    rows: list[dict],
+    *,
+    strict_cache: bool = False,
+) -> None:
+    """기존 캐시를 교체한다. 장소 목록과 정상 조회의 빈 결과 모두 30일 보관한다.
+
+    경로가 있고 0건이면 기존 테이블에 예약 ID의 표시 행 하나를 저장한다. distance_km=0은
+    필수 컬럼을 채우는 값이며, 빈 결과 여부는 거리 대신 예약 ID로 판별한다.
+
+    DB 오류 시 로그를 남기고 연결 전체의 롤백을 시도한다.
+    기본 모드에서는 호출부가 이미 구한 조회 결과를 반환할 수 있도록
+    DB 오류를 처리하며, strict_cache=True이면 최초 DB 오류를 다시 전파한다.
+    SQL 문법 오류도 DB 오류에 포함된다.
+    KeyError, TypeError 등 Python 데이터 처리 오류는 그대로 전파한다.
+
+    성공 시 연결 전체를 커밋하므로 다른 미커밋 쓰기 작업과 공유하지 않아야 한다.
+    기본 모드는 롤백 실패도 처리하므로 반환만으로 연결 재사용 가능 여부를
+    판단해서는 안 된다.
+    """
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=_CACHE_TTL_DAYS)
+
+    try:
+        with conn.cursor() as cur:
+            if not rows:
+                # 경로 미수집은 정상적인 주변 정보 0건 결과와 구분한다.
+                cur.execute(
+                    """SELECT 1 FROM course_waypoint
+                    WHERE course_id = %(course_id)s AND route_type = %(route_type)s
+                        AND lat IS NOT NULL AND lng IS NOT NULL
+                    LIMIT 1""",
+                    {"course_id": course_id, "route_type": route_type},
+                )
+                if cur.fetchone() is None:
+                    return
+            cur.execute(
+                _DELETE_STALE_CACHE_SQL,
+                {
+                    "course_id": str(course_id),
+                    "category": category,
+                    "route_type": route_type,
+                },
+            )
+            if rows:
+                values = [
+                    (
+                        "course",
+                        str(course_id),
+                        category,
+                        row["content_id"],
+                        route_type,
+                        row["distance_m"] / 1000,
+                        now,
+                        expires,
+                    )
+                    for row in rows
+                ]
+            else:
+                values = [("course", str(course_id), category, _EMPTY_CONTENT_ID,
+                           route_type, 0, now, expires)]
+            execute_values(cur, _UPSERT_CACHE_SQL, values)
+        conn.commit()
+
+    except psycopg2.Error:
+        logger.exception(
+            "nearby_spot 캐시 갱신 실패: course_id=%s category=%s route_type=%s",
+            course_id,
+            category,
+            route_type,
+        )
+        try:
+            conn.rollback()
+        except psycopg2.Error:
+            logger.exception("nearby_spot 캐시 갱신 실패 후 롤백도 실패")
+
+        if strict_cache:
+            raise
+
+
+def _rows_from_cache(cached_rows: list[dict]) -> list[dict]:
+    """캐시 조회 결과(RealDictRow)를 실시간 조회 결과와 동일한 키 구조로 맞춘다."""
+    return [
+        {
+            "content_id": r["nearby_content_id"],
+            "name": r["name"],
+            "address": r["address"],
+            "image_url": r["image_url"],
+            "lat": r["lat"],
+            "lng": r["lng"],
+            "distance_m": r["distance_km"] * 1000,
+        }
+        for r in cached_rows
+    ]
+
+
+def _has_empty_cache(conn, course_id: int, category: str, route_type: str) -> bool:
+    """일반 캐시에 결과가 없을 때 정상적인 0건 결과의 유효 여부를 확인한다."""
+    with conn.cursor() as cur:
+        cur.execute(
+            _EMPTY_CACHE_LOOKUP_SQL,
+            {"course_id": str(course_id), "category": category,
+             "route_type": route_type, "empty_id": _EMPTY_CONTENT_ID},
+        )
+        return cur.fetchone() is not None
+
+
+def _get_rows(
+    conn,
+    course_id: int,
+    category: str,
+    route_type: str,
+    *,
+    strict_cache: bool = False,
+) -> list[dict]:
+    """nearby_spot 캐시(30일, route_type별 구분)를 우선 조회하고, 없거나 만료됐으면 PostGIS로
+    재계산 후 캐시에 저장한다. 이름·주소·이미지·좌표는 원본 테이블에서 조회한다.
+    거리와 목록 포함 여부는 캐시 생성 시점 기준이며, 소요시간은 해당 거리로 계산한다.
+    원본 좌표나 코스 경로가 변경돼도 캐시를 무효화·재생성하지 않으면
+    만료 전까지 기존 거리와 목록이 유지될 수 있다.
+    경로가 있고 정상 조회 결과가 0개이면 표시 행으로 30일간 빈 결과를 반환한다.
+    경로가 아직 없는 경우에는 빈 결과를 저장하지 않는다.
+    원본 변경 시 자동 무효화하지 않으며, 만료 또는 수동 재생성 때 다시 조회한다.
     """
     if category == "bicycle":
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -159,44 +270,24 @@ def list_nearby_spots(
             cached_rows = cur.fetchall()
 
         if cached_rows:
-            rows = [
-                {
-                    "content_id": r["nearby_content_id"],
-                    "name": r["name"],
-                    "address": r["address"],
-                    "image_url": r["image_url"],
-                    "lat": r["lat"],
-                    "lng": r["lng"],
-                    "distance_m": r["distance_km"] * 1000,
-                }
-                for r in cached_rows
-            ]
-        else:
-            radius = _RADIUS_M.get(route_type, _RADIUS_M["trail"]).get("bicycle", 1000)
-            rows = _fetch_bicycle_live(conn, course_id, route_type, radius)
-            _refresh_cache(conn, course_id, "bicycle", route_type, rows)
+            return _rows_from_cache(cached_rows)
 
-        speed = _SPEED_M_PER_MIN.get(route_type, _SPEED_M_PER_MIN["trail"])
-        total = len(rows)
-        page_rows = rows[(page - 1) * size : (page - 1) * size + size]
-        return total, [
-            {
-                "id": r["content_id"],
-                "category": "bicycle",
-                "name": r["name"],
-                "address": r["address"],
-                "image_url": r["image_url"],
-                "lat": r["lat"],
-                "lng": r["lng"],
-                "distance_m": int(r["distance_m"]),
-                "duration_minutes": max(1, round(r["distance_m"] / speed)),
-            }
-            for r in page_rows
-        ]
+        if _has_empty_cache(conn, course_id, category, route_type):
+            return []
 
-    content_types = _CATEGORY_CONTENT_TYPES.get(category)
-    if not content_types:
-        return 0, []
+        radius = _RADIUS_M.get(route_type, _RADIUS_M["trail"]).get("bicycle", 1000)
+        rows = _fetch_bicycle_live(conn, course_id, route_type, radius)
+        _refresh_cache(
+            conn,
+            course_id,
+            "bicycle",
+            route_type,
+            rows,
+            strict_cache=strict_cache,
+        )
+        return rows
+
+    content_types = _CATEGORY_CONTENT_TYPES[category]
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
@@ -206,26 +297,28 @@ def list_nearby_spots(
         cached_rows = cur.fetchall()
 
     if cached_rows:
-        rows = [
-            {
-                "content_id": r["nearby_content_id"],
-                "name": r["name"],
-                "address": r["address"],
-                "image_url": r["image_url"],
-                "lat": r["lat"],
-                "lng": r["lng"],
-                "distance_m": r["distance_km"] * 1000,
-            }
-            for r in cached_rows
-        ]
-    else:
-        radius = _RADIUS_M.get(route_type, _RADIUS_M["trail"]).get(category, 1500)
-        rows = _fetch_live(conn, course_id, route_type, content_types, radius)
-        _refresh_cache(conn, course_id, category, route_type, rows)
+        return _rows_from_cache(cached_rows)
 
+    if _has_empty_cache(conn, course_id, category, route_type):
+        return []
+
+    radius = _RADIUS_M.get(route_type, _RADIUS_M["trail"]).get(category, 1500)
+    rows = _fetch_live(conn, course_id, route_type, content_types, radius)
+    _refresh_cache(
+        conn,
+        course_id,
+        category,
+        route_type,
+        rows,
+        strict_cache=strict_cache,
+    )
+    return rows
+
+
+def _paginate(rows: list[dict], category: str, route_type: str, page: int, size: int) -> tuple[int, list[dict]]:
+    """전체 결과를 페이지 단위로 자르고 응답 형태(거리·소요시간 포함)로 변환한다."""
     total = len(rows)
     page_rows = rows[(page - 1) * size : (page - 1) * size + size]
-
     speed = _SPEED_M_PER_MIN.get(route_type, _SPEED_M_PER_MIN["trail"])
     spots = [
         {
@@ -236,9 +329,60 @@ def list_nearby_spots(
             "image_url": row["image_url"],
             "lat": row["lat"],
             "lng": row["lng"],
-            "distance_m": int(row["distance_m"]),
+            "distance_m": round(row["distance_m"]),  # 단위 왕복 오차로 버림 결과가 1m 작아지는 문제 완화
             "duration_minutes": max(1, round(row["distance_m"] / speed)),
         }
         for row in page_rows
     ]
     return total, spots
+
+def _make_list_version(
+    course_id: int,
+    category: str,
+    route_type: str,
+    rows: list[dict],
+) -> str:
+    """전체 목록의 장소 추가·삭제·순서 변경을 감지하는 버전을 만든다.
+
+    rows는 SQL이 반환한 거리순을 그대로 사용하며, ID를 별도로 정렬하지 않는다.
+    ID와 순서가 같으면 이름·거리 등 다른 필드가 변경돼도 버전은 유지된다.
+    """
+    payload = [
+        course_id,
+        category,
+        route_type,
+        [row["content_id"] for row in rows],
+    ]
+    serialized = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+def list_nearby_spots(
+    conn,
+    course_id: int,
+    category: str,
+    route_type: str = "trail",
+    page: int = 1,
+    size: int = 20,
+    *,
+    strict_cache: bool = False,
+) -> tuple[int, list[dict], str]:
+    """주변 장소의 전체 개수, 현재 페이지 목록, 전체 목록 버전을 반환한다."""
+    if category != "bicycle" and category not in _CATEGORY_CONTENT_TYPES:
+        return 0, [], _make_list_version(
+            course_id, category, route_type, []
+        )
+
+    rows = _get_rows(
+        conn,
+        course_id,
+        category,
+        route_type,
+        strict_cache=strict_cache,
+    )
+    version = _make_list_version(course_id, category, route_type, rows)
+    total, spots = _paginate(rows, category, route_type, page, size)
+    return total, spots, version

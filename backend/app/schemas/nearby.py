@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 
 class NearbySpotOut(BaseModel):
-    id: str 
+    id: str
     category: str
     name: str
     address: str | None
@@ -17,3 +17,4 @@ class NearbySpotOut(BaseModel):
 class NearbyListResponse(BaseModel):
     total_count: int
     spots: list[NearbySpotOut]
+    list_version: str

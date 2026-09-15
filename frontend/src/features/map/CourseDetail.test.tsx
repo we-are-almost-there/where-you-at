@@ -1,0 +1,145 @@
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { StrictMode } from "react";
+import { createMemoryRouter } from "react-router";
+import { RouterProvider } from "react-router/dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CourseDetail } from "./CourseDetail";
+
+const tracking = vi.hoisted(() => ({
+  status: "paused" as "idle" | "tracking" | "paused",
+  currentLocation: null,
+  error: null,
+  wakeLockFailed: false,
+  startTracking: vi.fn(), pause: vi.fn(), resume: vi.fn(),
+  stopTracking: vi.fn(), sampleRecord: vi.fn(() => null),
+}));
+
+vi.mock("./useCourseTracking", () => ({ useCourseTracking: () => tracking }));
+vi.mock("./KakaoMap", () => ({ KakaoMap: () => null }));
+vi.mock("./endpointAddress", () => ({
+  useEndpointAddresses: () => [
+    { caption: "", main: "코스 시작점" }, { caption: "", main: "코스 종료점" },
+  ],
+}));
+vi.mock("../nearby/nearbyApi", () => ({
+  getNearbySpots: async () => { throw new TypeError("Failed to fetch"); },
+}));
+vi.mock("./coursesApi", () => ({
+  getCourseGpx: async () => [],
+  getCourseDetail: async () => ({
+    id: 1, title: "테스트 코스", description: "", image_url: "", routes: [],
+  }),
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+  }));
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {}
+    disconnect() {}
+  });
+});
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+async function mount() {
+  const router = createMemoryRouter([
+    { path: "/", element: <p>홈 화면</p> },
+    { path: "/races", element: <p>대회 화면</p> },
+    { path: "/courses", element: <p>코스 목록 화면</p> },
+    { path: "/courses/:id", element: <CourseDetail /> },
+  ], { initialEntries: ["/courses", "/courses/1?tab=nearby"] });
+  await act(async () => {
+    render(<StrictMode><RouterProvider router={router} /></StrictMode>);
+  });
+  return router;
+}
+
+describe("CourseDetail 기록이 있는 화면에서 이동", () => {
+  it.each([
+    ["paused", "logo", "/"], ["tracking", "logo", "/"],
+    ["paused", "header", "/races"], ["tracking", "header", "/races"],
+    ["paused", "sidebar", "/races"], ["tracking", "sidebar", "/races"],
+  ] as const)("%s 중 %s 이동은 취소하면 유지하고 확인하면 목적지로 이동한다", async (status, source, destination) => {
+    tracking.status = status;
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const router = await mount();
+    if (source === "sidebar") fireEvent.click(screen.getByRole("button", { name: "메뉴" }));
+    const container = source === "sidebar" ? screen.getByRole("complementary") : screen.getByRole("banner");
+    const link = () => within(container).getAllByRole("link").find((item) => item.getAttribute("href") === destination)!;
+    fireEvent.click(link());
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(router.state.location.pathname).toBe("/courses/1");
+    expect(screen.getByText("테스트 코스")).toBeTruthy();
+    expect(tracking.stopTracking).not.toHaveBeenCalled();
+    if (source === "sidebar") fireEvent.click(screen.getByRole("button", { name: "메뉴" }));
+    confirm.mockReturnValue(true);
+    fireEvent.click(link());
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(router.state.location.pathname).toBe(destination);
+    expect(screen.queryByText("테스트 코스")).toBeNull();
+  });
+
+  it.each([-1, "/courses/2"] as const)("기록이 있으면 %s 이동도 확인한다", async (destination) => {
+    tracking.status = "paused";
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const router = await mount();
+    const move = () => typeof destination === "number" ? router.navigate(destination) : router.navigate(destination);
+    await act(async () => { await move(); });
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(router.state.location.pathname).toBe("/courses/1");
+    confirm.mockReturnValue(true);
+    await act(async () => { await move(); });
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(router.state.location.pathname).toBe(destination === -1 ? "/courses" : destination);
+  });
+
+  it("일시정지 중 같은 코스의 탭 변경은 확인하지 않는다", async () => {
+    tracking.status = "paused";
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const router = await mount();
+    fireEvent.click(screen.getByRole("tab", { name: "코스 정보" }));
+    expect(screen.getByRole("tab", { name: "코스 정보" }).getAttribute("aria-selected")).toBe("true");
+    expect(router.state.location.pathname).toBe("/courses/1");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(tracking.stopTracking).not.toHaveBeenCalled();
+  });
+
+  it.each(["paused", "tracking"] as const)("%s 중 목록 이동 취소는 세션을 유지하고 승인은 이동한다", async (status) => {
+    tracking.status = status;
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "목록으로" }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("기록이 사라집니다"));
+    expect(screen.queryByText("코스 목록 화면")).toBeNull();
+    expect(tracking.stopTracking).not.toHaveBeenCalled();
+    expect(screen.getByText("테스트 코스")).toBeTruthy();
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "목록으로" }));
+    expect(screen.getByText("코스 목록 화면")).toBeTruthy();
+  });
+
+  it("세션이 없으면 확인 없이 목록으로 이동한다", async () => {
+    tracking.status = "idle";
+    const confirm = vi.spyOn(window, "confirm");
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "목록으로" }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByText("코스 목록 화면")).toBeTruthy();
+  });
+
+  it("일시정지 중 화면의 뒤로 버튼도 취소할 수 있다", async () => {
+    tracking.status = "paused";
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "뒤로" }));
+    expect(screen.queryByText("코스 목록 화면")).toBeNull();
+    expect(tracking.stopTracking).not.toHaveBeenCalled();
+  });
+});
