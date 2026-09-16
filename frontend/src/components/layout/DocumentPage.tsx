@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import AppHeader from "./AppHeader";
+import Footer from "./Footer";
 import { useScrollbarGutterStable } from "./useScrollbarGutterStable";
 
 interface Props {
@@ -22,10 +23,9 @@ interface Props {
  * 푸터를 붙이면 좌우 끝이 그만큼 어긋난다. Race·Support와 같은 문서 스크롤로 바꾸면
  * 헤더와 본문이 같은 폭을 기준으로 계산돼 어긋남이 사라진다.
  *
- * 공통 푸터(components/layout/Footer.tsx)는 여기서 렌더하지 않는다. 고객지원 상세가
- * 다 채워진 뒤 푸터 담당이 직접 붙이기로 했다. min-h-dvh + flex-col과 main의 flex-1을
- * 남겨 둔 것은 그때를 위한 자리다 — Footer는 mt-auto를 갖고 있어서 이 구조 안에 넣으면
- * 내용이 짧은 페이지에서도 화면 바닥에 붙는다.
+ * 공통 푸터(components/layout/Footer.tsx)는 이 셸이 렌더하므로 고객지원과 하위 문서
+ * 페이지가 모두 같은 푸터를 갖는다. min-h-dvh + flex-col과 main의 flex-1이 그 자리를
+ * 만든다 — Footer는 mt-auto를 갖고 있어서 내용이 짧은 페이지에서도 화면 바닥에 붙는다.
  */
 export default function DocumentPage({ title, back, children }: Props) {
   useScrollbarGutterStable();
@@ -63,6 +63,8 @@ export default function DocumentPage({ title, back, children }: Props) {
         </div>
         {children}
       </main>
+
+      <Footer />
     </div>
   );
 }

@@ -1,5 +1,5 @@
-import { Fragment, useState } from "react";
-import { Link } from "react-router";
+import { Fragment, useState, type ReactNode } from "react";
+import { Link, useLocation } from "react-router";
 
 // 공공데이터 출처. 항목명과 제공처를 나눠 dl로 그린다.
 const PUBLIC_DATA: [label: string, source: string][] = [
@@ -16,7 +16,29 @@ const PUBLIC_DATA: [label: string, source: string][] = [
 const OTHER_SOURCES: [label: string, source: string][] = [
   ["지도", "카카오맵"],
   ["자전거 경로 계산", "OSRM, © OpenStreetMap contributors"],
+  ["방문 혜택 지역 경계", "국가데이터처 SGIS(공공데이터포털), vuski/admdongkor"],
 ];
+
+// 고객지원 첫 화면의 목록(features/help/HelpPage.tsx)과 같은 표기를 쓴다.
+// 굵게 표시하는 개인정보처리방침을 맨 앞에 둔다.
+const NAV_LINKS: [label: string, to: string][] = [
+  ["개인정보처리방침", "/privacy"],
+  ["이용약관", "/terms"],
+  ["고객지원", "/help"],
+];
+
+// 회색 고지문 사이에 같은 회색으로 놓이면 링크로 안 읽혀서 밑줄을 남긴다.
+const LINK_CLASS =
+  "underline decoration-caption/40 underline-offset-4 transition-colors hover:text-ink hover:decoration-current";
+
+// 출처 문단 안의 외부 링크. 라이선스를 확인하러 가도 앱을 떠나지 않게 새 탭으로 연다.
+function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className={LINK_CLASS}>
+      {children}
+    </a>
+  );
+}
 
 // 바깥 그리드(grid-cols-[auto_1fr])의 열을 subgrid로 물려받는다. 공공데이터 목록과
 // 그 외 목록이 사이에 문단을 두고 떨어져 있어도 라벨 열 폭이 하나로 맞는다.
@@ -39,24 +61,31 @@ export default function Footer() {
   // 위치 안내와 데이터 출처는 화면 폭과 관계없이 접어 두고, 요약 문구의 접기/보기만
   // 바꾸려고 열림 상태를 들고 있는다.
   const [isOpen, setIsOpen] = useState(false);
+  const { pathname } = useLocation();
 
   // mt-auto: 홈처럼 부모가 flex 세로 컬럼(min-h-dvh)이면 내용이 짧아도 바닥에 붙는다.
   // 부모가 flex가 아닌 페이지에서는 auto 마진이 0으로 계산돼 아무 영향이 없다.
   return (
     <footer className="mt-auto border-t border-divider bg-white">
       <div className="mx-auto w-full max-w-6xl px-4 py-8 md:py-10">
-        <div className="flex items-baseline justify-between gap-4">
-          <Link to="/" className="font-bold tracking-tight text-ink text-[17px]">
-            어디까지왔니
-          </Link>
-          {/* 회색 고지문 사이에 같은 회색으로 놓이면 링크로 안 읽혀서 밑줄을 남긴다. */}
-          <Link
-            to="/help"
-            className="text-[13px] text-caption underline decoration-caption/40 underline-offset-4 transition-colors hover:text-ink hover:decoration-current"
-          >
-            고객지원
-          </Link>
-        </div>
+        {/* 좁은 화면에서는 세 링크가 한 줄에 다 들어가지 않으므로 단계 분기 대신 wrap으로 흘린다.
+          개인정보처리방침은 다른 항목과 구분되게 굵게 표시한다. 색은 caption 그대로 둬서
+          아래 ink 볼드 문장(이동 중 주의)보다 강조가 세지지 않게 한다.
+          지금 보는 화면의 링크를 누르면 경로가 그대로라 ScrollToTop이 움직이지 않으므로 여기서 올린다. */}
+        <nav aria-label="약관 및 고객지원" className="flex flex-wrap gap-x-4 gap-y-2">
+          {NAV_LINKS.map(([label, to]) => (
+            <Link
+              key={to}
+              to={to}
+              onClick={() => {
+                if (to === pathname) window.scrollTo(0, 0);
+              }}
+              className={`text-[13px] text-caption ${LINK_CLASS} ${to === "/privacy" ? "font-semibold" : ""}`}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
 
         {/* 볼드 한 줄만 행동 지침이고 아래 두 문장은 둘 다 면책이다. 앞의 두 줄을 br로
           붙이면 내용 묶음(1+2)과 시각 묶음(2+1)이 어긋나 간격이 들쭉날쭉해진다.
@@ -86,10 +115,13 @@ export default function Footer() {
           <div className="text-[13px] leading-relaxed text-caption">
             <section className="mt-4">
               <h2 className="font-semibold">위치 정보 안내</h2>
+              {/* 개인정보처리방침, 이용약관 제8조와 같은 범위로 쓴다. 지도(카카오)와 사진(한국관광공사)
+                요청으로 대략적인 지역이 외부 서버에 드러날 수 있어 "운영팀 서버로"라는 범위를 남긴다. */}
               <p className="mt-2">
-                현재 위치는 가까운 코스를 찾는 데에만 사용하며, 별도로 저장하거나 다른 목적으로
-                이용하지 않습니다. 위치 제공을 원하지 않으면 브라우저 설정에서 거부할 수 있고, 이
-                경우 기본 코스 목록이 표시됩니다.
+                현재 위치는 가까운 코스와 자전거 대여소 안내, 코스 따라가기에만 사용하며, 운영팀
+                서버로 보내거나 저장하지 않습니다. 위치 사용은 브라우저나 기기 설정에서 언제든지
+                거부하거나 해제할 수 있습니다. 거부하면 가까운 순 정렬 없이 기본 순서로 목록을 보여
+                주며, 코스 따라가기는 이용할 수 없습니다.
               </p>
             </section>
 
@@ -109,6 +141,32 @@ export default function Footer() {
               <p className="col-span-2 mt-3">
                 방문 혜택 정보는 문화체육관광부와 한국관광공사가 안내하는 제도 내용을 정리한
                 것입니다.
+              </p>
+              {/* 기준 도형 원본은 공공데이터포털 「국가데이터처_SGIS 행정구역 통계 및 경계_20250630」의
+                시군구 경계(bnd_sigungu_00_2025_2Q, BASE_DATE 20250630)다. 이용허락범위는 "제한 없음"이라
+                공공누리 유형을 붙이지 않는다.
+                인천 개편 경계는 vuski/admdongkor의 CC BY 4.0 가공물이라 출처와 라이선스 링크, 가공 사실을
+                남기고, 그 LICENSE-DATA 3번 항목에 따라 원자료인 SGIS 행정동 경계의 공공누리 제1유형
+                출처표시도 유지한다. */}
+              <p className="col-span-2 mt-3">
+                방문 혜택 지도의 지역 경계는 국가데이터처가{" "}
+                <ExternalLink href="https://www.data.go.kr/data/15129688/fileData.do">
+                  공공데이터포털
+                </ExternalLink>
+                에 이용허락범위 제한 없이 공개한 「SGIS 행정구역 통계 및 경계」의 시군구 경계(2025년
+                6월 30일 기준)를 바탕으로 합니다. 인천광역시의 2026년 7월 행정체제 개편으로 바뀐 구의
+                경계는{" "}
+                <ExternalLink href="https://github.com/vuski/admdongkor">vuski/admdongkor</ExternalLink>
+                가 통계청(현 국가데이터처) SGIS에서{" "}
+                <ExternalLink href="https://www.kogl.or.kr/info/licenseType1.do">
+                  공공누리 제1유형
+                </ExternalLink>
+                으로 개방한 행정동 경계를 가공한 자료(
+                <ExternalLink href="https://creativecommons.org/licenses/by/4.0/deed.ko">
+                  CC BY 4.0
+                </ExternalLink>
+                )를 이용해 반영했습니다. 두 자료 모두 서비스에 맞게 시군구 단위로 합치고
+                단순화했습니다.
               </p>
               <SourceList items={OTHER_SOURCES} />
             </section>

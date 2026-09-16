@@ -21,8 +21,9 @@ vi.mock("./bicycleApi", () => ({
   getBicycleRegions: vi.fn(),
   getBicycleSubregions: vi.fn(),
 }));
-// 상단바는 브라우저 API를 써서 jsdom에서 그릴 수 없고, 이 테스트의 대상도 아니다.
+// 상단바는 브라우저 API를 써서 jsdom에서 그릴 수 없고, 이 테스트의 대상도 아니다. 푸터도 마찬가지로 대상이 아니다.
 vi.mock("../../components/layout/AppHeader", () => ({ default: () => null }));
+vi.mock("../../components/layout/Footer", () => ({ default: () => null }));
 
 const SEOUL = { latitude: 37.5665, longitude: 126.978 };
 
