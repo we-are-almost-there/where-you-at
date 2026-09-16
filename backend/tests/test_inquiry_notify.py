@@ -23,6 +23,11 @@ EMAIL = "user@example.com"
 CONTENT = "코스 경로가 실제 길과 달라요. 확인 부탁드립니다."
 
 
+def _respond(urlopen: MagicMock, body: bytes = b"ok") -> None:
+    # urlopen은 with 문으로 쓰이므로 __enter__가 돌려주는 응답 객체의 본문을 정한다.
+    urlopen.return_value.__enter__.return_value.read.return_value = body
+
+
 class TestBuildPayload(unittest.TestCase):
     def test_payload_contains_inquiry_details_with_service_name(self):
         self.assertEqual(
@@ -79,6 +84,7 @@ class TestNotifyNewInquiry(unittest.TestCase):
 
     @patch("app.services.inquiry_notify.urlopen")
     def test_uses_webhook_url_from_settings(self, urlopen: MagicMock):
+        _respond(urlopen)
         with patch.object(settings, "inquiry_webhook_url", SLACK):
             self.assertTrue(notify_new_inquiry(CATEGORY, EMAIL, CONTENT))
 
@@ -95,6 +101,7 @@ class TestNotifyNewInquiry(unittest.TestCase):
 
     @patch("app.services.inquiry_notify.urlopen")
     def test_posts_slack_json_with_custom_user_agent_and_short_timeout(self, urlopen: MagicMock):
+        _respond(urlopen)
         self.assertTrue(notify_new_inquiry(CATEGORY, EMAIL, CONTENT, webhook_url=SLACK))
 
         request = urlopen.call_args.args[0]
@@ -108,6 +115,21 @@ class TestNotifyNewInquiry(unittest.TestCase):
         self.assertEqual(request.get_header("User-agent"), "where-you-at-inquiry-notifier/1.0")
         self.assertEqual(urlopen.call_args.kwargs, {"timeout": TIMEOUT_SECONDS})
         self.assertEqual(TIMEOUT_SECONDS, 3)
+
+    @patch("app.services.inquiry_notify.urlopen")
+    def test_non_ok_response_is_failure_without_logging_webhook_secret(self, urlopen: MagicMock):
+        # 세그먼트가 빠진 웹훅 주소는 Slack이 302로 api.slack.com에 보내고, urlopen이 따라가 문서 페이지를 200으로 받는다.
+        for body in (b"<!DOCTYPE html><html>", b"", b"invalid_payload"):
+            with self.subTest(body=body):
+                _respond(urlopen, body)
+                with self.assertLogs(level="INFO") as logs:
+                    result = notify_new_inquiry(CATEGORY, EMAIL, CONTENT, webhook_url=SLACK)
+
+                output = "\n".join(logs.output)
+                self.assertFalse(result)
+                self.assertIn("ok가 아님", output)
+                self.assertNotIn(SLACK, output)
+                self.assertNotIn("/services/T000/B000/secret-token", output)
 
     @patch("app.services.inquiry_notify.urlopen")
     def test_failure_is_swallowed_without_logging_webhook_secret(self, urlopen: MagicMock):

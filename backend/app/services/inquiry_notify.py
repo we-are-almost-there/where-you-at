@@ -90,8 +90,12 @@ def notify_new_inquiry(
             method="POST",
         )
         # urllib는 요청 URL을 INFO 로그로 남기지 않아 비밀인 Webhook 경로가 로그에 노출되지 않는다.
-        with urlopen(request, timeout=TIMEOUT_SECONDS):
-            pass
+        with urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+            # Slack Incoming Webhook은 성공하면 본문으로 "ok"만 돌려준다. 형식이 틀린 주소는 api.slack.com 문서로
+            # 리다이렉트돼 200이 오므로, 상태 코드만 보면 알림이 끊겨도 성공으로 처리된다.
+            if response.read(16) != b"ok":
+                LOGGER.error("문의 알림 전송 실패 (Slack 응답이 ok가 아님, 웹훅 주소 확인 필요)")
+                return False
         return True
     except Exception as exc:
         # 예외 문자열에는 웹훅 URL이 들어갈 수 있어 기록하지 않고, 비밀이 아닌 HTTP 상태만 함께 남긴다.
