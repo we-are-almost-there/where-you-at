@@ -18,6 +18,18 @@ const OTHER_SOURCES: [label: string, source: string][] = [
   ["자전거 경로 계산", "OSRM, © OpenStreetMap contributors"],
 ];
 
+// 고객지원 첫 화면의 목록(features/help/HelpPage.tsx)과 같은 표기를 쓴다.
+// 굵게 표시하는 개인정보처리방침을 맨 앞에 둔다.
+const NAV_LINKS: [label: string, to: string][] = [
+  ["개인정보처리방침", "/privacy"],
+  ["이용약관", "/terms"],
+  ["고객지원", "/help"],
+];
+
+// 회색 고지문 사이에 같은 회색으로 놓이면 링크로 안 읽혀서 밑줄을 남긴다.
+const LINK_CLASS =
+  "underline decoration-caption/40 underline-offset-4 transition-colors hover:text-ink hover:decoration-current";
+
 // 바깥 그리드(grid-cols-[auto_1fr])의 열을 subgrid로 물려받는다. 공공데이터 목록과
 // 그 외 목록이 사이에 문단을 두고 떨어져 있어도 라벨 열 폭이 하나로 맞는다.
 // 라벨 열은 가장 긴 항목명에 맞고(auto) 제공처는 남는 폭을 쓰며(1fr), 폭이 모자라면
@@ -45,18 +57,20 @@ export default function Footer() {
   return (
     <footer className="mt-auto border-t border-divider bg-white">
       <div className="mx-auto w-full max-w-6xl px-4 py-8 md:py-10">
-        <div className="flex items-baseline justify-between gap-4">
-          <Link to="/" className="font-bold tracking-tight text-ink text-[17px]">
-            어디까지왔니
-          </Link>
-          {/* 회색 고지문 사이에 같은 회색으로 놓이면 링크로 안 읽혀서 밑줄을 남긴다. */}
-          <Link
-            to="/help"
-            className="text-[13px] text-caption underline decoration-caption/40 underline-offset-4 transition-colors hover:text-ink hover:decoration-current"
-          >
-            고객지원
-          </Link>
-        </div>
+        {/* 좁은 화면에서는 세 링크가 한 줄에 다 들어가지 않으므로 단계 분기 대신 wrap으로 흘린다.
+          개인정보처리방침은 다른 항목과 구분되게 굵게 표시한다. 색은 caption 그대로 둬서
+          아래 ink 볼드 문장(이동 중 주의)보다 강조가 세지지 않게 한다. */}
+        <nav className="flex flex-wrap gap-x-4 gap-y-2">
+          {NAV_LINKS.map(([label, to]) => (
+            <Link
+              key={to}
+              to={to}
+              className={`text-[13px] text-caption ${LINK_CLASS} ${to === "/privacy" ? "font-semibold" : ""}`}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
 
         {/* 볼드 한 줄만 행동 지침이고 아래 두 문장은 둘 다 면책이다. 앞의 두 줄을 br로
           붙이면 내용 묶음(1+2)과 시각 묶음(2+1)이 어긋나 간격이 들쭉날쭉해진다.
