@@ -1,10 +1,11 @@
+import { useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router";
 import { X } from "lucide-react";
 
 interface SidebarDrawerProps {
   isOpen: boolean;
   onClose: () => void;
-  /** 모달이 떠 있는 동안 잠근다. 닫힌 드로어도 계속 마운트되어 있어 Tab에 잡힌다. */
+  /** 모달이 떠 있는 동안 드로어를 비활성화한다. */
   inert?: boolean;
 }
 
@@ -23,8 +24,69 @@ const NAV_ITEMS: NavItem[] = [
   { label: "자전거 대여", eyebrow: "RENTAL", description: "인근 자전거 대여소 찾기", to: "/bicycle-facilities" },
 ];
 
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
 export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerProps) {
   const location = useLocation();
+  const shouldBeInert = !isOpen || Boolean(inert);
+  const asideRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+
+  // 열리는 시점의 포커스를 저장해뒀다가, 완전히 닫힐 때 원래 위치로 복귀시킨다.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+
+    return () => {
+      const previous = previouslyFocusedRef.current;
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [isOpen]);
+
+  // 드로어가 실제로 활성화될 때(열려 있고 inert가 아닐 때) 내부로 포커스를 이동시킨다.
+  useEffect(() => {
+    if (shouldBeInert) return;
+    closeButtonRef.current?.focus();
+  }, [shouldBeInert]);
+
+  // 열려 있는 동안 Tab 포커스를 드로어 내부에 가둔다 (focus trap).
+  useEffect(() => {
+    if (shouldBeInert) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+
+      const focusables = asideRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      if (!focusables || focusables.length === 0) return;
+
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+
+      if (!asideRef.current?.contains(active)) {
+        event.preventDefault();
+        first.focus();
+        return;
+      }
+
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [shouldBeInert]);
 
   return (
     <>
@@ -34,21 +96,23 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         onClick={onClose}
-        inert={inert}
+        inert={shouldBeInert}
       />
 
       {/* 드로어 본체 */}
       <aside
+        ref={asideRef}
         className={`fixed inset-y-0 left-0 z-50 flex w-[320px] flex-col overflow-hidden bg-white transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
-        inert={inert}
+        inert={shouldBeInert}
       >
         <div className="flex items-center justify-between px-6 pt-6">
           <span className="text-[13px] font-semibold tracking-[0.15em] text-caption">
             WHERE YOU AT
           </span>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             aria-label="닫기"

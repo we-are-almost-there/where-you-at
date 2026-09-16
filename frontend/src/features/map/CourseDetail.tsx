@@ -540,9 +540,10 @@ export function CourseDetail() {
     }
     if (!modalWasOpenRef.current) return;
     modalWasOpenRef.current = false;
+    if (isSidebarOpen) return; // 열린 드로어가 포커스를 가져가도록 복귀를 생략한다.
     const target = modalReturnTargetRef.current === "nearby-tab" ? nearbyTabRef.current : startButtonRef.current;
     target?.focus();
-  }, [modalOpen, record, infoTab]);
+  }, [modalOpen, record, infoTab, isSidebarOpen]);
 
   // 안내 팝업은 할 수 있는 일이 닫기 하나뿐이라 Escape로도 닫는다.
   // (기록 카드는 편집하던 사진·배치·글꼴이 확인 없이 사라지므로 넣지 않는다)
