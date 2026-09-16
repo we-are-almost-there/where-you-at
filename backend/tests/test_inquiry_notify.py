@@ -4,10 +4,10 @@
     python -m unittest tests.test_inquiry_notify
 """
 
+import json
 import unittest
 from unittest.mock import MagicMock, patch
-
-import httpx
+from urllib.error import HTTPError, URLError
 
 from app.core.config import settings
 from app.services.inquiry_notify import (
@@ -70,72 +70,74 @@ class TestBuildPayload(unittest.TestCase):
 
 
 class TestNotifyNewInquiry(unittest.TestCase):
-    @patch("app.services.inquiry_notify.httpx.post")
-    def test_without_webhook_url_does_nothing(self, post: MagicMock):
+    @patch("app.services.inquiry_notify.urlopen")
+    def test_without_webhook_url_does_nothing(self, urlopen: MagicMock):
         with patch.object(settings, "inquiry_webhook_url", ""):
             self.assertFalse(notify_new_inquiry(CATEGORY, EMAIL, CONTENT))
 
-        post.assert_not_called()
+        urlopen.assert_not_called()
 
-    @patch("app.services.inquiry_notify.httpx.post")
-    def test_uses_webhook_url_from_settings(self, post: MagicMock):
-        post.return_value.raise_for_status.return_value = None
-
+    @patch("app.services.inquiry_notify.urlopen")
+    def test_uses_webhook_url_from_settings(self, urlopen: MagicMock):
         with patch.object(settings, "inquiry_webhook_url", SLACK):
             self.assertTrue(notify_new_inquiry(CATEGORY, EMAIL, CONTENT))
 
-        self.assertEqual(post.call_args.args[0], SLACK)
+        self.assertEqual(urlopen.call_args.args[0].full_url, SLACK)
 
-    @patch("app.services.inquiry_notify.httpx.post")
-    def test_non_slack_webhook_is_rejected(self, post: MagicMock):
+    @patch("app.services.inquiry_notify.urlopen")
+    def test_non_slack_webhook_is_rejected(self, urlopen: MagicMock):
         for url in ("https://example.com/hooks/not-slack", "https://["):
             with self.subTest(url=url), self.assertLogs("app.services.inquiry_notify", level="ERROR"):
                 result = notify_new_inquiry(CATEGORY, EMAIL, CONTENT, webhook_url=url)
 
             self.assertFalse(result)
-        post.assert_not_called()
+        urlopen.assert_not_called()
 
-    @patch("app.services.inquiry_notify.httpx.post")
-    def test_posts_slack_json_with_custom_user_agent_and_short_timeout(self, post: MagicMock):
-        post.return_value.raise_for_status.return_value = None
-
+    @patch("app.services.inquiry_notify.urlopen")
+    def test_posts_slack_json_with_custom_user_agent_and_short_timeout(self, urlopen: MagicMock):
         self.assertTrue(notify_new_inquiry(CATEGORY, EMAIL, CONTENT, webhook_url=SLACK))
 
-        post.assert_called_once_with(
-            SLACK,
-            json=build_payload(category=CATEGORY, email=EMAIL, content=CONTENT),
-            headers={"User-Agent": "where-you-at-inquiry-notifier/1.0"},
-            timeout=TIMEOUT_SECONDS,
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, SLACK)
+        self.assertEqual(request.method, "POST")
+        self.assertEqual(
+            json.loads(request.data.decode("utf-8")),
+            build_payload(category=CATEGORY, email=EMAIL, content=CONTENT),
         )
+        self.assertEqual(request.get_header("Content-type"), "application/json")
+        self.assertEqual(request.get_header("User-agent"), "where-you-at-inquiry-notifier/1.0")
+        self.assertEqual(urlopen.call_args.kwargs, {"timeout": TIMEOUT_SECONDS})
         self.assertEqual(TIMEOUT_SECONDS, 3)
-        post.return_value.raise_for_status.assert_called_once_with()
 
-    @patch("app.services.inquiry_notify.httpx.post")
-    def test_failure_is_swallowed_without_logging_webhook_secret(self, post: MagicMock):
-        post.side_effect = httpx.ConnectError(f"연결 실패: {SLACK}")
+    @patch("app.services.inquiry_notify.urlopen")
+    def test_failure_is_swallowed_without_logging_webhook_secret(self, urlopen: MagicMock):
+        urlopen.side_effect = URLError(f"연결 실패: {SLACK}")
 
-        with self.assertLogs("app.services.inquiry_notify", level="ERROR") as logs:
-            result = notify_new_inquiry(CATEGORY, EMAIL, CONTENT, webhook_url=SLACK)
-
-        self.assertFalse(result)
-        self.assertNotIn(SLACK, "\n".join(logs.output))
-        self.assertIn("ConnectError", "\n".join(logs.output))
-
-    @patch("app.services.inquiry_notify.httpx.post")
-    def test_http_failure_logs_status_without_webhook_secret(self, post: MagicMock):
-        request = httpx.Request("POST", SLACK)
-        response = httpx.Response(404, request=request)
-        post.return_value.raise_for_status.side_effect = httpx.HTTPStatusError(
-            f"폐기된 웹훅: {SLACK}", request=request, response=response
-        )
-
-        with self.assertLogs("app.services.inquiry_notify", level="ERROR") as logs:
+        with self.assertLogs(level="INFO") as logs:
             result = notify_new_inquiry(CATEGORY, EMAIL, CONTENT, webhook_url=SLACK)
 
         output = "\n".join(logs.output)
         self.assertFalse(result)
-        self.assertIn("HTTPStatusError 404", output)
         self.assertNotIn(SLACK, output)
+        self.assertNotIn("/services/T000/B000/secret-token", output)
+        self.assertIn("URLError", output)
+
+    @patch("app.services.inquiry_notify.urlopen")
+    def test_http_failure_logs_status_without_webhook_secret(self, urlopen: MagicMock):
+        error = HTTPError(SLACK, 404, f"폐기된 웹훅: {SLACK}", hdrs=None, fp=None)
+        urlopen.side_effect = error
+
+        try:
+            with self.assertLogs(level="INFO") as logs:
+                result = notify_new_inquiry(CATEGORY, EMAIL, CONTENT, webhook_url=SLACK)
+        finally:
+            error.close()
+
+        output = "\n".join(logs.output)
+        self.assertFalse(result)
+        self.assertIn("HTTPError 404", output)
+        self.assertNotIn(SLACK, output)
+        self.assertNotIn("/services/T000/B000/secret-token", output)
 
 
 if __name__ == "__main__":

@@ -7,10 +7,10 @@ INQUIRY_WEBHOOK_URL이 비어 있으면 아무것도 하지 않는다. 알림은
 보내지 않는다. 전송 항목을 바꾸면 개인정보처리방침 7·8번도 함께 고친다.
 """
 
+import json
 import logging
 from urllib.parse import urlparse
-
-import httpx
+from urllib.request import Request, urlopen
 
 from app.core.config import settings
 
@@ -77,17 +77,25 @@ def notify_new_inquiry(
         return False
 
     try:
-        response = httpx.post(
+        request = Request(
             url,
-            json=build_payload(category=category, email=email, content=content),
-            headers={"User-Agent": "where-you-at-inquiry-notifier/1.0"},
-            timeout=TIMEOUT_SECONDS,
+            data=json.dumps(
+                build_payload(category=category, email=email, content=content),
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "where-you-at-inquiry-notifier/1.0",
+            },
+            method="POST",
         )
-        response.raise_for_status()
+        # urllib는 요청 URL을 INFO 로그로 남기지 않아 비밀인 Webhook 경로가 로그에 노출되지 않는다.
+        with urlopen(request, timeout=TIMEOUT_SECONDS):
+            pass
         return True
     except Exception as exc:
         # 예외 문자열에는 웹훅 URL이 들어갈 수 있어 기록하지 않고, 비밀이 아닌 HTTP 상태만 함께 남긴다.
-        status_code = getattr(getattr(exc, "response", None), "status_code", "")
+        status_code = getattr(exc, "code", "")
         if status_code:
             LOGGER.error("문의 알림 전송 실패 (%s %s)", type(exc).__name__, status_code)
         else:
