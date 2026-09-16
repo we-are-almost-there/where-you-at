@@ -16,7 +16,7 @@ const PUBLIC_DATA: [label: string, source: string][] = [
 const OTHER_SOURCES: [label: string, source: string][] = [
   ["지도", "카카오맵"],
   ["자전거 경로 계산", "OSRM, © OpenStreetMap contributors"],
-  ["방문 혜택 지역 경계", "통계청(현 국가데이터처) SGIS, vuski/admdongkor"],
+  ["방문 혜택 지역 경계", "국가데이터처 SGIS(공공데이터포털), vuski/admdongkor"],
 ];
 
 // 고객지원 첫 화면의 목록(features/help/HelpPage.tsx)과 같은 표기를 쓴다.
@@ -142,20 +142,26 @@ export default function Footer() {
                 방문 혜택 정보는 문화체육관광부와 한국관광공사가 안내하는 제도 내용을 정리한
                 것입니다.
               </p>
-              {/* SGIS는 공공누리 제1유형, vuski/admdongkor 가공물은 CC BY 4.0이라 출처와
-                라이선스 링크, 가공 사실을 남겨야 한다(저장소 LICENSE-DATA 3번 항목).
-                원자료 이름과 기준 시점은 frontend/scripts/splice-incheon-2026.mjs 머리 주석을 따른다.
-                자료를 공개한 기관은 통계청이고 지금은 국가데이터처가 운영해 둘을 함께 적는다. */}
+              {/* 기준 도형 원본은 공공데이터포털 「국가데이터처_SGIS 행정구역 통계 및 경계_20250630」의
+                시군구 경계(bnd_sigungu_00_2025_2Q, BASE_DATE 20250630)다. 이용허락범위는 "제한 없음"이라
+                공공누리 유형을 붙이지 않는다.
+                인천 개편 경계는 vuski/admdongkor의 CC BY 4.0 가공물이라 출처와 라이선스 링크, 가공 사실을
+                남기고, 그 LICENSE-DATA 3번 항목에 따라 원자료인 SGIS 행정동 경계의 공공누리 제1유형
+                출처표시도 유지한다. */}
               <p className="col-span-2 mt-3">
-                방문 혜택 지도의 지역 경계는 통계청(현 국가데이터처){" "}
-                <ExternalLink href="https://sgis.mods.go.kr">통계지리정보서비스(SGIS)</ExternalLink>가{" "}
+                방문 혜택 지도의 지역 경계는 국가데이터처가{" "}
+                <ExternalLink href="https://www.data.go.kr/data/15129688/fileData.do">
+                  공공데이터포털
+                </ExternalLink>
+                에 이용허락범위 제한 없이 공개한 「SGIS 행정구역 통계 및 경계」의 시군구 경계(2025년
+                6월 30일 기준)를 바탕으로 합니다. 인천광역시의 2026년 7월 행정체제 개편으로 바뀐 구의
+                경계는{" "}
+                <ExternalLink href="https://github.com/vuski/admdongkor">vuski/admdongkor</ExternalLink>
+                가 통계청(현 국가데이터처) SGIS에서{" "}
                 <ExternalLink href="https://www.kogl.or.kr/info/licenseType1.do">
                   공공누리 제1유형
                 </ExternalLink>
-                으로 개방한 시군구 경계(2025년 6월 30일 기준)를 바탕으로 합니다. 인천광역시의 2026년
-                7월 행정체제 개편으로 바뀐 구의 경계는{" "}
-                <ExternalLink href="https://github.com/vuski/admdongkor">vuski/admdongkor</ExternalLink>
-                가 SGIS 행정동 경계를 가공한 자료(
+                으로 개방한 행정동 경계를 가공한 자료(
                 <ExternalLink href="https://creativecommons.org/licenses/by/4.0/deed.ko">
                   CC BY 4.0
                 </ExternalLink>
