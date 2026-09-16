@@ -12,20 +12,23 @@ bicycle_facility의 geom과 가장 가까운 행을 찾아(KNN, <-> 연산자)
 매칭 실패(반경 밖 = 표준데이터에 없는 대여소)는 좌표+이름만으로 새 row 삽입한다
 (주소 정보는 이 API가 안 줘서 NULL, region_code도 NULL로 남는다).
 
-무인 스케줄 실행(Task Scheduler 등) 대비:
+무인 실행(GitHub Actions, Task Scheduler 등) 대비:
 - 지자체 하나 실패해도 나머지는 계속 진행 (예외를 지자체 단위로 격리)
 - 일시적 네트워크 오류는 재시도(최대 3회, 지수 백오프)
-- 로그를 파일에도 남김 (logs/collect_bicycle_realtime.log)
+- 기본적으로 로그를 파일에도 남김 (logs/collect_bicycle_realtime.log)
+- BICYCLE_FILE_LOG_ENABLED=false이면 파일 로그 없이 표준 오류에만 기록
 
-실행:
-    python collect_bicycle_realtime.py
+backend 디렉터리에서 실행:
+    python -m scripts.collect_bicycle_realtime
 """
 
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote, quote_plus
 
 import psycopg2
 import psycopg2.extras
@@ -52,15 +55,42 @@ MAX_RETRIES = 3
 RETRY_BACKOFF_SEC = 2  # 재시도마다 이 값 * 시도횟수만큼 대기
 
 LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
+
+
+def redact_sensitive_text(value: object) -> str:
+    """공개 로그에 공공데이터포털 인증키가 남지 않게 한다."""
+    text = str(value)
+    text = re.sub(
+        r"(?i)(serviceKey=)[^&\s\"']+",
+        r"\1[REDACTED]",
+        text,
+    )
+    encoded_keys = {
+        SERVICE_KEY,
+        quote(SERVICE_KEY, safe=""),
+        quote_plus(SERVICE_KEY, safe=""),
+    }
+    for key in sorted(encoded_keys, key=len, reverse=True):
+        if key:
+            text = text.replace(key, "[REDACTED]")
+    return text
+
+
+def build_log_handlers() -> list[logging.Handler]:
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    file_log_enabled = os.environ.get("BICYCLE_FILE_LOG_ENABLED", "true").strip().lower()
+    if file_log_enabled not in {"0", "false", "no", "off"}:
+        LOG_DIR.mkdir(exist_ok=True)
+        handlers.insert(
+            0,
+            logging.FileHandler(LOG_DIR / "collect_bicycle_realtime.log", encoding="utf-8"),
+        )
+    return handlers
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_DIR / "collect_bicycle_realtime.log", encoding="utf-8"),
-        logging.StreamHandler(),
-    ],
+    handlers=build_log_handlers(),
 )
 logger = logging.getLogger(__name__)
 
@@ -162,15 +192,18 @@ def fetch_page(inst_cd: str, page_no: int):
 
         except (requests.exceptions.RequestException, RuntimeError, ValueError) as exc:
             last_exc = exc
+            safe_exc = redact_sensitive_text(exc)
             if attempt < MAX_RETRIES:
                 wait = RETRY_BACKOFF_SEC * attempt
                 logger.warning(
-                    f"[{inst_cd}] page {page_no} 요청 실패 (시도 {attempt}/{MAX_RETRIES}): {exc} "
+                    f"[{inst_cd}] page {page_no} 요청 실패 (시도 {attempt}/{MAX_RETRIES}): {safe_exc} "
                     f"-> {wait}초 후 재시도"
                 )
                 time.sleep(wait)
             else:
-                logger.error(f"[{inst_cd}] page {page_no} 최종 실패 ({MAX_RETRIES}회 시도): {exc}")
+                logger.error(
+                    f"[{inst_cd}] page {page_no} 최종 실패 ({MAX_RETRIES}회 시도): {safe_exc}"
+                )
 
     raise last_exc  # 재시도 다 소진 -> 상위(지자체 단위)에서 처리
 
@@ -282,8 +315,9 @@ def process_institution(conn, label: str, inst_cd: str) -> dict:
 
     except Exception as exc:
         conn.rollback()
-        stats["error"] = str(exc)
-        logger.error(f"[{label}] 지자체 처리 중단, 다음으로 넘어감: {exc}")
+        safe_exc = redact_sensitive_text(exc)
+        stats["error"] = safe_exc
+        logger.error(f"[{label}] 지자체 처리 중단, 다음으로 넘어감: {safe_exc}")
 
     finally:
         cur.close()
