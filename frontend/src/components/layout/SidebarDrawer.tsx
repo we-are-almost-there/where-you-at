@@ -41,19 +41,20 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
     previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
 
     return () => {
-      previouslyFocusedRef.current?.focus();
+      const previous = previouslyFocusedRef.current;
+      if (previous?.isConnected) previous.focus();
     };
   }, [isOpen]);
 
   // 드로어가 실제로 활성화될 때(열려 있고 inert가 아닐 때) 내부로 포커스를 이동시킨다.
   useEffect(() => {
-    if (!isOpen || inert) return;
+    if (shouldBeInert) return;
     closeButtonRef.current?.focus();
-  }, [isOpen, inert]);
+  }, [shouldBeInert]);
 
   // 열려 있는 동안 Tab 포커스를 드로어 내부에 가둔다 (focus trap).
   useEffect(() => {
-    if (!isOpen || inert) return;
+    if (shouldBeInert) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Tab") return;
@@ -64,6 +65,12 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
       const active = document.activeElement;
+
+      if (!asideRef.current?.contains(active)) {
+        event.preventDefault();
+        first.focus();
+        return;
+      }
 
       if (event.shiftKey && active === first) {
         event.preventDefault();
@@ -79,7 +86,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, inert]);
+  }, [shouldBeInert]);
 
   return (
     <>
