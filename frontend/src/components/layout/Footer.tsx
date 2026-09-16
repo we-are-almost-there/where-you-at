@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 
 // 공공데이터 출처. 항목명과 제공처를 나눠 dl로 그린다.
@@ -16,6 +16,7 @@ const PUBLIC_DATA: [label: string, source: string][] = [
 const OTHER_SOURCES: [label: string, source: string][] = [
   ["지도", "카카오맵"],
   ["자전거 경로 계산", "OSRM, © OpenStreetMap contributors"],
+  ["방문 혜택 지역 경계", "국가데이터처 SGIS, vuski/admdongkor"],
 ];
 
 // 고객지원 첫 화면의 목록(features/help/HelpPage.tsx)과 같은 표기를 쓴다.
@@ -29,6 +30,15 @@ const NAV_LINKS: [label: string, to: string][] = [
 // 회색 고지문 사이에 같은 회색으로 놓이면 링크로 안 읽혀서 밑줄을 남긴다.
 const LINK_CLASS =
   "underline decoration-caption/40 underline-offset-4 transition-colors hover:text-ink hover:decoration-current";
+
+// 출처 문단 안의 외부 링크. 라이선스를 확인하러 가도 앱을 떠나지 않게 새 탭으로 연다.
+function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className={LINK_CLASS}>
+      {children}
+    </a>
+  );
+}
 
 // 바깥 그리드(grid-cols-[auto_1fr])의 열을 subgrid로 물려받는다. 공공데이터 목록과
 // 그 외 목록이 사이에 문단을 두고 떨어져 있어도 라벨 열 폭이 하나로 맞는다.
@@ -123,6 +133,27 @@ export default function Footer() {
               <p className="col-span-2 mt-3">
                 방문 혜택 정보는 문화체육관광부와 한국관광공사가 안내하는 제도 내용을 정리한
                 것입니다.
+              </p>
+              {/* SGIS는 공공누리 제1유형, vuski/admdongkor 가공물은 CC BY 4.0이라 출처와
+                라이선스 링크, 가공 사실을 남겨야 한다(저장소 LICENSE-DATA §3). */}
+              <p className="col-span-2 mt-3">
+                방문 혜택 지도의 지역 경계는{" "}
+                <ExternalLink href="https://sgis.mods.go.kr">
+                  국가데이터처 통계지리정보서비스(SGIS)
+                </ExternalLink>
+                가{" "}
+                <ExternalLink href="https://www.kogl.or.kr/info/licenseType1.do">
+                  공공누리 제1유형
+                </ExternalLink>
+                으로 개방한 시군구 경계를 바탕으로 합니다. 인천광역시 행정구역 개편으로 나뉜 구의
+                경계는{" "}
+                <ExternalLink href="https://github.com/vuski/admdongkor">vuski/admdongkor</ExternalLink>
+                가 SGIS 행정동 경계를 가공한 자료(
+                <ExternalLink href="https://creativecommons.org/licenses/by/4.0/deed.ko">
+                  CC BY 4.0
+                </ExternalLink>
+                )를 이용해 반영했습니다. 두 자료 모두 서비스에 맞게 시군구 단위로 합치고
+                단순화했습니다.
               </p>
               <SourceList items={OTHER_SOURCES} />
             </section>
