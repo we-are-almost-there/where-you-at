@@ -72,7 +72,7 @@ export default function Footer() {
           개인정보처리방침은 다른 항목과 구분되게 굵게 표시한다. 색은 caption 그대로 둬서
           아래 ink 볼드 문장(이동 중 주의)보다 강조가 세지지 않게 한다.
           지금 보는 화면의 링크를 누르면 경로가 그대로라 ScrollToTop이 움직이지 않으므로 여기서 올린다. */}
-        <nav className="flex flex-wrap gap-x-4 gap-y-2">
+        <nav aria-label="약관 및 고객지원" className="flex flex-wrap gap-x-4 gap-y-2">
           {NAV_LINKS.map(([label, to]) => (
             <Link
               key={to}

@@ -42,4 +42,11 @@ describe("Footer", () => {
 
     expect(scrollTo).not.toHaveBeenCalled();
   });
+
+  it("링크 묶음에 이름을 붙여 다른 nav와 구분한다", () => {
+    renderAt("/");
+
+    const nav = screen.getByRole("navigation", { name: "약관 및 고객지원" });
+    expect(nav.querySelectorAll("a")).toHaveLength(3);
+  });
 });
