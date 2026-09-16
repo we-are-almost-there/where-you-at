@@ -200,7 +200,7 @@ export default function Race() {
                 type="button"
                 onClick={() => {setActiveType(null); selectRace(null);}}
                 className={`relative pb-2 text-[15px] font-bold transition-colors ${
-                  activeType === null ? "text-ink" : "text-gray-400"
+                  activeType === null ? "text-ink" : "text-muted"
                 }`}
               >
                 전체
@@ -218,7 +218,7 @@ export default function Race() {
                     className="relative pb-2 text-[15px] font-bold transition-colors"
                     style={{ color: isActive ? (type === "cycling" ? "var(--color-race-cycling-text)" : EVENT_TYPE_COLOR[type]) : undefined }}
                   >
-                    <span className={isActive ? "" : "text-gray-400"}>{EVENT_TYPE_LABEL[type]}</span>
+                    <span className={isActive ? "" : "text-muted"}>{EVENT_TYPE_LABEL[type]}</span>
                     {isActive && (
                       <span
                         className="absolute inset-x-0 -bottom-px h-[3px] rounded-full"
@@ -239,7 +239,7 @@ export default function Race() {
                   selectRace(null);
                 }}
                 className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-                  viewMode === "list" ? "bg-white text-ink shadow-sm" : "text-gray-500"
+                  viewMode === "list" ? "bg-white text-ink shadow-sm" : "text-muted"
                 }`}
               >
                 목록
@@ -251,7 +251,7 @@ export default function Race() {
                   selectRace(null);
                 }}
                 className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-                  viewMode === "calendar" ? "bg-white text-ink shadow-sm" : "text-gray-500"
+                  viewMode === "calendar" ? "bg-white text-ink shadow-sm" : "text-muted"
                 }`}
               >
                 캘린더
@@ -277,7 +277,7 @@ export default function Race() {
             </div>}
 
             </fieldset>
-            {isLoading && <p className="py-10 text-center text-sm text-gray-400">불러오는 중...</p>}
+            {isLoading && <p className="py-10 text-center text-sm text-muted">불러오는 중...</p>}
             {error && <ErrorNotice title={error.title} description={error.description} onRetry={() => {setIsLoading(true); setError(null); setRetryTick((t) => t + 1)}} />}
             {!isLoading && !error && searchParams.has("eventId") && !selectedRace && (
               <p role="status" className="mb-4 rounded-lg bg-gray-50 p-3 text-sm text-gray-500">선택한 대회를 찾을 수 없어요. 다른 대회를 확인해 주세요. <button type="button" onClick={() => selectRace(null)} className="text-accent underline font-medium">안내 닫기</button></p>

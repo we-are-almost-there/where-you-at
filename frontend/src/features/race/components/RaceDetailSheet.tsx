@@ -80,7 +80,7 @@ export default function RaceDetailSheet({ race, onClose, backLabel, inline = fal
           <button
             type="button"
             onClick={onClose}
-            className="self-start text-[13px] text-gray-400 hover:text-gray-600"
+            className="self-start text-[13px] text-muted hover:text-ink"
           >
             ← {backLabel ?? "목록으로"}
           </button>
@@ -100,23 +100,23 @@ export default function RaceDetailSheet({ race, onClose, backLabel, inline = fal
           <dl className="flex min-w-0 flex-col gap-3 text-sm [&_dd]:min-w-0 [&_dd]:break-words">
             {inline && (
               <div className="flex gap-3">
-                <dt className="w-16 shrink-0 text-gray-400">대회명</dt>
+                <dt className="w-16 shrink-0 text-muted">대회명</dt>
                 <dd className="font-semibold text-ink [overflow-wrap:anywhere]">{race.race_title}</dd>
               </div>
             )}
             <div className="flex gap-3">
-              <dt className="w-16 shrink-0 text-gray-400">일정</dt>
+              <dt className="w-16 shrink-0 text-muted">일정</dt>
               <dd className="text-gray-700">{formatDateRange(race.start_date, race.end_date)}</dd>
             </div>
             {race.location_name && (
               <div className="flex gap-3">
-                <dt className="w-16 shrink-0 text-gray-400">장소</dt>
+                <dt className="w-16 shrink-0 text-muted">장소</dt>
                 <dd className="text-gray-700">{race.location_name}</dd>
               </div>
             )}
             {race.contact && (
               <div className="flex gap-3">
-                <dt className="w-16 shrink-0 text-gray-400">주최</dt>
+                <dt className="w-16 shrink-0 text-muted">주최</dt>
                 <dd className="text-gray-700">{race.contact}</dd>
               </div>
             )}
@@ -147,7 +147,7 @@ export default function RaceDetailSheet({ race, onClose, backLabel, inline = fal
               {resolvedAddress && (
                 <div className="rounded-b-lg border border-t-0 border-gray-100 bg-gray-50 px-3 py-2">
                   <p className="text-xs text-gray-500">
-                    <span className="text-gray-400">주소</span>&nbsp;&nbsp;{resolvedAddress}
+                    <span className="text-muted">주소</span>&nbsp;&nbsp;{resolvedAddress}
                   </p>
                 </div>
               )}

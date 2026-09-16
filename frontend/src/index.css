@@ -12,6 +12,7 @@
   --color-lavender: #f1effc; /* 페일 라벤더: 아이콘·썸네일 배경 */
   --color-figure: #1a1533; /* 니어블랙 라벤더: 수치 */
   --color-caption: #888888; /* 라이트 그레이: 캡션 */
+  --color-muted: #68707d; /* Secondary text: AA contrast on white and muted surfaces. */
   --color-divider: #d9d7e1; /* 라이트 그레이: 구분선 */
   --color-divider-soft: #ebe8f7; /* 카드·캘린더 구분선 */
   --color-control-border: #e2ddf5;

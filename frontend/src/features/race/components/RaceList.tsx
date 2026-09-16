@@ -36,7 +36,7 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
   if (sorted.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <p className="text-sm text-gray-400">등록된 대회가 없습니다.</p>
+        <p className="text-sm text-muted">등록된 대회가 없습니다.</p>
       </div>
     );
   }
@@ -84,7 +84,7 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
                 }`}
               >
                 <span
-                  className={`flex h-14 w-16 shrink-0 flex-col items-center justify-center rounded-xl ${isEnded ? "bg-gray-100 text-gray-500" : ""}`}
+                  className={`flex h-14 w-16 shrink-0 flex-col items-center justify-center rounded-xl ${isEnded ? "bg-gray-100 text-muted" : ""}`}
                   style={isEnded ? undefined : {
                     backgroundColor: `color-mix(in srgb, ${color} 7%, transparent)`,
                     color: textColor,
@@ -102,22 +102,22 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
                   <span className="mb-1 flex flex-wrap items-center gap-1.5">
                     {race.event_type && (
                       <span
-                        className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${isEnded ? "bg-gray-100 text-gray-400" : ""}`}
+                        className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${isEnded ? "bg-gray-50 text-muted" : ""}`}
                         style={isEnded ? undefined : { backgroundColor: `color-mix(in srgb, ${color} 9%, transparent)`, color: textColor }}
                       >
                         {EVENT_TYPE_LABEL[race.event_type]}
                       </span>
                     )}
                     {isEnded && (
-                      <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-400">종료</span>
+                      <span className="rounded bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-muted">종료</span>
                     )}
                     {duration > 1 && (
-                      <span className={`rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium ${isEnded ? "text-gray-400" : "text-ink"}`}>
+                      <span className={`rounded bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium ${isEnded ? "text-muted" : "text-ink"}`}>
                         ~ {end.getMonth() + 1}.{String(end.getDate()).padStart(2, "0")} ({duration}일간)
                       </span>
                     )}
                   </span>
-                  <span className={`block truncate text-[15px] font-bold leading-6 ${isEnded ? "text-gray-400" : "text-ink"}`}>
+                  <span className={`block truncate text-[15px] font-bold leading-6 ${isEnded ? "text-muted" : "text-ink"}`}>
                     {race.race_title}
                   </span>
                   {location && (
