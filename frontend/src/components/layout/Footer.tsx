@@ -1,5 +1,5 @@
 import { Fragment, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 
 // 공공데이터 출처. 항목명과 제공처를 나눠 dl로 그린다.
 const PUBLIC_DATA: [label: string, source: string][] = [
@@ -61,6 +61,7 @@ export default function Footer() {
   // 위치 안내와 데이터 출처는 화면 폭과 관계없이 접어 두고, 요약 문구의 접기/보기만
   // 바꾸려고 열림 상태를 들고 있는다.
   const [isOpen, setIsOpen] = useState(false);
+  const { pathname } = useLocation();
 
   // mt-auto: 홈처럼 부모가 flex 세로 컬럼(min-h-dvh)이면 내용이 짧아도 바닥에 붙는다.
   // 부모가 flex가 아닌 페이지에서는 auto 마진이 0으로 계산돼 아무 영향이 없다.
@@ -69,12 +70,16 @@ export default function Footer() {
       <div className="mx-auto w-full max-w-6xl px-4 py-8 md:py-10">
         {/* 좁은 화면에서는 세 링크가 한 줄에 다 들어가지 않으므로 단계 분기 대신 wrap으로 흘린다.
           개인정보처리방침은 다른 항목과 구분되게 굵게 표시한다. 색은 caption 그대로 둬서
-          아래 ink 볼드 문장(이동 중 주의)보다 강조가 세지지 않게 한다. */}
+          아래 ink 볼드 문장(이동 중 주의)보다 강조가 세지지 않게 한다.
+          지금 보는 화면의 링크를 누르면 경로가 그대로라 ScrollToTop이 움직이지 않으므로 여기서 올린다. */}
         <nav className="flex flex-wrap gap-x-4 gap-y-2">
           {NAV_LINKS.map(([label, to]) => (
             <Link
               key={to}
               to={to}
+              onClick={() => {
+                if (to === pathname) window.scrollTo(0, 0);
+              }}
               className={`text-[13px] text-caption ${LINK_CLASS} ${to === "/privacy" ? "font-semibold" : ""}`}
             >
               {label}
