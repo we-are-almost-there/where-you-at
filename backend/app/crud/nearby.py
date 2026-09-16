@@ -4,6 +4,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor, execute_values
 import hashlib
 import json
+from time import perf_counter
 
 _CATEGORY_CONTENT_TYPES = {
     "attraction": ["12", "14", "38"],
@@ -58,12 +59,25 @@ WHERE ns.base_type = 'course' AND ns.base_id = %(course_id)s
 ORDER BY ns.distance_km, ns.nearby_content_id
 """
 
-_LIVE_QUERY_SQL = """
+_COURSE_BOUNDS_CTE = """
 WITH course_line AS (
     SELECT ST_MakeLine(ST_MakePoint(lng, lat) ORDER BY sequence_order) AS geom
     FROM course_waypoint
     WHERE course_id = %(course_id)s AND route_type = %(route_type)s
+), course_bounds AS (
+    SELECT geom,
+        CASE WHEN ST_XMin(Box2D(geom)) >= 120 AND ST_XMax(Box2D(geom)) <= 135
+                  AND ST_YMin(Box2D(geom)) >= 30 AND ST_YMax(Box2D(geom)) <= 45
+             THEN ST_Expand(
+                 ST_Envelope(ST_Segmentize(geom::geography, 1000)::geometry),
+                 %(radius)s / 70000.0 + 0.001)
+             ELSE ST_MakeEnvelope(-180, -90, 180, 90, 4326)
+        END AS bounds
+    FROM course_line
 )
+"""
+
+_LIVE_QUERY_SQL = _COURSE_BOUNDS_CTE + """
 SELECT
     ts.content_id,
     ts.tour_spot_title AS name,
@@ -72,19 +86,15 @@ SELECT
     ts.map_y AS lat,
     ts.map_x AS lng,
     ST_Distance(ts.geom::geography, cl.geom::geography) AS distance_m
-FROM tour_spot ts, course_line cl
+FROM tour_spot ts, course_bounds cl
 WHERE ts.content_type_id = ANY(%(content_types)s)
     AND cl.geom IS NOT NULL
+    AND ts.geom && cl.bounds
     AND ST_DWithin(ts.geom::geography, cl.geom::geography, %(radius)s)
 ORDER BY distance_m, ts.content_id
 """
 
-_BICYCLE_LIVE_QUERY_SQL = """
-WITH course_line AS (
-    SELECT ST_MakeLine(ST_MakePoint(lng, lat) ORDER BY sequence_order) AS geom
-    FROM course_waypoint
-    WHERE course_id = %(course_id)s AND route_type = %(route_type)s
-)
+_BICYCLE_LIVE_QUERY_SQL = _COURSE_BOUNDS_CTE + """
 SELECT
     bf.bicycle_id::text AS content_id,
     bf.facility_title AS name,
@@ -93,8 +103,9 @@ SELECT
     bf.map_y AS lat,
     bf.map_x AS lng,
     ST_Distance(bf.geom::geography, cl.geom::geography) AS distance_m
-FROM bicycle_facility bf, course_line cl
+FROM bicycle_facility bf, course_bounds cl
 WHERE cl.geom IS NOT NULL
+    AND bf.geom && cl.bounds
     AND ST_DWithin(bf.geom::geography, cl.geom::geography, %(radius)s)
 ORDER BY distance_m, bf.bicycle_id::text
 """
@@ -251,6 +262,7 @@ def _get_rows(
     route_type: str,
     *,
     strict_cache: bool = False,
+    force_refresh: bool = False,
 ) -> list[dict]:
     """nearby_spot 캐시(30일, route_type별 구분)를 우선 조회하고, 없거나 만료됐으면 PostGIS로
     재계산 후 캐시에 저장한다. 이름·주소·이미지·좌표는 원본 테이블에서 조회한다.
@@ -261,6 +273,8 @@ def _get_rows(
     경로가 아직 없는 경우에는 빈 결과를 저장하지 않는다.
     원본 변경 시 자동 무효화하지 않으며, 만료 또는 수동 재생성 때 다시 조회한다.
     """
+    if force_refresh:
+        return refresh_nearby_rows(conn, course_id, category, route_type, strict_cache=strict_cache)
     if category == "bicycle":
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
@@ -275,19 +289,7 @@ def _get_rows(
         if _has_empty_cache(conn, course_id, category, route_type):
             return []
 
-        radius = _RADIUS_M.get(route_type, _RADIUS_M["trail"]).get("bicycle", 1000)
-        rows = _fetch_bicycle_live(conn, course_id, route_type, radius)
-        _refresh_cache(
-            conn,
-            course_id,
-            "bicycle",
-            route_type,
-            rows,
-            strict_cache=strict_cache,
-        )
-        return rows
-
-    content_types = _CATEGORY_CONTENT_TYPES[category]
+        return refresh_nearby_rows(conn, course_id, category, route_type, strict_cache=strict_cache)
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
@@ -302,16 +304,26 @@ def _get_rows(
     if _has_empty_cache(conn, course_id, category, route_type):
         return []
 
-    radius = _RADIUS_M.get(route_type, _RADIUS_M["trail"]).get(category, 1500)
-    rows = _fetch_live(conn, course_id, route_type, content_types, radius)
-    _refresh_cache(
-        conn,
-        course_id,
-        category,
-        route_type,
-        rows,
-        strict_cache=strict_cache,
-    )
+    return refresh_nearby_rows(conn, course_id, category, route_type, strict_cache=strict_cache)
+
+
+def refresh_nearby_rows(conn, course_id, category, route_type, *, strict_cache):
+    """Compute first, then atomically replace the cache; failures preserve old rows."""
+    started = perf_counter()
+    radius = _RADIUS_M.get(route_type, _RADIUS_M["trail"])[category]
+    if category == "bicycle":
+        rows = _fetch_bicycle_live(conn, course_id, route_type, radius)
+    else:
+        rows = _fetch_live(conn, course_id, route_type, _CATEGORY_CONTENT_TYPES[category], radius)
+    queried = perf_counter()
+    try:
+        _refresh_cache(conn, course_id, category, route_type, rows, strict_cache=strict_cache)
+    finally:
+        logger.info(
+            "nearby_refresh course_id=%s route_type=%s category=%s rows=%s live_ms=%.1f cache_ms=%.1f",
+            course_id, route_type, category, len(rows),
+            (queried - started) * 1000, (perf_counter() - queried) * 1000,
+        )
     return rows
 
 
@@ -369,6 +381,7 @@ def list_nearby_spots(
     size: int = 20,
     *,
     strict_cache: bool = False,
+    force_refresh: bool = False,
 ) -> tuple[int, list[dict], str]:
     """주변 장소의 전체 개수, 현재 페이지 목록, 전체 목록 버전을 반환한다."""
     if category != "bicycle" and category not in _CATEGORY_CONTENT_TYPES:
@@ -382,6 +395,7 @@ def list_nearby_spots(
         category,
         route_type,
         strict_cache=strict_cache,
+        force_refresh=force_refresh,
     )
     version = _make_list_version(course_id, category, route_type, rows)
     total, spots = _paginate(rows, category, route_type, page, size)

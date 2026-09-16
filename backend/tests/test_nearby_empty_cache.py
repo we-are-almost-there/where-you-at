@@ -67,7 +67,7 @@ class TestEmptyCache(unittest.TestCase):
 
     def test_missing_or_expired_marker_recalculates_and_stores_thirty_days(self):
         # DB의 만료 조건으로 표시 행이 반환되지 않는 경우를 모의한다.
-        for category in ("attraction", "bicycle"):
+        for category in ("attraction", "restaurant", "accommodation", "bicycle"):
             with self.subTest(category=category):
                 conn, cursor = self.make_conn()
                 fetch = "_fetch_bicycle_live" if category == "bicycle" else "_fetch_live"
@@ -86,6 +86,24 @@ class TestEmptyCache(unittest.TestCase):
                 ))
                 self.assertEqual(values[0][-1] - values[0][-2], timedelta(days=30))
                 conn.commit.assert_called_once()
+
+    def test_forced_refresh_records_empty_result_for_both_routes(self):
+        for route in ("trail", "bicycle"):
+            for category in ("attraction", "restaurant", "accommodation", "bicycle"):
+                with self.subTest(route=route, category=category):
+                    conn, _ = self.make_conn(has_route=True)
+                    fetch = "_fetch_bicycle_live" if category == "bicycle" else "_fetch_live"
+                    with (
+                        patch.object(nearby, fetch, return_value=[]),
+                        patch.object(nearby, "execute_values") as insert,
+                    ):
+                        nearby.list_nearby_spots(conn, 5, category, route,
+                                                 force_refresh=True, strict_cache=True)
+                    value = insert.call_args.args[2][0]
+                    self.assertEqual(value[3], nearby._EMPTY_CONTENT_ID)
+                    self.assertEqual(value[4], route)
+                    self.assertEqual(value[-1] - value[-2], timedelta(days=30))
+                    conn.commit.assert_called_once()
 
     def test_live_failure_never_creates_empty_marker(self):
         for category in ("attraction", "bicycle"):
