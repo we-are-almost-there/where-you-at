@@ -13,7 +13,8 @@ import { EFFECTIVE_DATE, OPERATOR, SERVICE } from "./legalInfo";
  * 방침은 실제 처리 현황과 일치해야 한다. 아래가 바뀌면 이 문서도 함께 고친다.
  * - 1:1 문의 항목·보유 기간: ContactPage 동의 안내, backend/app/schemas/inquiry.py, sql/01_schema.sql inquiry
  * - 접속 IP 주소(요청 제한): backend/app/api/routers/inquiries.py, backend/app/services/rate_limit.py
- * - 새 문의 외부 알림(메신저 등)은 두지 않는다. 붙이려면 업체를 7·8번에 먼저 추가한다(backend/app/api/routers/inquiries.py).
+ * - 새 문의 Slack 알림: 문의 유형·이메일·내용을 보낸다(backend/app/services/inquiry_notify.py). 항목·업체·보존 설정이
+ *   바뀌면 7·8번과 README "새 문의 알림"을 함께 고친다.
  * - 운영팀 서버로 보내지 않고 기기 안에서 처리하는 곳(2번 ③): 가까운 순 정렬(홈, 코스 탐색, 자전거 대여), features/map/useCourseTracking.ts,
  *   features/map/components/RecordCard.tsx, features/support/components/SupportDetail.tsx(localStorage)
  * - 배포 환경: Vercel(웹사이트), Render 싱가포르(API 서버), Supabase 서울 Free 요금제(DB).
@@ -180,7 +181,9 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
           </li>
           <li>
             <strong>파기 절차</strong>: 보유 기간이 지난 1:1 문의는 데이터베이스의 예약 작업이 매일 자동으로 찾아
-            파기합니다. 서버 접속 기록은 각 업체가 정한 로그 보관 기간(4번)에 따라 처리됩니다.
+            파기합니다. 삭제 또는 동의 철회 요청을 확인하거나 14세 미만 아동의 문의임을 알게 되면, 운영팀은 관련 Slack
+            알림과 데이터베이스의 문의를 직접 찾아 지체 없이 삭제합니다. 서버 접속 기록은 각 업체가 정한 로그 보관
+            기간(4번)에 따라 처리됩니다.
           </li>
           {/* "복구할 수 없도록 삭제"는 수탁자 시스템에 남을 수 있는 사본까지 운영팀이 보장할 수 없어 쓰지 않는다.
             운영팀이 복원할 수 없다는 것은 Supabase Free 요금제에 자동 백업이 없어서 사실이다
@@ -189,8 +192,9 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
           <li>
             <strong>파기 방법</strong>: 전자 파일 형태로 저장된 개인정보는 데이터베이스에서 삭제해 운영팀이 다시 조회하거나
             복원할 수 없게 합니다. 운영팀은 개인정보가 담긴 데이터베이스를 따로 내려받아 백업해 두지 않으며, 종이 문서로도
-            보관하지 않습니다. 수탁자(7번)가 시스템 운영 과정에서 보관하는 사본이 있는 경우, 그 사본은 수탁자의 정책에 따라
-            삭제됩니다.
+            보관하지 않습니다. 새 문의 알림에 포함된 개인정보는 Slack 메시지를 직접 삭제하며, 별도 요청이 없으면 Slack
+            워크스페이스의 90일 보존 설정에 따라 자동으로 삭제됩니다. 그 밖에 수탁자(7번)가 시스템 운영 과정에서 보관하는
+            사본이 있는 경우, 그 사본은 수탁자의 정책에 따라 삭제됩니다.
           </li>
         </Items>
       </LegalSection>
@@ -210,6 +214,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             ["Supabase, Inc.", "1:1 문의 정보를 보관하는 데이터베이스(클라우드) 운영"],
             ["Vercel Inc.", "웹사이트 호스팅 (웹사이트 전송 과정에서 서버 접속 기록 처리)"],
             ["Render Services, Inc.", "API 서버 운영 (1:1 문의 정보와 서버 접속 기록 처리)"],
+            ["Slack Technologies Limited", "새 1:1 문의 접수 알림 전송 및 보관"],
           ]}
         />
         <P>위탁하는 업무의 내용이나 수탁자가 바뀌면 지체 없이 이 개인정보처리방침을 통해 알리겠습니다.</P>
@@ -255,6 +260,14 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
               "데이터베이스 운영과 장애 대응 등 기술 지원이 필요할 때 원격으로 접근",
               "데이터베이스(클라우드) 운영과 기술 지원",
               "1:1 문의 보유 기간(문의 처리 완료 후 1년)과 같음",
+            ],
+            [
+              "Slack Technologies Limited (privacy@slack.com / dpo@slack.com)",
+              "아일랜드 (처리 주체), 미국 (기본 데이터 저장 위치)",
+              "이메일, 문의 유형, 문의 내용, 알림 전송 일시",
+              "새 1:1 문의가 접수될 때 Incoming Webhook을 통해 전송",
+              "새 문의 접수 알림",
+              "전송 후 90일 (Slack 워크스페이스 보존 설정)",
             ],
           ]}
         />
@@ -315,7 +328,8 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
           </li>
           <li>
             권리 행사는 아래 개인정보 보호책임자의 이메일이나 1:1 문의로 할 수 있으며, 운영팀은 요청을 받은 날부터 10일
-            이내에 회신합니다. 회원 기능이 없으므로 문의할 때 입력한 이메일로 본인인지 확인합니다.
+            이내에 회신합니다. 회원 기능이 없으므로 기존 문의에 입력한 이메일로 확인 메일을 보내고, 회신 여부를 통해
+            요청자임을 확인합니다. 확인을 마치면 요청 범위에 해당하는 데이터베이스의 문의와 Slack 알림을 함께 처리합니다.
           </li>
           <li>
             법정대리인이나 위임을 받은 사람 등 대리인을 통해서도 권리를 행사할 수 있습니다. 이 경우 「개인정보 처리 방법에

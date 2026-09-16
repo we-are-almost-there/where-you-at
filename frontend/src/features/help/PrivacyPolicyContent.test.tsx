@@ -47,4 +47,30 @@ describe("PrivacyPolicyContent", () => {
     expect(retention.textContent).toContain("1:1 문의 (이메일, 문의 유형, 문의 내용)");
     expect(retention.textContent).toContain("문의 처리 완료 후 1년");
   });
+
+  it("Slack 문의 알림의 위탁과 국외 이전 내용을 안내한다", () => {
+    render(<PrivacyPolicyContent />);
+
+    const outsourcing = screen.getByRole("region", { name: /개인정보 처리업무의 위탁/ });
+    expect(outsourcing.textContent).toContain("Slack Technologies Limited");
+    expect(outsourcing.textContent).toContain("새 1:1 문의 접수 알림 전송 및 보관");
+
+    const overseas = screen.getByRole("region", { name: /개인정보의 국외 수집 및 이전/ });
+    expect(overseas.textContent).toContain("아일랜드 (처리 주체), 미국 (기본 데이터 저장 위치)");
+    expect(overseas.textContent).toContain("이메일, 문의 유형, 문의 내용, 알림 전송 일시");
+    expect(overseas.textContent).toContain("전송 후 90일");
+  });
+
+  it("권리 행사 본인 확인과 Slack 알림 수동 삭제 절차를 안내한다", () => {
+    render(<PrivacyPolicyContent />);
+
+    const rights = screen.getByRole("region", { name: /정보주체의 권리·의무 및 행사방법/ });
+    expect(rights.textContent).toContain("기존 문의에 입력한 이메일로 확인 메일을 보내고");
+    expect(rights.textContent).toContain("회신 여부를 통해 요청자임을 확인");
+
+    const destruction = screen.getByRole("region", { name: /개인정보의 파기 절차 및 방법/ });
+    expect(destruction.textContent).toContain("관련 Slack 알림과 데이터베이스의 문의를 직접 찾아");
+    expect(destruction.textContent).toContain("Slack 메시지를 직접 삭제");
+    expect(destruction.textContent).toContain("90일 보존 설정에 따라 자동으로 삭제");
+  });
 });

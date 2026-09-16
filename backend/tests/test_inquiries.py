@@ -32,6 +32,7 @@ VALID = {
 }
 
 
+@patch("app.api.routers.inquiries.notify_new_inquiry")
 @patch("app.api.routers.inquiries.inquiry_crud.create_inquiry")
 class TestCreateInquiry(unittest.TestCase):
     @classmethod
@@ -47,7 +48,7 @@ class TestCreateInquiry(unittest.TestCase):
         # 제한 기록은 모듈 전역이라 테스트끼리 섞이지 않게 매번 비운다.
         inquiries_router.inquiry_limiter.reset()
 
-    def test_valid_inquiry_is_saved(self, mock_create):
+    def test_valid_inquiry_is_saved_and_notification_is_scheduled(self, mock_create, mock_notify):
         res = self.client.post("/api/inquiries", json=VALID)
 
         self.assertEqual(res.status_code, 201)
@@ -55,8 +56,11 @@ class TestCreateInquiry(unittest.TestCase):
         mock_create.assert_called_once_with(
             ANY, category="코스 탐색", email="user@example.com", content=VALID["content"]
         )
+        mock_notify.assert_called_once_with(
+            category="코스 탐색", email="user@example.com", content=VALID["content"]
+        )
 
-    def test_email_and_content_are_trimmed_before_saving(self, mock_create):
+    def test_email_and_content_are_trimmed_before_saving(self, mock_create, mock_notify):
         res = self.client.post(
             "/api/inquiries",
             json={**VALID, "email": "  user@example.com ", "content": "\n  " + VALID["content"] + "  \n"},
@@ -66,8 +70,11 @@ class TestCreateInquiry(unittest.TestCase):
         mock_create.assert_called_once_with(
             ANY, category="코스 탐색", email="user@example.com", content=VALID["content"]
         )
+        mock_notify.assert_called_once_with(
+            category="코스 탐색", email="user@example.com", content=VALID["content"]
+        )
 
-    def test_invalid_input_returns_422_without_saving(self, mock_create):
+    def test_invalid_input_returns_422_without_saving(self, mock_create, mock_notify):
         cases = {
             "이메일 형식이 아님": {**VALID, "email": "user-at-example.com"},
             "이메일이 너무 김": {**VALID, "email": "a" * 250 + "@x.kr"},
@@ -82,15 +89,17 @@ class TestCreateInquiry(unittest.TestCase):
                 res = self.client.post("/api/inquiries", json=body)
                 self.assertEqual(res.status_code, 422)
         mock_create.assert_not_called()
+        mock_notify.assert_not_called()
 
-    def test_honeypot_filled_responds_success_but_does_not_save(self, mock_create):
+    def test_honeypot_filled_responds_success_but_does_not_save(self, mock_create, mock_notify):
         res = self.client.post("/api/inquiries", json={**VALID, "website": "https://spam.example"})
 
         self.assertEqual(res.status_code, 201)
         self.assertEqual(res.json(), {"received": True})
         mock_create.assert_not_called()
+        mock_notify.assert_not_called()
 
-    def test_fourth_inquiry_within_window_is_rejected(self, mock_create):
+    def test_fourth_inquiry_within_window_is_rejected(self, mock_create, mock_notify):
         for _ in range(3):
             self.assertEqual(self.client.post("/api/inquiries", json=VALID).status_code, 201)
 
@@ -98,8 +107,9 @@ class TestCreateInquiry(unittest.TestCase):
 
         self.assertEqual(res.status_code, 429)
         self.assertEqual(mock_create.call_count, 3)
+        self.assertEqual(mock_notify.call_count, 3)
 
-    def test_honeypot_requests_do_not_use_up_the_limit(self, mock_create):
+    def test_honeypot_requests_do_not_use_up_the_limit(self, mock_create, mock_notify):
         for _ in range(5):
             self.client.post("/api/inquiries", json={**VALID, "website": "x"})
 
@@ -107,6 +117,21 @@ class TestCreateInquiry(unittest.TestCase):
 
         self.assertEqual(res.status_code, 201)
         mock_create.assert_called_once()
+        mock_notify.assert_called_once_with(
+            category="코스 탐색", email="user@example.com", content=VALID["content"]
+        )
+
+    def test_notification_failure_does_not_change_saved_response(self, mock_create, mock_notify):
+        mock_notify.return_value = False
+
+        res = self.client.post("/api/inquiries", json=VALID)
+
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.json(), {"received": True})
+        mock_create.assert_called_once()
+        mock_notify.assert_called_once_with(
+            category="코스 탐색", email="user@example.com", content=VALID["content"]
+        )
 
 
 if __name__ == "__main__":

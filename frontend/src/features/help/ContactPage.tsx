@@ -238,7 +238,8 @@ export default function ContactPage() {
           {/* 국외 이전은 개인정보처리방침 8번에 공개하는 방식(개인정보 보호법 제28조의8제1항제3호가목)이라 별도 동의는
             받지 않고, 동의하기 전에 알 수 있게 한 줄로 안내한다. 업체·국가가 바뀌면 방침 8번과 함께 고친다. */}
           <p className="mt-2.5 break-keep text-[12px] leading-relaxed text-caption">
-            문의 정보는 해외 업체의 서버(API 서버 Render 싱가포르, 데이터베이스 운영사 Supabase 미국)를 거쳐 처리돼요.
+            문의 정보는 해외 업체의 서버(API 서버 Render 싱가포르, 데이터베이스 운영사 Supabase 미국, 새 문의 알림
+            Slack 아일랜드·미국)를 거쳐 처리돼요.
           </p>
           <p className="mt-1.5 break-keep text-[12px] leading-relaxed text-caption">
             동의하지 않을 수 있으며, 동의하지 않으면 문의를 보낼 수 없어요. 자세한 내용은{" "}
