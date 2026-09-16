@@ -5,4 +5,4 @@ export const OPERATOR = "거의 다왔어 팀";
 export const SERVICE = "어디까지왔니";
 export const CONTEST = "2026 관광데이터 활용 공모전";
 /** 두 문서의 시행일. 내용을 바꾸면 이전 버전을 남기고 새 시행일을 적는다. */
-export const EFFECTIVE_DATE = "2026년 9월 21일";
+export const EFFECTIVE_DATE = "2026년 9월 17일";
