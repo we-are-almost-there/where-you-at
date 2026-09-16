@@ -260,7 +260,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             ],
             [
               "Slack Technologies Limited (privacy@slack.com / dpo@slack.com)",
-              "미국 등",
+              "아일랜드 (처리 주체), 미국 (기본 데이터 저장 위치)",
               "이메일, 문의 유형, 문의 내용, 알림 전송 일시",
               "새 1:1 문의가 접수될 때 Incoming Webhook을 통해 전송",
               "새 문의 접수 알림",

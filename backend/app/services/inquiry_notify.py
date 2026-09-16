@@ -7,15 +7,16 @@ INQUIRY_WEBHOOK_URL이 비어 있으면 아무것도 하지 않는다. 알림은
 보내지 않는다. 전송 항목을 바꾸면 개인정보처리방침 7·8번도 함께 고친다.
 """
 
-import json
 import logging
-import os
-import urllib.request
 from urllib.parse import urlparse
+
+import httpx
+
+from app.core.config import settings
 
 LOGGER = logging.getLogger(__name__)
 MESSAGE = "[어디까지왔니] 새 1:1 문의가 있어요"
-TIMEOUT_SECONDS = 5
+TIMEOUT_SECONDS = 3
 
 
 def _plain_text(text: str) -> dict[str, str]:
@@ -66,10 +67,9 @@ def notify_new_inquiry(
     content: str,
     *,
     webhook_url: str | None = None,
-    opener=urllib.request.urlopen,
 ) -> bool:
     """알림을 보냈으면 True, 주소가 없거나 실패했으면 False를 반환한다."""
-    url = webhook_url if webhook_url is not None else os.getenv("INQUIRY_WEBHOOK_URL", "")
+    url = webhook_url if webhook_url is not None else settings.inquiry_webhook_url
     if not url:
         return False
     if not _is_slack_webhook_url(url):
@@ -77,22 +77,19 @@ def notify_new_inquiry(
         return False
 
     try:
-        request = urllib.request.Request(
+        response = httpx.post(
             url,
-            data=json.dumps(
-                build_payload(category=category, email=email, content=content),
-                ensure_ascii=False,
-            ).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "where-you-at-inquiry-notifier/1.0",
-            },
-            method="POST",
+            json=build_payload(category=category, email=email, content=content),
+            headers={"User-Agent": "where-you-at-inquiry-notifier/1.0"},
+            timeout=TIMEOUT_SECONDS,
         )
-        with opener(request, timeout=TIMEOUT_SECONDS):
-            pass
+        response.raise_for_status()
         return True
     except Exception as exc:
-        # urllib 예외 문자열에는 웹훅 URL이 들어갈 수 있어 예외 종류만 기록한다.
-        LOGGER.error("문의 알림 전송 실패 (%s)", type(exc).__name__)
+        # 예외 문자열에는 웹훅 URL이 들어갈 수 있어 기록하지 않고, 비밀이 아닌 HTTP 상태만 함께 남긴다.
+        status_code = getattr(getattr(exc, "response", None), "status_code", "")
+        if status_code:
+            LOGGER.error("문의 알림 전송 실패 (%s %s)", type(exc).__name__, status_code)
+        else:
+            LOGGER.error("문의 알림 전송 실패 (%s)", type(exc).__name__)
         return False

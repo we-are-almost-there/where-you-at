@@ -39,6 +39,14 @@ afterEach(() => {
 });
 
 describe("ContactPage", () => {
+  it("문의 동의 전에 Slack을 포함한 국외 처리 업체와 국가를 안내한다", () => {
+    renderPage();
+
+    expect(screen.getByText(/문의 정보는 해외 업체의 서버/).textContent).toContain(
+      "새 문의 알림 Slack 아일랜드·미국",
+    );
+  });
+
   it("필수 항목을 모두 채우고 동의해야 보내기 버튼이 켜진다", () => {
     renderPage();
     expect(submitButton().disabled).toBe(true);

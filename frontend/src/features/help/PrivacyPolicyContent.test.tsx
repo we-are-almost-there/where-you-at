@@ -56,6 +56,7 @@ describe("PrivacyPolicyContent", () => {
     expect(outsourcing.textContent).toContain("새 1:1 문의 접수 알림 전송 및 보관");
 
     const overseas = screen.getByRole("region", { name: /개인정보의 국외 수집 및 이전/ });
+    expect(overseas.textContent).toContain("아일랜드 (처리 주체), 미국 (기본 데이터 저장 위치)");
     expect(overseas.textContent).toContain("이메일, 문의 유형, 문의 내용, 알림 전송 일시");
     expect(overseas.textContent).toContain("전송 후 90일");
   });
