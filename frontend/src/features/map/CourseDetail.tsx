@@ -196,6 +196,17 @@ export function CourseDetail() {
   // 일시정지도 세션이 살아 있는 상태다. 멈춘 사이에 코스나 진행 방향을 갈아타면
   // 이미 쌓인 기록·진행률과 어긋나므로, 그런 조작은 tracking/paused를 가리지 않고 잠근다.
   const sessionActive = trackingStatus !== "idle";
+  // 새로고침·탭 닫기·외부 사이트 이동은 라우터를 거치지 않는다.
+  // 일시정지 중에도 기록을 보호하고, 종료하거나 화면을 떠나면 리스너를 해제한다.
+  useEffect(() => {
+    if (!sessionActive) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = true; // preventDefault만으로 경고하지 않는 구형 브라우저 지원
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [sessionActive]);
   // 탭·필터 변경은 허용하고, 다른 화면으로 향하는 모든 라우트 이동을 보호한다.
   const blocker = useBlocker(({ currentLocation, nextLocation }) =>
     sessionActive && currentLocation.pathname !== nextLocation.pathname,
