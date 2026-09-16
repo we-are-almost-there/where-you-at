@@ -16,6 +16,7 @@ import {
 } from "./bicycleApi";
 import type { BicycleFacility, BicycleFacilityListResponse } from "./types";
 import AppHeader from "../../components/layout/AppHeader";
+import Footer from "../../components/layout/Footer";
 import { BicycleRegionSelect } from "./components/BicycleRegionSelect";
 import { buildBicycleRegionOptions, buildBicycleSubregionOptions } from "./regionOptions";
 import { slicePage, sortByDistance } from "../map/nearestSort";
@@ -532,6 +533,7 @@ export function BicycleExplore() {
           />
         )}
       </div>
+      <Footer />
     </>
   );
 }

@@ -12,6 +12,8 @@ import { fetchNotices } from "./helpApi";
 vi.mock("./helpApi", () => ({ fetchNotices: vi.fn() }));
 // AppHeader는 ResizeObserver 같은 브라우저 API를 써서 jsdom에서 그릴 수 없고, 이 테스트의 대상도 아니다.
 vi.mock("../../components/layout/AppHeader", () => ({ default: () => null }));
+// 푸터에도 고객지원 링크가 있어, 그리면 제목 위 뒤로가기 링크를 이름으로 찾을 수 없다.
+vi.mock("../../components/layout/Footer", () => ({ default: () => null }));
 
 const mockedFetch = vi.mocked(fetchNotices);
 
