@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { StrictMode } from "react";
-import { createMemoryRouter } from "react-router";
-import { RouterProvider } from "react-router/dom";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CourseDetail } from "./CourseDetail";
 
