@@ -32,6 +32,14 @@ def get_user(conn, user_id: int) -> dict | None:
         return cur.fetchone()
 
 
+def get_kakao_id(conn, user_id: int) -> int | None:
+    """탈퇴할 때 카카오 연결 해제에 쓸 회원번호. 회원이 없으면 None."""
+    with conn.cursor() as cur:
+        cur.execute("select kakao_id from app_user where id = %(id)s", {"id": user_id})
+        row = cur.fetchone()
+    return row[0] if row else None
+
+
 def delete_user(conn, user_id: int) -> None:
     """회원을 삭제한다. app_user를 참조하는 테이블의 행은 on delete cascade로 함께 지워진다.
 

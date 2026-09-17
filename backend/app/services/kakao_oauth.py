@@ -13,12 +13,16 @@ from ..core.config import settings
 
 _TOKEN_URL = "https://kauth.kakao.com/oauth/token"
 _USER_URL = "https://kapi.kakao.com/v2/user/me"
+_UNLINK_URL = "https://kapi.kakao.com/v1/user/unlink"
 
 # 다시 로그인하면 해결되는 오류 코드만 적는다. 목록에 없는 코드는 모두 설정 오류나 카카오 쪽 문제로 본다.
 #   KOE320: 인가 코드가 만료됐거나 이미 쓰였다.
 # error 값으로 나누지 않는 이유: redirect_uri 불일치(KOE303)도 KOE320과 같은 invalid_grant로 온다.
 #   error로 나누면 설정 오류가 "다시 로그인하세요"로 나가고, 몇 번을 다시 해도 해결되지 않는다.
 _USER_ERROR_CODES = {"KOE320"}
+
+# 연결 해제 요청에서 "앱에 연결되지 않은 사용자"를 뜻하는 코드. 이미 끊겨 있으므로 성공으로 본다.
+_ALREADY_UNLINKED_CODE = -101
 
 
 class KakaoAuthError(Exception):
@@ -41,6 +45,10 @@ def is_configured() -> bool:
         and settings.kakao_login_client_secret
         and settings.kakao_login_redirect_uri
     )
+
+
+def is_unlink_configured() -> bool:
+    return bool(settings.kakao_login_admin_key)
 
 
 def exchange_code(code: str) -> str:
@@ -94,6 +102,32 @@ def fetch_user(access_token: str) -> KakaoUser:
 
     profile = (body.get("kakao_account") or {}).get("profile") or {}
     return KakaoUser(kakao_id=kakao_id, nickname=profile.get("nickname"))
+
+
+def unlink_user(kakao_id: int) -> None:
+    """어드민 키로 카카오 회원과 로그인 앱의 연결을 해제한다.
+
+    카카오는 서비스 탈퇴 과정에 연결 해제를 반드시 포함하도록 안내한다.
+    우리는 카카오 액세스 토큰을 저장하지 않으므로, 서버 전용 어드민 키와 회원번호로 요청한다.
+    이미 연결이 끊긴 사용자(-101)면 성공으로 본다.
+    """
+    try:
+        resp = httpx.post(
+            _UNLINK_URL,
+            headers={"Authorization": f"KakaoAK {settings.kakao_login_admin_key}"},
+            data={"target_id_type": "user_id", "target_id": str(kakao_id)},
+            timeout=10,
+        )
+    except httpx.HTTPError as e:
+        raise KakaoUpstreamError(f"연결 해제 요청 실패: {type(e).__name__}") from e
+
+    if resp.is_success:
+        return
+    code = _json_object(resp).get("code")
+    if code == _ALREADY_UNLINKED_CODE:
+        return
+    # 어드민 키는 요청 헤더에만 있고 여기에는 남기지 않는다.
+    raise KakaoUpstreamError(f"연결 해제 실패: status={resp.status_code} code={code}")
 
 
 def _json_object(resp: httpx.Response) -> dict:

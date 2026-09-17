@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from ...crud import user as user_crud
-from ...deps import get_current_user, get_db, unauthorized_error
+from ...deps import db_connection, get_current_user, get_db, unauthorized_error
 from ...schemas.user import UserOut
+from ...services import kakao_oauth
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -18,13 +19,30 @@ def read_me(user_id: int = Depends(get_current_user), conn=Depends(get_db)):
 
 
 @router.delete("", status_code=204)
-def delete_me(user_id: int = Depends(get_current_user), conn=Depends(get_db)):
-    """회원 탈퇴. 회원 행을 지우고, 회원에 딸린 데이터는 on delete cascade로 함께 지워진다.
+def delete_me(user_id: int = Depends(get_current_user)):
+    """회원 탈퇴. 카카오 연결을 해제한 뒤 회원 행을 지운다. 회원에 딸린 데이터는 on delete cascade로 함께 지워진다.
 
-    카카오 연결 끊기는 하지 않는다(어드민 키가 필요). 다시 로그인하면 새 회원으로 가입된다.
-    발급한 토큰은 만료 전까지 서명이 유효하지만, 회원 행이 없어 /api/me에서 401이 된다.
-
-    이미 지운 회원이 다시 요청해도 204다(여러 번 보내도 결과가 같다). 401은 토큰이 없거나
-    만료, 위조된 경우에만 나가므로, 프론트는 401을 "탈퇴 완료"가 아니라 "다시 로그인 필요"로 본다.
+    - 카카오 연결 해제가 실패하면 행을 남기고 502를 돌려준다. 다시 요청하면 처음부터 진행된다.
+    - 연결 해제 뒤 행 삭제가 실패해도, 다시 요청하면 카카오가 "이미 해제됨"(-101)을 돌려줘 삭제까지 진행된다.
+    - 카카오 응답을 기다리는 동안 DB 연결을 붙잡지 않도록, 조회와 삭제 때만 따로 연결한다.
+    - 이미 지운 회원이 다시 요청해도 204다. 401은 토큰이 없거나 만료, 위조된 경우에만 나가므로,
+      프론트는 401을 "탈퇴 완료"가 아니라 "다시 로그인 필요"로 본다.
+    - 발급한 토큰은 만료 전까지 서명이 유효하지만, 회원 행이 없어 /api/me에서 401이 된다.
     """
-    user_crud.delete_user(conn, user_id)
+    if not kakao_oauth.is_unlink_configured():
+        print("[ERROR] KAKAO_LOGIN_ADMIN_KEY가 비어 있어 탈퇴를 처리할 수 없습니다.")
+        raise HTTPException(status_code=503, detail="지금은 탈퇴할 수 없습니다. 잠시 후 다시 시도해 주세요.")
+
+    with db_connection() as conn:
+        kakao_id = user_crud.get_kakao_id(conn, user_id)
+    if kakao_id is None:
+        return
+
+    try:
+        kakao_oauth.unlink_user(kakao_id)
+    except kakao_oauth.KakaoUpstreamError as e:
+        print(f"[ERROR] 카카오 연결 해제 실패: {e}")
+        raise HTTPException(status_code=502, detail="탈퇴를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+
+    with db_connection() as conn:
+        user_crud.delete_user(conn, user_id)
