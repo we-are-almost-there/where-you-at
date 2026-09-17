@@ -112,7 +112,7 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
                       <span className="rounded bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-muted">종료</span>
                     )}
                     {duration > 1 && (
-                      <span className={`rounded bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium ${isEnded ? "text-muted" : "text-ink"}`}>
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${isEnded ? "bg-gray-50 text-muted" : "bg-gray-100 text-ink"}`}>
                         ~ {end.getMonth() + 1}.{String(end.getDate()).padStart(2, "0")} ({duration}일간)
                       </span>
                     )}
