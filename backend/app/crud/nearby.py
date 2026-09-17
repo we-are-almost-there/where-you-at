@@ -4,6 +4,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor, execute_values
 import hashlib
 import json
+from typing import Literal
 from time import perf_counter
 
 _CATEGORY_CONTENT_TYPES = {
@@ -166,12 +167,13 @@ def _refresh_cache(
     *,
     strict_cache: bool = False,
     delete_missing_route: bool = False,
-) -> None:
+) -> Literal["success", "failed", "skipped"]:
     """기존 캐시를 교체한다. 장소 목록과 정상 조회의 빈 결과 모두 30일 보관한다.
 
     경로가 있고 0건이면 기존 테이블에 예약 ID의 표시 행 하나를 저장한다. distance_km=0은
     필수 컬럼을 채우는 값이며, 빈 결과 여부는 거리 대신 예약 ID로 판별한다.
     delete_missing_route=True이면 경로 없는 조합의 기존 캐시만 삭제한다.
+    처리 결과로 success(완료), failed(실패), skipped(건너뜀)를 반환한다.
 
     DB 오류 시 로그를 남기고 연결 전체의 롤백을 시도한다.
     기본 모드에서는 호출부가 이미 구한 조회 결과를 반환할 수 있도록
@@ -205,7 +207,8 @@ def _refresh_cache(
                              "route_type": route_type},
                         )
                         conn.commit()
-                    return
+                        return "success"
+                    return "skipped"
             cur.execute(
                 _DELETE_STALE_CACHE_SQL,
                 {
@@ -233,6 +236,7 @@ def _refresh_cache(
                            route_type, 0, now, expires)]
             execute_values(cur, _UPSERT_CACHE_SQL, values, page_size=1000)
         conn.commit()
+        return "success"
 
     except psycopg2.Error:
         logger.exception(
@@ -248,6 +252,7 @@ def _refresh_cache(
 
         if strict_cache:
             raise
+        return "failed"
 
 
 def _rows_from_cache(cached_rows: list[dict]) -> list[dict]:
@@ -353,13 +358,16 @@ def refresh_nearby_rows(
     else:
         rows = _fetch_live(conn, course_id, route_type, _CATEGORY_CONTENT_TYPES[category], radius)
     queried = perf_counter()
+    # 예외가 전파되거나 내부 처리된 실패를 성공으로 기록하지 않는다.
+    status = "failed"
     try:
-        _refresh_cache(conn, course_id, category, route_type, rows,
-                       strict_cache=strict_cache, delete_missing_route=delete_missing_route)
+        status = _refresh_cache(conn, course_id, category, route_type, rows,
+                                strict_cache=strict_cache, delete_missing_route=delete_missing_route)
     finally:
-        logger.info(
-            "nearby_refresh course_id=%s route_type=%s category=%s rows=%s live_ms=%.1f cache_ms=%.1f",
-            course_id, route_type, category, len(rows),
+        log = logger.warning if status == "failed" else logger.info
+        log(
+            "nearby_refresh course_id=%s route_type=%s category=%s rows=%s status=%s live_ms=%.1f cache_ms=%.1f",
+            course_id, route_type, category, len(rows), status,
             (queried - started) * 1000, (perf_counter() - queried) * 1000,
         )
     return rows

@@ -9,6 +9,39 @@ from app.crud import nearby
 
 
 class TestEmptyCache(unittest.TestCase):
+    def test_refresh_log_records_actual_cache_result(self):
+        # 정상 저장, 경로 없음, 내부 처리된 오류, 전파된 오류를 각각 검증한다.
+        for has_route, write_fails, strict, delete_missing, expected in (
+            (True, False, False, False, "success"),
+            (False, False, False, False, "skipped"),
+            (False, False, True, True, "success"),
+            (True, True, False, False, "failed"),
+            (True, True, True, False, "failed"),
+        ):
+            with self.subTest(expected=expected, strict=strict, has_route=has_route):
+                conn, _ = self.make_conn(has_route=has_route)
+                with (
+                    patch.object(nearby, "_fetch_live", return_value=[]),
+                    patch.object(nearby, "execute_values",
+                                 side_effect=psycopg2.OperationalError("저장 실패") if write_fails else None),
+                    patch.object(nearby, "logger") as logger,
+                ):
+                    if write_fails and strict:
+                        with self.assertRaises(psycopg2.OperationalError):
+                            nearby.refresh_nearby_rows(conn, 5, "attraction", "trail",
+                                                      strict_cache=strict, delete_missing_route=delete_missing)
+                    else:
+                        self.assertEqual(nearby.refresh_nearby_rows(
+                            conn, 5, "attraction", "trail", strict_cache=strict,
+                            delete_missing_route=delete_missing), [])
+                log = logger.warning if expected == "failed" else logger.info
+                log.assert_called_once()
+                self.assertIn("status=%s", log.call_args.args[0])
+                self.assertEqual(log.call_args.args[5], expected)
+                if expected == "failed":
+                    logger.info.assert_not_called()
+                    conn.rollback.assert_called_once()
+
     def test_forced_refresh_deletes_only_missing_route_combination(self):
         conn, cursor = self.make_conn(has_route=False)
         with (
