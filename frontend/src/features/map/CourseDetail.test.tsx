@@ -87,6 +87,7 @@ describe("CourseDetail 기록이 있는 화면에서 이동", () => {
     tracking.status = "idle";
     const router = await mount();
     const unloadIsAllowed = () => window.dispatchEvent(new Event("beforeunload", { cancelable: true }));
+    // tracking은 목 객체라 상태만 바꿔서는 다시 그려지지 않는다. 같은 화면 안의 이동으로 다시 그리게 한다.
     const rerender = async () => {
       await act(async () => { await router.navigate(router.state.location.pathname + "?tab=course"); });
     };

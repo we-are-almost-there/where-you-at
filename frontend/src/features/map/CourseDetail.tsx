@@ -198,6 +198,7 @@ export function CourseDetail() {
   const sessionActive = trackingStatus !== "idle";
   // 새로고침·탭 닫기·외부 사이트 이동은 라우터를 거치지 않는다.
   // 일시정지 중에도 기록을 보호하고, 종료하거나 화면을 떠나면 리스너를 해제한다.
+  // iOS 브라우저(앱 내 브라우저 포함)는 이 경고를 띄우지 않으므로 그쪽 보호는 되지 않는다.
   useEffect(() => {
     if (!sessionActive) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
