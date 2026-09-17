@@ -30,7 +30,10 @@ export function isTerminalGeolocationError(code: number): boolean {
 /** idle=시작 전, tracking=따라가는 중, paused=주변 정보를 보느라 잠시 멈춘 상태. */
 export type TrackingStatus = "idle" | "tracking" | "paused";
 
+const AUTO_RESUME_MAX_AGE_MS = 30 * 60 * 1000;
+
 interface SavedTracking {
+  savedAt?: number;
   points: RecordPoint[];
   activeMs: number;
   status: TrackingStatus;
@@ -43,7 +46,13 @@ export function useCourseTracking(sessionKey?: string) {
       && value.points.every((point) => point && [point.lat, point.lng, point.accuracy, point.timestamp].every(Number.isFinite))
       && Number.isFinite(value.activeMs)
       && value.activeMs >= 0 && (value.status === "tracking" || value.status === "paused")
-      ? value : null;
+      ? {
+        ...value,
+        status: value.status === "tracking" && Number.isFinite(value.savedAt)
+          && Date.now() - value.savedAt! >= 0
+          && Date.now() - value.savedAt! < AUTO_RESUME_MAX_AGE_MS
+          ? "tracking" as const : "paused" as const,
+      } : null;
   });
   const watchIdRef = useRef<number | null>(null);
   const watchGenerationRef = useRef(0);
@@ -211,6 +220,7 @@ export function useCourseTracking(sessionKey?: string) {
     const openMs = segmentStartedAtRef.current == null ? 0 : Date.now() - segmentStartedAtRef.current;
     writeSession(sessionKey, startedRef.current ? {
       points: pointsRef.current, activeMs: activeMsRef.current + openMs,
+      savedAt: Date.now(),
       status: watchIdRef.current == null ? "paused" : "tracking",
     } : null);
   }, [sessionKey]);
@@ -232,7 +242,7 @@ export function useCourseTracking(sessionKey?: string) {
     persist();
     if (status === "idle") return;
     const onHidden = () => { if (document.visibilityState === "hidden") persist(); };
-    const timer = setInterval(persist, 1000);
+    const timer = setInterval(persist, 5000);
     window.addEventListener("pagehide", persist);
     document.addEventListener("visibilitychange", onHidden);
     return () => {
@@ -240,7 +250,7 @@ export function useCourseTracking(sessionKey?: string) {
       window.removeEventListener("pagehide", persist);
       document.removeEventListener("visibilitychange", onHidden);
     };
-  }, [persist, status, currentLocation]);
+  }, [persist, status]);
 
   return {
     currentLocation,

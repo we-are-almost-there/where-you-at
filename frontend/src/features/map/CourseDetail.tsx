@@ -171,7 +171,7 @@ function CourseDetailSession() {
   const sessionKey = `course-tracking:${courseId}`;
   const viewKey = `${sessionKey}:view`;
   const [restored] = useState(() => readSession<{
-    direction: Direction; progress: number; startChecked: boolean;
+    direction: Direction; progress: number; startChecked: boolean; tooFarMeters?: number | null;
     record: { summary: TrackingRecord; routeType: RouteType; routePoints: LatLng[] } | null;
   }>(viewKey));
 
@@ -208,6 +208,23 @@ function CourseDetailSession() {
   // 일시정지도 세션이 살아 있는 상태다. 멈춘 사이에 코스나 진행 방향을 갈아타면
   // 이미 쌓인 기록·진행률과 어긋나므로, 그런 조작은 tracking/paused를 가리지 않고 잠근다.
   const sessionActive = trackingStatus !== "idle";
+  const needsSpeechPrimeRef = useRef(sessionActive);
+  useEffect(() => {
+    if (!sessionActive || !needsSpeechPrimeRef.current) return;
+    const onGesture = (event: Event) => {
+      if (event instanceof KeyboardEvent && event.key !== "Enter" && event.key !== " ") return;
+      primeSpeech();
+      needsSpeechPrimeRef.current = false;
+      document.removeEventListener("click", onGesture, true);
+      document.removeEventListener("keydown", onGesture, true);
+    };
+    document.addEventListener("click", onGesture, true);
+    document.addEventListener("keydown", onGesture, true);
+    return () => {
+      document.removeEventListener("click", onGesture, true);
+      document.removeEventListener("keydown", onGesture, true);
+    };
+  }, [sessionActive]);
   // 새로고침·탭 닫기·외부 사이트 이동은 라우터를 거치지 않는다.
   // 일시정지 중에도 기록을 보호하고, 종료하거나 화면을 떠나면 리스너를 해제한다.
   // 이탈 경고를 표시하지 않는 브라우저에서는 sessionStorage의 기록으로 복원한다.
@@ -242,7 +259,8 @@ function CourseDetailSession() {
   const [waypoints, setWaypoints] = useState<LatLng[]>([]);
   const [startAddress, endAddress] = useEndpointAddresses(waypoints);
   const [direction, setDirection] = useState<Direction>(restored?.direction === "reverse" ? "reverse" : "forward"); // 기본 정방향, 토글로 역방향
-  const [progress, setProgress] = useState(restored && Number.isFinite(restored.progress) ? restored.progress : 0); // 0~100, 최고 진행률 유지
+  const [progress, setProgress] = useState(restored && Number.isFinite(restored.progress)
+    && restored.progress >= 0 && restored.progress <= 100 ? restored.progress : 0); // 0~100, 최고 진행률 유지
   // 코스 끝에 닿았다는 뜻. 진행률은 최고치를 유지하므로 한 번 서면 되돌아가지 않는다.
   // 화면과 같은 반올림을 쓴다 — 표본이 마지막 지점에 정확히 떨어지는 일은 없어서 99.9%에 멈추는데,
   // 화면은 그걸 100%로 보여준다. 기준이 어긋나면 사용자 눈에는 완주인데 이탈 경고가 계속 뜬다.
@@ -253,19 +271,25 @@ function CourseDetailSession() {
     return sample && sample.distanceKm >= MIN_LIVE_PACE_KM ? sample.paceSecPerKm : null;
   }); // 실측 평균 페이스(초/km). 아직 못 낼 값이면 null
   const [startChecked, setStartChecked] = useState(restored?.startChecked === true); // 세션당 한 번만 시작 거리 판정
-  const [tooFarMeters, setTooFarMeters] = useState<number | null>(null); // null이 아니면 안내 팝업
+  const [tooFarMeters, setTooFarMeters] = useState<number | null>(() =>
+    sessionActive && typeof restored?.tooFarMeters === "number"
+      && Number.isFinite(restored.tooFarMeters) && restored.tooFarMeters > MAX_START_DISTANCE_M
+      ? restored.tooFarMeters : null,
+  ); // null이 아니면 안내 팝업
 
   const [offCourseMeters, setOffCourseMeters] = useState<number | null>(null); // null이 아니면 이탈 중(배너·유도선)
   const [offCourseGuidePoint, setOffCourseGuidePoint] = useState<LatLng | null>(null); // 유도선이 향할 코스 위 지점
   const wasOffCourseRef = useRef(false); // 이탈 진입 순간(아님→이탈)에만 음성이 나가도록 직전 상태 보관
-  const wasFinishedRef = useRef(false); // 완주 안내도 같은 이유로 직전 상태를 본다
+  const wasFinishedRef = useRef(isFinished); // 복원된 완주는 새 완주로 안내하지 않는다
   // null이 아니면 종료 후 기록 카드. 카드가 열린 뒤 종목을 바꿔도 같은 기록이 달라지지 않게 종료 시점의 종목·경로를 함께 붙잡아 둔다.
   const [record, setRecord] = useState<{ summary: TrackingRecord; routeType: RouteType; routePoints: LatLng[] } | null>(() =>
     isSavedRecord(restored?.record) ? restored.record : null,
   );
   useEffect(() => {
-    writeSession(viewKey, sessionActive || record ? { direction, progress, startChecked, record } : null);
-  }, [viewKey, sessionActive, direction, progress, startChecked, record]);
+    writeSession(viewKey, sessionActive || record ? { direction, progress, startChecked, tooFarMeters, record } : null);
+  }, [viewKey, sessionActive, direction, progress, startChecked, tooFarMeters, record]);
+  // 다른 화면으로 이동하면 저장된 화면 상태를 지운다. 새로고침에서는 React 정리가 실행되지 않는다.
+  useEffect(() => () => { writeSession(viewKey, null); }, [viewKey]);
   const startButtonRef = useRef<HTMLButtonElement>(null); // 모달을 닫은 뒤 포커스를 돌려놓을 자리
   const nearbyTabRef = useRef<HTMLButtonElement>(null); // 주변 정보에서 연 기록 카드는 선택된 탭으로 돌아간다
   const modalWasOpenRef = useRef(false); // 열려 있다 닫힌 순간에만 되돌린다 — 첫 렌더에도 모달은 닫혀 있다
@@ -328,10 +352,12 @@ function CourseDetailSession() {
       if (!startChecked) {
         // 첫 위치가 잡힌 순간에만 "코스에서 너무 멂"을 판정한다.
         // 걷는 도중의 일시적 이탈까지 막으면 오히려 방해가 된다.
-        setStartChecked(true);
         const gap = distanceToCourse(waypoints, currentLocation);
         if (gap > MAX_START_DISTANCE_M) setTooFarMeters(gap);
-        else setProgress((prev) => advanceProgress(prev, waypoints, currentLocation, direction));
+        else {
+          setStartChecked(true);
+          setProgress((prev) => advanceProgress(prev, waypoints, currentLocation, direction));
+        }
       } else if (tooFarMeters == null) {
         setProgress((prev) => advanceProgress(prev, waypoints, currentLocation, direction));
         if (isFinished) {

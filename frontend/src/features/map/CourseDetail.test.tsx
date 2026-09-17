@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CourseDetail } from "./CourseDetail";
+import { announce, primeSpeech } from "./speech";
 
 const tracking = vi.hoisted(() => ({
   status: "paused" as "idle" | "tracking" | "paused",
@@ -15,6 +16,7 @@ const tracking = vi.hoisted(() => ({
 }));
 
 vi.mock("./useCourseTracking", () => ({ useCourseTracking: () => tracking }));
+vi.mock("./speech", () => ({ announce: vi.fn(), primeSpeech: vi.fn() }));
 vi.mock("./components/RecordCard", () => ({
   RecordCard: ({ record, onClose }: { record: { distanceKm: number }; onClose: () => void }) => (
     <div role="dialog" aria-label="restored record">
@@ -200,7 +202,7 @@ describe("CourseDetail 기록이 있는 화면에서 이동", () => {
 });
 
 
-it("restores an unsaved record card and clears it when closed", async () => {
+it("저장하지 않은 기록 카드를 복원하고 닫으면 저장값을 지운다", async () => {
   tracking.status = "idle";
   sessionStorage.setItem("course-tracking:1:view", JSON.stringify({
     direction: "reverse", progress: 85, startChecked: true,
@@ -230,4 +232,76 @@ it.each([
   await mount();
   expect(screen.queryByRole("dialog", { name: "restored record" })).toBeNull();
   expect(sessionStorage.getItem("course-tracking:1:view")).toBeNull();
+});
+
+
+it.each(["tracking", "paused"] as const)("복원된 %s 상태에서 첫 사용자 입력으로 음성 재생을 한 번 준비한다", async (status) => {
+  tracking.status = status;
+  await mount();
+  expect(primeSpeech).not.toHaveBeenCalled();
+  fireEvent.keyDown(document, { key: "Tab" });
+  expect(primeSpeech).not.toHaveBeenCalled();
+  fireEvent.click(document.body);
+  expect(primeSpeech).toHaveBeenCalledTimes(1);
+  fireEvent.click(document.body);
+  fireEvent.keyDown(document, { key: "Enter" });
+  expect(primeSpeech).toHaveBeenCalledTimes(1);
+});
+
+it("복원 후 키보드 실행 입력으로 음성 재생을 준비하고 화면 이동 시 입력 리스너를 해제한다", async () => {
+  tracking.status = "tracking";
+  const router = await mount();
+  fireEvent.keyDown(document, { key: "Enter" });
+  expect(primeSpeech).toHaveBeenCalledTimes(1);
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  await act(async () => { await router.navigate("/courses"); });
+  fireEvent.click(document.body);
+  expect(primeSpeech).toHaveBeenCalledTimes(1);
+});
+
+it.each([-1, 101, null, "100"])("잘못된 진행률 %s는 복원하지 않는다", async (progress) => {
+  tracking.status = "paused";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({ progress }));
+  await mount();
+  expect(JSON.parse(sessionStorage.getItem("course-tracking:1:view")!).progress).toBe(0);
+  expect(announce).not.toHaveBeenCalled();
+});
+
+it("시작 거리 경고를 복원해 경고가 열린 상태에서 진행률이 계산되지 않도록 한다", async () => {
+  tracking.status = "tracking";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({
+    progress: 0, startChecked: false, tooFarMeters: 2000,
+  }));
+  await mount();
+  expect(screen.getByRole("alertdialog", { name: "코스에서 너무 멀어요" })).toBeTruthy();
+  const saved = JSON.parse(sessionStorage.getItem("course-tracking:1:view")!);
+  expect(saved.tooFarMeters).toBe(2000);
+  expect(saved.startChecked).toBe(false);
+  expect(saved.progress).toBe(0);
+});
+
+it.each([100, 99.9])("진행률 %s를 복원하면 완주 음성을 반복하지 않는다", async (progress) => {
+  tracking.status = "paused";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({ progress }));
+  const router = await mount();
+  expect(announce).not.toHaveBeenCalled();
+  tracking.status = "tracking";
+  await act(async () => { await router.navigate("/courses/1?tab=course"); });
+  expect(announce).not.toHaveBeenCalled();
+});
+
+it("기록 카드를 열고 다른 화면으로 이동하면 같은 코스에 다시 들어와도 카드가 열리지 않는다", async () => {
+  tracking.status = "idle";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({
+    record: {
+      summary: { distanceKm: 1, durationMs: 60_000, paceSecPerKm: 60 },
+      routeType: "도보", routePoints: [],
+    },
+  }));
+  const router = await mount();
+  expect(screen.getByRole("dialog", { name: "restored record" })).toBeTruthy();
+  await act(async () => { await router.navigate(-1); });
+  expect(sessionStorage.getItem("course-tracking:1:view")).toBeNull();
+  await act(async () => { await router.navigate("/courses/1"); });
+  expect(screen.queryByRole("dialog", { name: "restored record" })).toBeNull();
 });

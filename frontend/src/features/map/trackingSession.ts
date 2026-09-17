@@ -31,5 +31,9 @@ export function writeSession(key: string, value: unknown) {
   try {
     if (value == null) sessionStorage.removeItem(key);
     else sessionStorage.setItem(key, JSON.stringify(value));
-  } catch { /* 저장소 접근 차단 또는 용량 초과 */ }
+  } catch {
+    // 최신 기록을 저장하지 못하면 오래된 기록이 복원되지 않도록 삭제한다.
+    try { sessionStorage.removeItem(key); }
+    catch { /* 저장소 접근 차단 시에도 따라가기는 계속한다. */ }
+  }
 }
