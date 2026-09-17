@@ -119,7 +119,8 @@ class TestCacheMaintenance(unittest.TestCase):
         ):
             nearby.list_nearby_spots(conn, 5, "attraction", force_refresh=True, strict_cache=True)
         live.assert_called_once()
-        save.assert_called_once_with(conn, 5, "attraction", "trail", [], strict_cache=True)
+        save.assert_called_once_with(conn, 5, "attraction", "trail", [],
+                                     strict_cache=True, delete_missing_route=True)
         conn.cursor.assert_not_called()
 
     def test_failed_live_refresh_does_not_replace_old_cache(self):

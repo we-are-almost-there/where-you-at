@@ -9,6 +9,45 @@ from app.crud import nearby
 
 
 class TestEmptyCache(unittest.TestCase):
+    def test_forced_refresh_deletes_only_missing_route_combination(self):
+        conn, cursor = self.make_conn(has_route=False)
+        with (
+            patch.object(nearby, "_fetch_live", return_value=[]),
+            patch.object(nearby, "execute_values") as insert,
+        ):
+            self.assertEqual(nearby.list_nearby_spots(
+                conn, 5, "attraction", "trail", force_refresh=True, strict_cache=True
+            )[:2], (0, []))
+        self.assertEqual(cursor.execute.call_args.args, (
+            nearby._DELETE_STALE_CACHE_SQL,
+            {"course_id": "5", "category": "attraction", "route_type": "trail"},
+        ))
+        insert.assert_not_called()
+        conn.commit.assert_called_once()
+
+    def test_missing_route_check_failure_preserves_cache(self):
+        conn, cursor = self.make_conn(has_route=False)
+        cursor.execute.side_effect = psycopg2.OperationalError("route lookup failed")
+        with (
+            patch.object(nearby, "_fetch_live", return_value=[]),
+            patch.object(nearby.logger, "exception"),
+        ):
+            with self.assertRaises(psycopg2.OperationalError):
+                nearby.list_nearby_spots(conn, 5, "attraction", force_refresh=True, strict_cache=True)
+        self.assertEqual(cursor.execute.call_count, 1)
+        conn.commit.assert_not_called()
+        conn.rollback.assert_called_once()
+
+    def test_missing_route_delete_failure_rolls_back(self):
+        conn, cursor = self.make_conn(has_route=False)
+        cursor.execute.side_effect = [None, psycopg2.OperationalError("delete failed")]
+        with patch.object(nearby.logger, "exception"):
+            with self.assertRaises(psycopg2.OperationalError):
+                nearby._refresh_cache(conn, 5, "bicycle", "trail", [],
+                                      strict_cache=True, delete_missing_route=True)
+        conn.rollback.assert_called_once()
+        conn.commit.assert_not_called()
+
     def make_conn(self, empty_hit=False, has_route=True):
         conn = MagicMock()
         cursor = conn.cursor.return_value.__enter__.return_value

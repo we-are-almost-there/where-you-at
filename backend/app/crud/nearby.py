@@ -165,11 +165,13 @@ def _refresh_cache(
     rows: list[dict],
     *,
     strict_cache: bool = False,
+    delete_missing_route: bool = False,
 ) -> None:
     """기존 캐시를 교체한다. 장소 목록과 정상 조회의 빈 결과 모두 30일 보관한다.
 
     경로가 있고 0건이면 기존 테이블에 예약 ID의 표시 행 하나를 저장한다. distance_km=0은
     필수 컬럼을 채우는 값이며, 빈 결과 여부는 거리 대신 예약 ID로 판별한다.
+    delete_missing_route=True이면 경로 없는 조합의 기존 캐시만 삭제한다.
 
     DB 오류 시 로그를 남기고 연결 전체의 롤백을 시도한다.
     기본 모드에서는 호출부가 이미 구한 조회 결과를 반환할 수 있도록
@@ -196,6 +198,13 @@ def _refresh_cache(
                     {"course_id": course_id, "route_type": route_type},
                 )
                 if cur.fetchone() is None:
+                    if delete_missing_route:
+                        cur.execute(
+                            _DELETE_STALE_CACHE_SQL,
+                            {"course_id": str(course_id), "category": category,
+                             "route_type": route_type},
+                        )
+                        conn.commit()
                     return
             cur.execute(
                 _DELETE_STALE_CACHE_SQL,
@@ -287,7 +296,8 @@ def _get_rows(
     원본 변경 시 자동 무효화하지 않으며, 만료 또는 수동 재생성 때 다시 조회한다.
     """
     if force_refresh:
-        return refresh_nearby_rows(conn, course_id, category, route_type, strict_cache=strict_cache)
+        return refresh_nearby_rows(conn, course_id, category, route_type,
+                                   strict_cache=strict_cache, delete_missing_route=True)
     if category == "bicycle":
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
@@ -320,8 +330,22 @@ def _get_rows(
     return refresh_nearby_rows(conn, course_id, category, route_type, strict_cache=strict_cache)
 
 
-def refresh_nearby_rows(conn, course_id, category, route_type, *, strict_cache):
-    """Compute first, then atomically replace the cache; failures preserve old rows."""
+def refresh_nearby_rows(
+    conn,
+    course_id: int,
+    category: str,
+    route_type: str,
+    *,
+    strict_cache: bool,
+    delete_missing_route: bool = False,
+) -> list[dict]:
+    """주변 장소를 재계산한 뒤 기존 캐시를 트랜잭션으로 교체한다.
+
+    조회 실패 또는 저장 실패 시 기존 캐시는 보존한다.
+    strict_cache=True이면 캐시 저장 중 발생한 DB 오류를 다시 전파한다.
+    경로 없는 조합의 빈 결과는 저장하지 않는다.
+    delete_missing_route=True이면 경로가 없다고 확인된 조합의 기존 캐시를 삭제한다.
+    """
     started = perf_counter()
     radius = _RADIUS_M.get(route_type, _RADIUS_M["trail"])[category]
     if category == "bicycle":
@@ -330,7 +354,8 @@ def refresh_nearby_rows(conn, course_id, category, route_type, *, strict_cache):
         rows = _fetch_live(conn, course_id, route_type, _CATEGORY_CONTENT_TYPES[category], radius)
     queried = perf_counter()
     try:
-        _refresh_cache(conn, course_id, category, route_type, rows, strict_cache=strict_cache)
+        _refresh_cache(conn, course_id, category, route_type, rows,
+                       strict_cache=strict_cache, delete_missing_route=delete_missing_route)
     finally:
         logger.info(
             "nearby_refresh course_id=%s route_type=%s category=%s rows=%s live_ms=%.1f cache_ms=%.1f",

@@ -72,6 +72,7 @@ def warm_course(conn, course_id: int, *, force_refresh=False, combinations=None)
     """기본적으로 유효한 캐시는 재사용하고, 누락·만료된 캐시는 생성한다.
 
     force_refresh=True이면 유효한 캐시도 다시 계산해 교체한다.
+    이때 경로가 없다고 확인된 조합의 기존 캐시는 삭제하며 빈 결과는 저장하지 않는다.
     combinations를 지정하면 전달된 (route_type, category) 조합만 처리한다.
     지정하지 않으면 모든 경로·카테고리 조합을 처리한다.
     """
@@ -106,7 +107,7 @@ def warm_course(conn, course_id: int, *, force_refresh=False, combinations=None)
 def refresh_course(conn, course_id: int) -> None:
     """기존 캐시를 먼저 삭제하지 않고 강제 재계산한 뒤 조합별로 원자적으로 교체한다.
 
-    경로 없는 조합의 기존 캐시는 삭제하지 않으며 만료까지 유지된다.
+    경로가 없다고 확인된 조합의 기존 캐시는 삭제한다. 조회 오류 시에는 보존한다.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -220,7 +221,7 @@ def main() -> int:
         type=positive_course_id,
         help=(
             "기존 캐시를 먼저 삭제하지 않고 특정 코스를 강제 재계산. "
-            "경로 없는 조합의 기존 캐시는 삭제하지 않으며 만료까지 유지"
+            "경로가 없다고 확인된 조합의 기존 캐시는 삭제하며 조회 오류 시에는 보존"
         ),
     )
     actions.add_argument(
