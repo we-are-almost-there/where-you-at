@@ -20,7 +20,7 @@ export const SUPPORT_LIST_MOCK: SupportListItem[] = [
     id: 2,
     title: "디지털 관광주민증",
     agency: "문화체육관광부·한국관광공사",
-    summary: "89개 인구감소지역에서 입장료·숙박·체험 할인을 받는 무료 모바일 패스",
+    summary: "52개 참여 지역에서 입장료·숙박·체험 할인을 받는 무료 모바일 패스",
     support_type: "관광주민증",
     refund_type: "할인",
     max_amount: null,
@@ -71,7 +71,7 @@ export const SUPPORT_DETAIL_MOCK: Record<number, SupportDetail> = {
     id: 2,
     title: "디지털 관광주민증",
     description:
-      "인구감소지역의 명예 주민이 되어 현지 주민 수준의 할인을 받는 모바일 전용 패스입니다. 대한민국 국민 누구나 무료로 발급받을 수 있으며, 발급 지역을 방문해 매표소·가맹점에서 QR 인증 또는 화면 제시 시 입장료·숙박·식음료·체험 할인을 현장에서 즉시 받습니다(지역별 10~50%). 전국 89개 인구감소지역이 대상이며 연중 상시 운영됩니다. 본인 거주지 지역은 발급이 제한됩니다.",
+      "인구감소지역의 명예 주민이 되어 현지 주민 수준의 할인을 받는 모바일 전용 패스입니다. 대한민국 국민 누구나 무료로 발급받을 수 있으며, 발급 지역을 방문해 매표소·가맹점에서 QR 인증 또는 화면 제시 시 입장료·숙박·식음료·체험 할인을 현장에서 즉시 받습니다(지역별 10~50%). 인구감소지역 89곳 중 참여 52개 지역이 대상이며 연중 상시 운영됩니다. 본인 거주지 지역은 발급이 제한됩니다.",
     is_pre_approval: false,
     apply_url: "https://korean.visitkorea.or.kr/dgtourcard/",
     refund_rules: [],

@@ -45,7 +45,7 @@ const ALL_BANNERS: Banner[] = [
   {
     tag: "방문 혜택",
     title: "인구감소지역 여행할 땐\n현장에서 최대 50% 할인",
-    subtitle: "전국 89개 지역에서 쓰는 무료 모바일 패스",
+    subtitle: "52개 지역에서 쓰는 무료 모바일 패스",
     to: "/support",
     src: pass2400,
     srcSet: `${pass1200} 1200w, ${pass2400} 2400w`,
