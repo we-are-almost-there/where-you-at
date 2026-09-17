@@ -51,7 +51,9 @@ export function CourseExplore() {
   const [userLoc, setUserLoc] = useState<LatLng | null>(null);
   const [geoDenied, setGeoDenied] = useState(false);
   // /api/regions가 준 항목(코스 보유 지역만). 화면에 넘기는 목록은 아래 regionOptions다.
-  const [courseRegionOptions, setCourseRegionOptions] = useState<RegionSelectItem[]>([]);
+  // null은 아직 /api/regions 결과를 모르는 상태다. []와 합치면 정상 빈 응답이나
+  // 재시도 소진도 계속 "조회 전"으로 남아, URL 지역을 임시 항목으로 보완하지 못한다.
+  const [courseRegionOptions, setCourseRegionOptions] = useState<RegionSelectItem[] | null>(null);
   const [regionNames, setRegionNames] = useState<Map<string, string> | null>(null);
   const listScrollRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<HTMLDivElement>(null);
@@ -96,7 +98,12 @@ export function CourseExplore() {
           if (cancelled) return;
           // 재시도가 남았으면 조용히 다시 시도하고, 다 소진되면 원인 추적용으로 한 줄 남긴다.
           if (attempts++ < 5) timer = setTimeout(load, 1500);
-          else console.error("[CourseExplore] regions fetch failed:", err);
+          else {
+            // 재시도를 다 썼으면 "조회 완료·항목 없음"으로 정착시킨다. 그래야 URL에
+            // 지역이 있을 때 region-index.json의 이름으로 현재 필터를 계속 드러낼 수 있다.
+            setCourseRegionOptions([]);
+            console.error("[CourseExplore] regions fetch failed:", err);
+          }
         });
     };
     load();
@@ -115,7 +122,7 @@ export function CourseExplore() {
   // 지역명을 찾아 항목을 하나 얹어, 지금 무엇으로 걸러졌는지 드러낸다.
   const unknownRegion =
     filters.region !== "" &&
-    courseRegionOptions.length > 0 &&
+    courseRegionOptions !== null &&
     !hasRegionOption(courseRegionOptions, filters.region)
       ? filters.region
       : null;
@@ -135,6 +142,7 @@ export function CourseExplore() {
   }, [unknownRegion]);
 
   const regionOptions = useMemo(() => {
+    if (courseRegionOptions === null) return [];
     if (!unknownRegion) return courseRegionOptions;
     const full = regionNames?.get(unknownRegion);
     return full

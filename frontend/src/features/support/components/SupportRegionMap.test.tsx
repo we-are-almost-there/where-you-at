@@ -76,6 +76,9 @@ const STATIC_FILES: Record<string, unknown> = {
 const badgeButtons = () =>
   [...document.querySelectorAll("foreignObject button")] as HTMLButtonElement[];
 
+/** 배지와 별개인 실제 지도 도형. 전국·시도뷰 모두 SVG의 직접 자식 path로 그린다. */
+const mapPaths = () => [...document.querySelectorAll("svg > path")] as SVGPathElement[];
+
 const nameOf = (b: HTMLButtonElement) => b.textContent!.replace("›", "").trim();
 
 /**
@@ -226,6 +229,21 @@ describe("SupportRegionMap — 활성 지역 조회", () => {
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     await waitFor(() => expect(currentSearch()).toBe("?region=12780"));
+  });
+
+  it("지도 도형을 눌러도 배지와 같은 경로로 시도와 지역을 선택한다", async () => {
+    mockedFetchActive.mockResolvedValue([]);
+
+    renderMap();
+
+    await waitFor(() => expect(mapPaths()).toHaveLength(3));
+    // 전국뷰 첫 도형(가도) → 시도뷰
+    mapPaths()[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await waitFor(() => expect(mapPaths()).toHaveLength(2));
+
+    // 시도뷰 두 번째 도형(다군) → 지역 패널
+    mapPaths()[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await waitFor(() => expect(currentSearch()).toBe("?region=12800"));
   });
 
   it("다시 시도가 또 실패하면 안내와 폴백 색칠을 유지한다", async () => {

@@ -70,6 +70,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(navigator, "geolocation");
@@ -173,5 +174,34 @@ describe("CourseExplore 지역 필터 표시", () => {
     await waitFor(() => regionTriggers().forEach((t) => expect(t.textContent).toContain("부산")));
     // 항목이 이미 있으므로 이름 파일을 받을 이유가 없다
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
+  it("지역 목록이 빈 배열이어도 URL 지역 이름을 필터에 띄운다", async () => {
+    vi.mocked(getRegions).mockResolvedValue([]);
+
+    renderAt("/courses?region=28710");
+
+    await waitFor(() =>
+      regionTriggers().forEach((t) => expect(t.textContent).toContain("인천 강화")),
+    );
+  });
+
+  it("지역 목록 재시도를 모두 소진해도 URL 지역 이름을 필터에 띄운다", async () => {
+    vi.useFakeTimers();
+    const error = new TypeError("Failed to fetch");
+    vi.mocked(getRegions).mockRejectedValue(error);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    renderAt("/courses?region=28710");
+
+    // 최초 요청 뒤 5회 재시도한다. 마지막 실패가 옵션을 []로 확정하면 지역명 보완이 시작된다.
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(getRegions).toHaveBeenCalledTimes(6);
+    regionTriggers().forEach((t) => expect(t.textContent).toContain("인천 강화"));
+    expect(consoleError).toHaveBeenCalledWith("[CourseExplore] regions fetch failed:", error);
+
+    consoleError.mockRestore();
   });
 });
