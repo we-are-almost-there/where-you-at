@@ -1,5 +1,8 @@
+from ipaddress import IPv6Address, ip_address, ip_network
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
+from ...core.config import settings
 from ...crud import inquiry as inquiry_crud
 from ...deps import get_db
 from ...schemas.inquiry import InquiryCreate, InquiryCreated
@@ -12,14 +15,30 @@ router = APIRouter(prefix="/api/inquiries", tags=["inquiries"])
 # 메모리 기반이라 서버 재시작 시 초기화되고 서버가 여러 대면 각자 센다 (services/rate_limit.py 참고).
 inquiry_limiter = SlidingWindowLimiter(max_requests=3, window_seconds=600)
 
+_UNVERIFIED_CLOUDFLARE_CLIENT = "unverified-cloudflare-client"
+
 
 def _client_key(request: Request) -> str:
-    # X-Forwarded-For를 여기서 직접 읽지 않는다. 그 헤더는 누구나 바꿔 보낼 수 있어서, 믿으면
-    # 요청마다 값을 바꾸는 것만으로 제한을 피한다.
-    # 프록시 뒤에 배포하면 client.host가 프록시 IP가 되어 모든 이용자가 한 묶음으로 제한된다.
-    # Render는 프록시 주소가 고정되지 않아 FORWARDED_ALLOW_IPS=*를 검토 중인데, 그러면 uvicorn이
-    # X-Forwarded-For의 맨 왼쪽 값을 쓴다. Render가 이용자가 보낸 값을 덮어쓰는지 확인한 뒤 정한다
-    # (README "배포" 참고).
+    # X-Forwarded-For는 사용자가 미리 넣은 값을 Cloudflare가 보존할 수 있으므로 절대 읽지 않는다.
+    # Render 공개 트래픽은 Cloudflare를 거치며, Cloudflare는 원본 서버로 보내는
+    # CF-Connecting-IP를 실제 접속 IP 한 개로 설정한다. 이 배포 경계를 확인한 Render에서만
+    # TRUST_CLOUDFLARE_IP_HEADER=true로 켠다(README "배포" 참고).
+    if settings.trust_cloudflare_ip_header:
+        values = request.headers.getlist("cf-connecting-ip")
+        if len(values) != 1:
+            return _UNVERIFIED_CLOUDFLARE_CLIENT
+        try:
+            # 단일 헤더의 IPv4/IPv6만 허용한다. 쉼표 목록이나 임의 문자열은 한 실패 그룹으로 묶어
+            # 헤더 누락·변조가 요청 제한 우회로 이어지지 않게 한다.
+            ip = ip_address(values[0].strip())
+        except ValueError:
+            return _UNVERIFIED_CLOUDFLARE_CLIENT
+        # IPv6 이용자는 보통 /64 대역을 통째로 받아 그 안에서 주소를 바꿔 보낼 수 있으므로 대역 단위로 센다.
+        if isinstance(ip, IPv6Address):
+            return str(ip_network(f"{ip}/64", strict=False))
+        return str(ip)
+
+    # 로컬 개발에서는 신뢰 프록시 헤더를 켜지 않고 실제 소켓 상대 주소를 사용한다.
     return request.client.host if request.client else "unknown"
 
 
