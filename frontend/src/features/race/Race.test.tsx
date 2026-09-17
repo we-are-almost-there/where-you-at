@@ -97,6 +97,33 @@ function expectSearchParams(expected: Record<string, string>) {
   }
 }
 
+it("필터와 보기 전환의 선택 상태를 aria-pressed로 알린다", async () => {
+  await open("/race");
+
+  expect(screen.getByRole("button", { name: "전체", pressed: true })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "목록", pressed: true })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "캘린더", pressed: false })).toBeTruthy();
+
+  for (const name of ["러닝", "자전거"]) {
+    fireEvent.click(screen.getByRole("button", { name, pressed: false }));
+    expect(screen.getByRole("button", { name, pressed: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "전체", pressed: false })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name, pressed: true }));
+    expect(screen.getByRole("button", { name: "전체", pressed: true })).toBeTruthy();
+  }
+
+  fireEvent.click(screen.getByRole("button", { name: "러닝" }));
+  fireEvent.click(screen.getByRole("button", { name: "전체" }));
+  expect(screen.getByRole("button", { name: "러닝", pressed: false })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "캘린더" }));
+  expect(screen.getByRole("button", { name: "캘린더", pressed: true })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "목록", pressed: false })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "목록" }));
+  expect(screen.getByRole("button", { name: "목록", pressed: true })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "캘린더", pressed: false })).toBeTruthy();
+});
+
 it("화면을 떠나면 전체 조회 요청을 취소한다", async () => {
   await open();
   const signal = vi.mocked(fetchAllRaces).mock.calls.at(-1)?.[1];
