@@ -125,7 +125,7 @@ describe("CourseDetail 기록이 있는 화면에서 이동", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const router = await mount();
     if (source === "sidebar") fireEvent.click(screen.getByRole("button", { name: "메뉴" }));
-    const container = source === "sidebar" ? screen.getByRole("complementary") : screen.getByRole("banner");
+    const container = source === "sidebar" ? screen.getByRole("dialog", { name: "메뉴" }) : screen.getByRole("banner");
     const link = () => within(container).getAllByRole("link").find((item) => item.getAttribute("href") === destination)!;
     fireEvent.click(link());
     expect(confirm).toHaveBeenCalledTimes(1);
