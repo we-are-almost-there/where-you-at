@@ -101,6 +101,14 @@ const BADGE_H_EM_SIDO = 2.4;
 // 미해당 지역은 알약 없이 글자만 그리므로 좌우 패딩(약 1.3em)만큼 폭이 준다.
 const badgeWidthEm = (name: string, active: boolean) => name.length + (active ? 1.8 : 0.4);
 
+/**
+ * 누르면 할 일.
+ *   sido    그 도로 드릴다운한다 (전국뷰)
+ *   region  지역 패널을 연다 (시도뷰의 시군구, 그리고 하위가 하나뿐인 세종)
+ * null이면 누를 수 없다 — 대응하는 DB 지역이 없어 패널을 열 수 없는 도형뿐이다.
+ */
+type MapGo = { kind: "sido"; code: string } | { kind: "region"; code: string } | null;
+
 /** 지도에 그릴 한 조각. 전국뷰는 시도, 시도뷰는 시군구가 들어온다. */
 type MapItem = {
   key: string;
@@ -109,12 +117,10 @@ type MapItem = {
   /** 색칠 여부 — 지금 신청 가능한 제도가 있는가 */
   active: boolean;
   /**
-   * 눌러서 들어갈 수 있는가. 지원 대상 지역이거나, 색칠된 곳이다.
-   * active와 기준은 다르지만 포함 관계다 — 색칠된 곳은 반드시 누를 수 있다.
+   * 누르면 할 일. 색칠 여부와는 무관하다 — 회색이어도 패널에는 보여줄 게 있다
+   * (제도 없음 안내 + 그 지역 코스 링크).
    */
-  clickable: boolean;
-  /** 클릭 시 넘길 코드. 누를 수 없으면 null */
-  target: string | null;
+  go: MapGo;
 };
 
 /** 정적 파일에서 한 번만 만들어 두는 것들. 활성 지역 조회와 수명이 다르다. */
@@ -251,17 +257,6 @@ export function SupportRegionMap() {
         ? (mapData?.supportRegions ?? EMPTY_CODES)
         : EMPTY_CODES;
 
-  // 클릭 대상. 색칠과 기준이 다르다.
-  //   색   = "지금 신청 가능한 제도가 있는가" — 조회 결과라 시간에 따라 변한다
-  //   클릭 = "들어가서 볼 게 있는가"        — 정적 목록이라 항상 안다
-  //
-  // 다만 이 변수가 최종 클릭 대상은 아니다. 아래 viewItems에서 조회 결과(active)를
-  // 합친 것이 최종이다 — 색칠된 곳이 이 목록 밖일 수 있고, 그때도 눌려야 한다.
-  // 회색이어도 패널에는 보여줄 게 있다(제도 없음 안내 + 그 지역 코스 링크). 클릭까지
-  // 색에 묶으면 조회가 끝나기 전에는 지도 전체가 눌리지 않아, 정적 파일만 받으면
-  // 바로 쓸 수 있던 지도가 API 왕복을 기다리는 동안 죽어 있다.
-  const clickableCodes = mapData?.supportRegions ?? EMPTY_CODES;
-
   const regions = mapData?.regions ?? null;
   const sido = mapData?.sido ?? null;
 
@@ -324,47 +319,60 @@ export function SupportRegionMap() {
     () => sidoCodesOf(regions, supportCodes),
     [regions, supportCodes],
   );
-  // 드릴다운은 색과 무관하게 열어 둔다. 그 도에 지원 대상 시군구가 하나라도 있으면
-  // 들어갈 이유가 있고, 조회가 끝나기 전에도 그건 이미 안다.
-  const clickableSidoCodes = useMemo(
-    () => sidoCodesOf(regions, clickableCodes),
-    [regions, clickableCodes],
-  );
+  // 시도별 하위 시군구 도형. 드릴다운해서 볼 게 있는지 판단에 쓴다.
+  // 값이 null인 항목은 도형은 있지만 대응하는 DB 지역이 없는 경우다.
+  const subRegionsBySido = useMemo(() => {
+    const map = new Map<string, (string | null)[]>();
+    for (const r of regions ?? []) {
+      if (!r.sidoCode) continue;
+      const list = map.get(r.sidoCode);
+      if (list) list.push(r.regionCode);
+      else map.set(r.sidoCode, [r.regionCode]);
+    }
+    return map;
+  }, [regions]);
 
+  // 클릭은 색칠과 묶지 않는다. 색은 "지금 신청 가능한 제도가 있는가"라 조회 결과에
+  // 따라 변하지만, 누를 수 있는지는 대응하는 DB 지역이 있는지만 보면 된다 — 회색이어도
+  // 패널에는 보여줄 게 있다(제도 없음 안내 + 그 지역 코스 링크).
+  //
+  // 예전에는 인구감소지역 목록(supportRegions)으로 클릭을 가렸다. 같은 회색인데
+  // 어디는 눌리고 어디는 안 눌려, 무엇이 기준인지 화면만 보고는 알 수 없었다.
+  // 색칠과 클릭이 갈라져 "보이는데 안 눌리는" 지역이 생기는 문제도 함께 없앤다.
   const viewItems = useMemo((): MapItem[] => {
     if (selectedSido == null) {
       return (sido?.features ?? []).map((f) => {
         const code = String(f.properties?.sido_code);
+        const sub = subRegionsBySido.get(code) ?? [];
+        // 하위 도형이 하나뿐인 시도(세종)는 드릴다운해도 같은 땅이 한 번 더 나온다.
+        // 그 한 단계를 건너뛰고 바로 패널을 연다.
+        const go: MapGo =
+          sub.length === 1
+            ? sub[0] != null
+              ? { kind: "region", code: sub[0] }
+              : null
+            : sub.length > 1
+              ? { kind: "sido", code }
+              : null;
         return {
           key: code,
           geometry: f.geometry,
           name: String(f.properties?.sido_name),
           active: activeSidoCodes.has(code),
-          // 시군구와 같은 이유로 active를 합친다 (아래 주석 참고).
-          // 색칠된 시도로 드릴다운조차 못 하면 그 안의 지역에 닿을 길이 없다.
-          clickable: clickableSidoCodes.has(code) || activeSidoCodes.has(code),
-          target: code,
+          go,
         };
       });
     }
     return (regions ?? [])
       .filter((r) => r.sidoCode === selectedSido)
-      .map((r) => {
-        const active = r.regionCode != null && supportCodes.has(r.regionCode);
-        // 색칠된 곳은 반드시 누를 수 있어야 한다. clickableCodes는 인구감소지역
-        // 목록이고 API는 거기 매이지 않으므로, 비인구감소지역에 제도가 하나 걸리면
-        // 색만 칠하고 클릭은 막히는 지역이 생긴다. active를 먼저 합친다.
-        const clickable = active || (r.regionCode != null && clickableCodes.has(r.regionCode));
-        return {
-          key: `${selectedSido}-${r.feature.properties?.sgg_code ?? r.name}`,
-          geometry: r.feature.geometry,
-          name: r.name,
-          active,
-          clickable,
-          target: clickable ? r.regionCode : null,
-        };
-      });
-  }, [selectedSido, sido, regions, activeSidoCodes, clickableSidoCodes, supportCodes, clickableCodes]);
+      .map((r) => ({
+        key: `${selectedSido}-${r.feature.properties?.sgg_code ?? r.name}`,
+        geometry: r.feature.geometry,
+        name: r.name,
+        active: r.regionCode != null && supportCodes.has(r.regionCode),
+        go: r.regionCode != null ? ({ kind: "region", code: r.regionCode } as const) : null,
+      }));
+  }, [selectedSido, sido, regions, activeSidoCodes, subRegionsBySido, supportCodes]);
 
   // 현재 뷰 대상의 경위도 범위에 맞춰 projection 계산 (전국이든 시도든).
   // 인셋을 적용한 좌표 기준으로 bbox를 잡으므로, project에 넘기는 좌표도
@@ -416,13 +424,12 @@ export function SupportRegionMap() {
       .join("");
 
   // 배지 위치 (중심 좌표).
-  // 전국뷰는 지원지역이 있는 시도만, 시도뷰는 미해당 시군구까지 라벨을 단다.
-  // 다만 좁은 화면에서는 전남처럼 시군구가 많은 도에서 27개가 겹치므로 회색 라벨은 접는다
-  // — 회색 도형은 그대로 남아 도의 윤곽은 유지된다.
+  // 전국·시도 모두 그리는 조각 전부에 이름을 단다. 지원 대상 여부로 거르면
+  // 서울·대전·울산·세종·제주가 이름 없는 땅으로 남아, 어디가 어디인지 알려면
+  // 눌러 봐야 한다 — 지도에서 지역명은 색칠과 별개로 필요한 정보다.
   const badges = useMemo(() => {
     if (!project) return [];
-    const src = selectedSido == null ? viewItems.filter((it) => it.clickable) : viewItems;
-    return src.map((it) => {
+    return viewItems.map((it) => {
       const rings = insetRings(it.geometry);
       // 가장 큰 링의 중심 (작은 섬 말고 본체에 배지)
       let best = rings[0];
@@ -433,11 +440,11 @@ export function SupportRegionMap() {
         sx += x; sy += y; n++;
       });
       return {
-        key: it.key, name: it.name, active: it.active, clickable: it.clickable,
-        target: it.target, cx: sx / n, cy: sy / n,
+        key: it.key, name: it.name, active: it.active, go: it.go,
+        cx: sx / n, cy: sy / n,
       };
     });
-  }, [selectedSido, viewItems, project]);
+  }, [viewItems, project]);
 
   // 배지 충돌 해소 (전국·시도 공통).
   // 배지가 화면상 고정 크기라 viewBox 단위 크기는 축소 배율만큼 커진다 — 간격도 같이 키운다.
@@ -483,6 +490,27 @@ export function SupportRegionMap() {
     }
     return nodes;
   }, [badges, badgeFont, viewW, viewH, selectedSido]);
+
+  // 조각을 눌렀을 때와 배지를 눌렀을 때가 갈리면 같은 지역이 두 가지로 움직인다.
+  const goTo = (go: MapGo) => {
+    if (!go) return;
+    if (go.kind === "sido") setSelectedSido(go.code);
+    else setSearchParams({ region: go.code });
+  };
+
+  /**
+   * 회색 배지가 왜 회색인지. 알약(활성)은 이름만으로 뜻이 통하므로 null이다.
+   * 조회가 끝나기 전에는 제도가 없는지 모른다. 화면에는 '확인 중' 칩이 떠 있지만
+   * 배지만 듣는 사람에게는 그 문맥이 없으므로, 아직 모르는 사실을 단정하지 않는다.
+   */
+  const badgeNote = (b: { active: boolean; go: MapGo }): string | null =>
+    b.go == null
+      ? "선택할 수 없음"
+      : b.active
+        ? null
+        : active.status === "ready"
+          ? "진행 중인 제도 없음"
+          : "신청 정보 확인 중";
 
   if (error) return <SupportErrorText error={error} className="py-16" />;
   if (!sido || !regions)
@@ -569,17 +597,18 @@ export function SupportRegionMap() {
             // 확실히 뜨고, 회색이지만 누를 수 있는 곳은 한 톤만 어두워진다. 회색을 강조색으로
             // 물들이면 "지금 신청 가능"으로 읽힌다.
             const hot = hovered === it.key;
+            const clickable = it.go != null;
             const fill = it.active
               ? hot
                 ? COLOR_HOVER
                 : nation
-                  ? SIDO_COLOR[it.target ?? ""] ?? COLOR_SIGUNGU
+                  ? SIDO_COLOR[it.key] ?? COLOR_SIGUNGU
                   : sidoColor
               : nation
-                ? hot && it.clickable
+                ? hot && clickable
                   ? COLOR_INACTIVE_HOVER
                   : COLOR_INACTIVE
-                : hot && it.clickable
+                : hot && clickable
                   ? COLOR_OFF_HOVER
                   : COLOR_OFF;
             return (
@@ -589,14 +618,10 @@ export function SupportRegionMap() {
                 fill={fill}
                 stroke={it.active ? "#fff" : COLOR_OFF_STROKE}
                 strokeWidth={nation ? 0.8 : 0.6}
-                className={it.clickable ? "cursor-pointer transition-colors" : ""}
-                onMouseEnter={() => it.clickable && setHovered(it.key)}
+                className={clickable ? "cursor-pointer transition-colors" : ""}
+                onMouseEnter={() => clickable && setHovered(it.key)}
                 onMouseLeave={() => setHovered(null)}
-                onClick={() => {
-                  if (!it.clickable || !it.target) return;
-                  if (nation) setSelectedSido(it.target);
-                  else setSearchParams({ region: it.target });
-                }}
+                onClick={() => goTo(it.go)}
               />
             );
           })}
@@ -618,70 +643,56 @@ export function SupportRegionMap() {
         })}
 
         {/* 배지 (전국뷰=시도, 시도뷰=시군구) — 크기는 viewBox가 아니라 화면 기준으로 고정 */}
-        {badgePositions.map((b) => (
-          <foreignObject
-            key={`badge-${b.key}`}
-            x={b.x - b.halfW}
-            y={b.y - 0.75 * badgeFont}
-            width={b.halfW * 2}
-            height={1.5 * badgeFont}
-            style={{ overflow: "visible" }}
-          >
-            {/* 알약은 글자 폭에 딱 맞게(inline-flex) 두고, 이 래퍼가 기준점에 정확히 가운데 맞춘다.
-                버튼을 foreignObject의 직접 자식으로 두면 폭이 추정치로 늘어나 좌우가 어긋난다. */}
-            <div className="flex h-full w-full items-center justify-center">
-              <button
-                type="button"
-                disabled={!b.clickable}
-                // 알약(활성)은 이름만으로 뜻이 통한다. 나머지는 왜 다른지 읽어 줘야 한다 —
-                // 회색이어도 눌리는 곳과 아예 대상이 아닌 곳은 다른 이야기다.
-                aria-label={
-                  b.active
-                    ? undefined
-                    : !b.clickable
-                      ? `${b.name} (지원 대상 아님)`
-                      : active.status === "ready"
-                        ? `${b.name} (진행 중인 제도 없음)`
-                        // 조회가 끝나기 전에는 제도가 없는지 모른다. 화면에는 '확인 중'
-                        // 칩이 떠 있지만 배지만 듣는 사람에게는 그 문맥이 없으므로,
-                        // 아직 모르는 사실을 없다고 단정하지 않는다.
-                        : `${b.name} (신청 정보 확인 중)`
-                }
-                onClick={() => {
-                  if (!b.clickable || !b.target) return;
-                  if (selectedSido == null) setSelectedSido(b.target);
-                  else setSearchParams({ region: b.target });
-                }}
-                onMouseEnter={() => b.clickable && setHovered(b.key)}
-                onMouseLeave={() => setHovered(null)}
-                // 패딩·모서리를 em으로 두어 글자 크기 한 곳만 바꾸면 통째로 따라 커진다
-                style={
-                  b.active
-                    ? { fontSize: `${badgeFont}px` }
-                    : {
-                        fontSize: `${badgeFont}px`,
-                        // 알약 대신 흰 테두리로 지도 색 위에서 글자를 읽히게 한다
-                        textShadow: "0 0 0.25em #fff, 0 0 0.25em #fff, 0 0 0.25em #fff",
-                      }
-                }
-                className={`inline-flex items-center gap-[0.15em] whitespace-nowrap font-bold transition-colors ${
-                  b.active
-                    ? `cursor-pointer rounded-full px-[0.65em] py-[0.2em] shadow-[0px_1px_4px_0px_rgba(0,0,0,0.18)] ${
-                        hovered === b.key ? "bg-accent text-white" : "bg-white text-ink"
-                      }`
-                    : b.clickable
-                      ? "cursor-pointer text-caption hover:text-ink"
-                      : "cursor-default text-caption"
-                }`}
-              >
-                {b.name}
-                {b.active && (
-                  <span className={hovered === b.key ? "text-white/70" : "text-caption"}>›</span>
-                )}
-              </button>
-            </div>
-          </foreignObject>
-        ))}
+        {badgePositions.map((b) => {
+          const note = badgeNote(b);
+          return (
+            <foreignObject
+              key={`badge-${b.key}`}
+              x={b.x - b.halfW}
+              y={b.y - 0.75 * badgeFont}
+              width={b.halfW * 2}
+              height={1.5 * badgeFont}
+              style={{ overflow: "visible" }}
+            >
+              {/* 알약은 글자 폭에 딱 맞게(inline-flex) 두고, 이 래퍼가 기준점에 정확히 가운데 맞춘다.
+                  버튼을 foreignObject의 직접 자식으로 두면 폭이 추정치로 늘어나 좌우가 어긋난다. */}
+              <div className="flex h-full w-full items-center justify-center">
+                <button
+                  type="button"
+                  disabled={b.go == null}
+                  aria-label={note ? `${b.name} (${note})` : undefined}
+                  onClick={() => goTo(b.go)}
+                  onMouseEnter={() => b.go != null && setHovered(b.key)}
+                  onMouseLeave={() => setHovered(null)}
+                  // 패딩·모서리를 em으로 두어 글자 크기 한 곳만 바꾸면 통째로 따라 커진다
+                  style={
+                    b.active
+                      ? { fontSize: `${badgeFont}px` }
+                      : {
+                          fontSize: `${badgeFont}px`,
+                          // 알약 대신 흰 테두리로 지도 색 위에서 글자를 읽히게 한다
+                          textShadow: "0 0 0.25em #fff, 0 0 0.25em #fff, 0 0 0.25em #fff",
+                        }
+                  }
+                  className={`inline-flex items-center gap-[0.15em] whitespace-nowrap font-bold transition-colors ${
+                    b.active
+                      ? `cursor-pointer rounded-full px-[0.65em] py-[0.2em] shadow-[0px_1px_4px_0px_rgba(0,0,0,0.18)] ${
+                          hovered === b.key ? "bg-accent text-white" : "bg-white text-ink"
+                        }`
+                      : b.go != null
+                        ? "cursor-pointer text-caption hover:text-ink"
+                        : "cursor-default text-caption"
+                  }`}
+                >
+                  {b.name}
+                  {b.active && (
+                    <span className={hovered === b.key ? "text-white/70" : "text-caption"}>›</span>
+                  )}
+                </button>
+              </div>
+            </foreignObject>
+          );
+        })}
       </svg>
       </div>
     </div>
