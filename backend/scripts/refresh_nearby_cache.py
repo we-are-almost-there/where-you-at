@@ -69,7 +69,12 @@ def clean_expired(conn) -> int:
 
 
 def warm_course(conn, course_id: int, *, force_refresh=False, combinations=None) -> None:
-    """유효한 캐시는 사용하고, 없는 캐시는 생성한다."""
+    """기본적으로 유효한 캐시는 재사용하고, 누락·만료된 캐시는 생성한다.
+
+    force_refresh=True이면 유효한 캐시도 다시 계산해 교체한다.
+    combinations를 지정하면 전달된 (route_type, category) 조합만 처리한다.
+    지정하지 않으면 모든 경로·카테고리 조합을 처리한다.
+    """
     if combinations is None:
         combinations = [(route, category) for route in _ROUTE_TYPES for category in _CATEGORIES]
     for route_type, category in combinations:
@@ -99,7 +104,10 @@ def warm_course(conn, course_id: int, *, force_refresh=False, combinations=None)
 
 
 def refresh_course(conn, course_id: int) -> None:
-    """대상 코스의 캐시를 재계산한 뒤 조합별로 원자적으로 교체한다."""
+    """기존 캐시를 먼저 삭제하지 않고 강제 재계산한 뒤 조합별로 원자적으로 교체한다.
+
+    경로 없는 조합의 기존 캐시는 삭제하지 않으며 만료까지 유지된다.
+    """
     with conn.cursor() as cur:
         cur.execute(
             "SELECT 1 FROM course WHERE id = %s",
@@ -210,7 +218,10 @@ def main() -> int:
     actions.add_argument(
         "--course-id",
         type=positive_course_id,
-        help="특정 코스 캐시 재계산 후 교체",
+        help=(
+            "기존 캐시를 먼저 삭제하지 않고 특정 코스를 강제 재계산. "
+            "경로 없는 조합의 기존 캐시는 삭제하지 않으며 만료까지 유지"
+        ),
     )
     actions.add_argument(
         "--refresh-expiring",
@@ -238,7 +249,7 @@ def main() -> int:
         return warm_all()
     if args.refresh_expiring is not None:
         if not 0 < args.refresh_expiring <= 720:
-            parser.error("HOURS must be greater than 0 and at most 720")
+            parser.error("HOURS는 0보다 크고 720 이하여야 합니다.")
         return warm_all(refresh_before_hours=args.refresh_expiring)
 
     conn = get_db_connection()

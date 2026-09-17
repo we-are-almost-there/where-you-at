@@ -59,6 +59,19 @@ WHERE ns.base_type = 'course' AND ns.base_id = %(course_id)s
 ORDER BY ns.distance_km, ns.nearby_content_id
 """
 
+# 기존 geom 공간 인덱스로 후보를 먼저 거르기 위한 보수적인 검색 범위.
+# 최종 포함 여부와 거리는 기존 geography 조건으로 계산한다.
+#
+# 국내 주변 범위(경도 120~135, 위도 30~45)에서는 경도 1도가 약 78km 이상이다.
+# 반경(m)을 70000으로 나누면 경도·위도 양쪽에 필요한 범위보다 넓은 여유를 둔다.
+# 111000(위도 1도의 근삿값)으로 바꾸면 경도 방향 범위가 좁아져 장소가 누락될 수 있다.
+#
+# ST_Segmentize의 1000은 geography 경로를 최대 1km 길이의 구간으로 나누는 값이다.
+# 추가 0.001도는 구간 사이 곡선과 수치 오차를 고려한 보수적인 여유이며,
+# 엄밀히 계산한 최대 오차를 뜻하지 않는다.
+#
+# 위 좌표 범위를 벗어나는 경로는 환산 가정을 적용하지 않고,
+# 전 세계 경계 상자를 사용해 후보 범위를 제한하지 않는다.
 _COURSE_BOUNDS_CTE = """
 WITH course_line AS (
     SELECT ST_MakeLine(ST_MakePoint(lng, lat) ORDER BY sequence_order) AS geom
@@ -209,7 +222,7 @@ def _refresh_cache(
             else:
                 values = [("course", str(course_id), category, _EMPTY_CONTENT_ID,
                            route_type, 0, now, expires)]
-            execute_values(cur, _UPSERT_CACHE_SQL, values)
+            execute_values(cur, _UPSERT_CACHE_SQL, values, page_size=1000)
         conn.commit()
 
     except psycopg2.Error:
