@@ -34,9 +34,26 @@ const AUTO_RESUME_MAX_AGE_MS = 30 * 60 * 1000;
 
 interface SavedTracking {
   savedAt?: number;
+  currentLocation?: TrackedLocation | null;
   points: RecordPoint[];
   activeMs: number;
   status: TrackingStatus;
+}
+
+function restoreLocation(saved: SavedTracking | null): TrackedLocation | null {
+  const location = saved?.currentLocation;
+  if (location && typeof location === "object"
+    && Number.isFinite(location.lat) && Math.abs(location.lat) <= 90
+    && Number.isFinite(location.lng) && Math.abs(location.lng) <= 180
+    && Number.isFinite(location.accuracy) && location.accuracy >= 0
+    && (location.heading === null
+      || (Number.isFinite(location.heading) && location.heading >= 0 && location.heading < 360))) {
+    return { lat: location.lat, lng: location.lng, accuracy: location.accuracy, heading: location.heading };
+  }
+  // 위치를 따로 저장하지 않은 기존 세션은 마지막 기록 표본으로 마커를 복원한다.
+  const point = saved?.points.at(-1);
+  return point && Math.abs(point.lat) <= 90 && Math.abs(point.lng) <= 180 && point.accuracy >= 0
+    ? { lat: point.lat, lng: point.lng, accuracy: point.accuracy, heading: null } : null;
 }
 
 export function useCourseTracking(sessionKey?: string) {
@@ -67,7 +84,9 @@ export function useCourseTracking(sessionKey?: string) {
   // 성공 표본이 소비할 때까지 유지한다 — 에러 콜백에서 내리면 watch가 살아남는 에러 뒤에
   // 들어온 첫 표본이 경계를 잃고, 정지 중 이동한 거리가 누적 거리에 섞인다.
   const resumedRef = useRef(saved != null);
-  const [currentLocation, setCurrentLocation] = useState<TrackedLocation | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<TrackedLocation | null>(() => restoreLocation(saved));
+  // 저장 콜백은 최신 위치를 읽되 위치 표본마다 저장 타이머를 다시 등록하지 않는다.
+  const currentLocationRef = useRef(currentLocation);
   const [status, setStatus] = useState<TrackingStatus>(saved?.status ?? "idle");
   const [error, setError] = useState<string | null>(null);
   // 실제로 따라가는 중에만 화면을 붙잡는다. 일시정지는 "당분간 안 움직인다"는 선언이라 놓아준다.
@@ -110,12 +129,14 @@ export function useCourseTracking(sessionKey?: string) {
       watchIdRef.current = navigator.geolocation.watchPosition(
         ({ coords, timestamp }) => {
           if (generation !== watchGenerationRef.current) return;
-          setCurrentLocation({
+          const location: TrackedLocation = {
             lat: coords.latitude,
             lng: coords.longitude,
             accuracy: coords.accuracy,
             heading: coords.heading,
-          });
+          };
+          currentLocationRef.current = location;
+          setCurrentLocation(location);
           pointsRef.current.push({
             lat: coords.latitude,
             lng: coords.longitude,
@@ -142,6 +163,7 @@ export function useCourseTracking(sessionKey?: string) {
           }
           // 표본이 하나도 없으면 남길 기록이 없다(시작하자마자 거부당한 경우).
           setStatus("idle");
+          currentLocationRef.current = null;
           setCurrentLocation(null);
           resetSession();
         },
@@ -172,6 +194,7 @@ export function useCourseTracking(sessionKey?: string) {
     clearActiveWatch();
     closeSegment();
     setStatus("idle");
+    currentLocationRef.current = null;
     setCurrentLocation(null);
     setError(null);
 
@@ -221,6 +244,7 @@ export function useCourseTracking(sessionKey?: string) {
     writeSession(sessionKey, startedRef.current ? {
       points: pointsRef.current, activeMs: activeMsRef.current + openMs,
       savedAt: Date.now(),
+      currentLocation: currentLocationRef.current,
       status: watchIdRef.current == null ? "paused" : "tracking",
     } : null);
   }, [sessionKey]);
