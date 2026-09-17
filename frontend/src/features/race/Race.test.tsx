@@ -86,7 +86,18 @@ function currentSearch() {
   return screen.getByTestId("location-search").textContent;
 }
 
-it("exposes filter and view selection through pressed state", async () => {
+function goBack() {
+  fireEvent.click(screen.getByRole("button", { name: "뒤로" }));
+}
+
+function expectSearchParams(expected: Record<string, string>) {
+  const params = new URLSearchParams(currentSearch() ?? "");
+  for (const [key, value] of Object.entries(expected)) {
+    expect(params.get(key)).toBe(value);
+  }
+}
+
+it("필터와 보기 전환의 선택 상태를 aria-pressed로 알린다", async () => {
   await open("/race");
 
   expect(screen.getByRole("button", { name: "전체", pressed: true })).toBeTruthy();
@@ -112,17 +123,6 @@ it("exposes filter and view selection through pressed state", async () => {
   expect(screen.getByRole("button", { name: "목록", pressed: true })).toBeTruthy();
   expect(screen.getByRole("button", { name: "캘린더", pressed: false })).toBeTruthy();
 });
-
-function goBack() {
-  fireEvent.click(screen.getByRole("button", { name: "뒤로" }));
-}
-
-function expectSearchParams(expected: Record<string, string>) {
-  const params = new URLSearchParams(currentSearch() ?? "");
-  for (const [key, value] of Object.entries(expected)) {
-    expect(params.get(key)).toBe(value);
-  }
-}
 
 it("화면을 떠나면 전체 조회 요청을 취소한다", async () => {
   await open();
