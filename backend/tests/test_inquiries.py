@@ -1,7 +1,8 @@
 """POST /api/inquiries 라우터 테스트 (unittest, DB 없이 crud patch).
 
-test_course_gpx.py와 같은 방식이다. 입력 검증, 동의 확인, 허니팟, 요청 횟수 제한이
-라우터에서 올바르게 갈리는지 확인한다.
+입력 검증, 동의 확인, 허니팟, 요청 횟수 제한이 라우터에서 올바르게 갈리는지 확인한다.
+라우터는 검사를 통과한 뒤에만 DB에 연결하므로(get_db 의존성을 쓰지 않음), 연결 함수
+app.deps.get_db_connection을 patch해 연결을 열었는지와 닫았는지를 함께 본다.
 
 다루지 않음 (DB가 있어야 확인 가능):
     - inquiry 테이블의 check 제약과 consented_at 저장
@@ -17,12 +18,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from app.api.routers import inquiries as inquiries_router
-from app.deps import get_db
 from app.main import app
-
-
-def _override_get_db():
-    yield MagicMock()
 
 
 VALID = {
@@ -107,16 +103,14 @@ class TestClientKey(unittest.TestCase):
 class TestCreateInquiry(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        app.dependency_overrides[get_db] = _override_get_db
         cls.client = TestClient(app)
-
-    @classmethod
-    def tearDownClass(cls):
-        app.dependency_overrides.pop(get_db, None)
 
     def setUp(self):
         # 제한 기록은 모듈 전역이라 테스트끼리 섞이지 않게 매번 비운다.
         inquiries_router.inquiry_limiter.reset()
+        connect_patcher = patch("app.deps.get_db_connection", return_value=MagicMock())
+        self.connect = connect_patcher.start()
+        self.addCleanup(connect_patcher.stop)
 
     def test_valid_inquiry_is_saved_and_notification_is_scheduled(self, mock_create, mock_notify):
         res = self.client.post("/api/inquiries", json=VALID)
@@ -216,6 +210,55 @@ class TestCreateInquiry(unittest.TestCase):
         mock_notify.assert_called_once_with(
             category="코스 탐색", email="user@example.com", content=VALID["content"]
         )
+
+    def test_saved_inquiry_uses_one_connection_and_closes_it(self, mock_create, mock_notify):
+        conn = self.connect.return_value
+
+        self.client.post("/api/inquiries", json=VALID)
+
+        self.connect.assert_called_once()
+        mock_create.assert_called_once_with(
+            conn, category="코스 탐색", email="user@example.com", content=VALID["content"]
+        )
+        conn.close.assert_called_once()
+
+    def test_connection_is_closed_when_saving_fails(self, mock_create, mock_notify):
+        mock_create.side_effect = RuntimeError("insert failed")
+
+        with self.assertRaises(RuntimeError):
+            self.client.post("/api/inquiries", json=VALID)
+
+        self.connect.return_value.close.assert_called_once()
+        mock_notify.assert_not_called()
+
+    def test_honeypot_request_does_not_open_db_connection(self, mock_create, mock_notify):
+        self.client.post("/api/inquiries", json={**VALID, "website": "x"})
+
+        self.connect.assert_not_called()
+
+    def test_rate_limited_request_does_not_open_db_connection(self, mock_create, mock_notify):
+        for _ in range(3):
+            self.client.post("/api/inquiries", json=VALID)
+        self.assertEqual(self.connect.call_count, 3)
+
+        res = self.client.post("/api/inquiries", json=VALID)
+
+        self.assertEqual(res.status_code, 429)
+        self.assertEqual(self.connect.call_count, 3)
+
+    def test_db_unavailable_keeps_honeypot_success_and_returns_503_for_real_inquiry(
+        self, mock_create, mock_notify
+    ):
+        self.connect.return_value = None
+
+        honeypot = self.client.post("/api/inquiries", json={**VALID, "website": "x"})
+        real = self.client.post("/api/inquiries", json=VALID)
+
+        self.assertEqual(honeypot.status_code, 201)
+        self.assertEqual(honeypot.json(), {"received": True})
+        self.assertEqual(real.status_code, 503)
+        mock_create.assert_not_called()
+        mock_notify.assert_not_called()
 
     def test_notification_failure_does_not_change_saved_response(self, mock_create, mock_notify):
         mock_notify.return_value = False

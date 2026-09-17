@@ -1,10 +1,10 @@
 from ipaddress import IPv6Address, ip_address, ip_network
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from ...core.config import settings
 from ...crud import inquiry as inquiry_crud
-from ...deps import get_db
+from ...deps import db_connection
 from ...schemas.inquiry import InquiryCreate, InquiryCreated
 from ...services.inquiry_notify import notify_new_inquiry
 from ...services.rate_limit import SlidingWindowLimiter
@@ -47,7 +47,6 @@ def create_inquiry(
     body: InquiryCreate,
     request: Request,
     background_tasks: BackgroundTasks,
-    conn=Depends(get_db),
 ):
     # 숨긴 입력칸이 채워졌으면 봇으로 보고 저장하지 않는다. 성공처럼 응답해야 봇이 다른 방법을 찾지 않는다.
     if body.website:
@@ -56,7 +55,10 @@ def create_inquiry(
     if not inquiry_limiter.allow(_client_key(request)):
         raise HTTPException(status_code=429, detail="문의를 너무 자주 보냈어요. 잠시 후 다시 시도해 주세요.")
 
-    inquiry_crud.create_inquiry(conn, category=body.category, email=body.email, content=body.content)
+    # 저장할 요청만 DB에 연결한다. 의존성(get_db)으로 받으면 위 두 검사보다 먼저 연결이 열려,
+    # 거절이 확정된 반복 요청도 매번 연결 비용을 쓰고 DB 장애 때는 201·429 대신 503이 나간다.
+    with db_connection() as conn:
+        inquiry_crud.create_inquiry(conn, category=body.category, email=body.email, content=body.content)
     # 저장이 끝난 뒤 보내며, 전송 실패는 서비스 안에서 처리해 접수에 영향을 주지 않는다.
     background_tasks.add_task(
         notify_new_inquiry,
