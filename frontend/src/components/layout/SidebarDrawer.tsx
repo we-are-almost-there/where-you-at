@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router";
 import { X } from "lucide-react";
 
@@ -34,6 +35,19 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
+  // 드로어는 body에 두고 상단바와 본문을 포함한 앱 전체를 잠근다.
+  // 포커스를 복귀시키는 effect보다 먼저 잠금을 해제한다.
+  useLayoutEffect(() => {
+    if (shouldBeInert) return;
+    const root = document.getElementById("root");
+    if (!root) return;
+    const wasInert = root.hasAttribute("inert");
+    root.setAttribute("inert", "");
+    return () => {
+      if (!wasInert) root.removeAttribute("inert");
+    };
+  }, [shouldBeInert]);
+
   // 열리는 시점의 포커스를 저장해뒀다가, 완전히 닫힐 때 원래 위치로 복귀시킨다.
   useEffect(() => {
     if (!isOpen) return;
@@ -57,6 +71,12 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
     if (shouldBeInert) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+        return;
+      }
       if (event.key !== "Tab") return;
 
       const focusables = asideRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
@@ -81,18 +101,19 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
+    // 먼저 열린 배경 팝업의 document 버블 핸들러보다 먼저 Escape를 처리한다.
+    document.addEventListener("keydown", handleKeyDown, true);
 
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [shouldBeInert]);
+  }, [shouldBeInert, onClose]);
 
-  return (
+  return createPortal(
     <>
       {/* 배경 딤 처리 — 순검정 대신 브랜드 잉크 톤 + 살짝 블러로 부드럽게. */}
       <div
-        className={`fixed inset-0 z-40 w-screen bg-ink/30 backdrop-blur-[1px] transition-opacity duration-300 ${
+        className={`fixed inset-0 z-50 w-screen bg-ink/30 backdrop-blur-[1px] transition-opacity duration-300 ${
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         onClick={onClose}
@@ -102,7 +123,11 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
       {/* 드로어 본체 */}
       <aside
         ref={asideRef}
-        className={`fixed inset-y-0 left-0 z-50 flex w-[320px] flex-col overflow-hidden bg-white transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        role="dialog"
+        aria-modal={shouldBeInert ? undefined : true}
+        aria-label="메뉴"
+        aria-hidden={shouldBeInert || undefined}
+        className={`fixed inset-y-0 left-0 z-[51] flex w-[320px] flex-col overflow-hidden bg-white transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         inert={shouldBeInert}
@@ -238,6 +263,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
           </div>
         </div>
       </aside>
-    </>
+    </>,
+    document.body,
   );
 }
