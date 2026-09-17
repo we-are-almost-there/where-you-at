@@ -30,3 +30,13 @@ def get_user(conn, user_id: int) -> dict | None:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(query, {"id": user_id})
         return cur.fetchone()
+
+
+def delete_user(conn, user_id: int) -> None:
+    """회원을 삭제한다. app_user를 참조하는 테이블의 행은 on delete cascade로 함께 지워진다.
+
+    이미 없는 회원이면 아무것도 지우지 않고 끝난다.
+    """
+    with conn.cursor() as cur:
+        cur.execute("delete from app_user where id = %(id)s", {"id": user_id})
+    conn.commit()

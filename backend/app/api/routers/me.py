@@ -15,3 +15,16 @@ def read_me(user_id: int = Depends(get_current_user), conn=Depends(get_db)):
     if user is None:
         raise unauthorized_error()
     return user
+
+
+@router.delete("", status_code=204)
+def delete_me(user_id: int = Depends(get_current_user), conn=Depends(get_db)):
+    """회원 탈퇴. 회원 행을 지우고, 회원에 딸린 데이터는 on delete cascade로 함께 지워진다.
+
+    카카오 연결 끊기는 하지 않는다(어드민 키가 필요). 다시 로그인하면 새 회원으로 가입된다.
+    발급한 토큰은 만료 전까지 서명이 유효하지만, 회원 행이 없어 /api/me에서 401이 된다.
+
+    이미 지운 회원이 다시 요청해도 204다(여러 번 보내도 결과가 같다). 401은 토큰이 없거나
+    만료, 위조된 경우에만 나가므로, 프론트는 401을 "탈퇴 완료"가 아니라 "다시 로그인 필요"로 본다.
+    """
+    user_crud.delete_user(conn, user_id)

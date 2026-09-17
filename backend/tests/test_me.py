@@ -1,4 +1,4 @@
-"""GET /api/me와 토큰 검증 의존성(get_current_user) 테스트 (unittest, DB 없이 crud patch).
+"""GET /api/me, DELETE /api/me와 토큰 검증 의존성(get_current_user) 테스트 (unittest, DB 없이 crud patch).
 
 토큰이 없거나 만료, 위조, 내용 오류면 401이고, 인증에 실패한 요청은 DB에 연결하지 않는지 확인한다.
 
@@ -92,6 +92,41 @@ class TestReadMe(AuthTestCase):
         for secret in ("", "s" * 31):
             with self.subTest(secret=secret), patch.object(settings, "jwt_secret", secret):
                 self.assertEqual(self.client.get("/api/me", headers=_bearer(token)).status_code, 503)
+        self.connect.assert_not_called()
+
+
+@patch("app.crud.user.delete_user", return_value=None)
+class TestDeleteMe(AuthTestCase):
+    def test_deletes_logged_in_user(self, mock_delete):
+        res = self.client.delete("/api/me", headers=_bearer(auth_token.create_access_token(7)))
+
+        self.assertEqual(res.status_code, 204)
+        self.assertEqual(res.content, b"")
+        self.assertEqual(mock_delete.call_args.args[1], 7)
+
+    def test_already_deleted_user_still_returns_204(self, mock_delete):
+        # 프론트는 401을 "탈퇴되지 않음"으로 본다. 지울 행이 없다고 401을 돌려주면 그 약속이 깨진다.
+        mock_delete.return_value = False
+
+        res = self.client.delete("/api/me", headers=_bearer(auth_token.create_access_token(7)))
+
+        self.assertEqual(res.status_code, 204)
+
+    def test_invalid_token_returns_401_without_deleting(self, mock_delete):
+        # 토큰이 만료되면 401이다. 프론트가 이를 탈퇴 완료로 오해하지 않도록 204와 구분된다.
+        expired = auth_token.create_access_token(7, now=_now() - timedelta(days=8))
+
+        res = self.client.delete("/api/me", headers=_bearer(expired))
+
+        self.assertEqual(res.status_code, 401)
+        mock_delete.assert_not_called()
+        self.connect.assert_not_called()
+
+    def test_without_token_returns_401_without_db(self, mock_delete):
+        res = self.client.delete("/api/me")
+
+        self.assertEqual(res.status_code, 401)
+        mock_delete.assert_not_called()
         self.connect.assert_not_called()
 
 
