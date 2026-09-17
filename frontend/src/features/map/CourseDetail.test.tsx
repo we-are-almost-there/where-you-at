@@ -72,6 +72,42 @@ async function mount() {
 }
 
 describe("CourseDetail 기록이 있는 화면에서 이동", () => {
+  it.each(["tracking", "paused"] as const)("%s 중 브라우저 이탈은 경고하며 세션은 유지한다", async (status) => {
+    tracking.status = status;
+    const confirm = vi.spyOn(window, "confirm");
+    await mount();
+    const event = new Event("beforeunload", { cancelable: true });
+    expect(window.dispatchEvent(event)).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+    expect(tracking.stopTracking).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("세션 시작과 종료에 따라 보호를 전환하고 화면 제거 시 해제한다", async () => {
+    tracking.status = "idle";
+    const router = await mount();
+    const unloadIsAllowed = () => window.dispatchEvent(new Event("beforeunload", { cancelable: true }));
+    // tracking은 목 객체라 상태만 바꿔서는 다시 그려지지 않는다. 같은 화면 안의 이동으로 다시 그리게 한다.
+    const rerender = async () => {
+      await act(async () => { await router.navigate(router.state.location.pathname + "?tab=course"); });
+    };
+    expect(unloadIsAllowed()).toBe(true);
+    tracking.status = "tracking";
+    await rerender();
+    expect(unloadIsAllowed()).toBe(false);
+    tracking.status = "paused";
+    await rerender();
+    expect(unloadIsAllowed()).toBe(false);
+    tracking.status = "idle";
+    await rerender();
+    expect(unloadIsAllowed()).toBe(true);
+    tracking.status = "tracking";
+    await rerender();
+    expect(unloadIsAllowed()).toBe(false);
+    cleanup();
+    expect(unloadIsAllowed()).toBe(true);
+  });
+
   it.each([
     ["paused", "logo", "/"], ["tracking", "logo", "/"],
     ["paused", "header", "/races"], ["tracking", "header", "/races"],
