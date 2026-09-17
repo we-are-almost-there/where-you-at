@@ -1,0 +1,47 @@
+"""
+로그인 토큰(JWT) 발급과 검증
+
+리프레시 토큰은 두지 않는다. 만료되면 다시 로그인한다.
+로그아웃은 프론트가 토큰을 지우는 것으로 끝나므로, 이미 발급한 토큰은 만료 전까지 유효하다.
+"""
+
+from datetime import datetime, timedelta, timezone
+
+import jwt
+
+from ..core.config import settings
+
+ACCESS_TOKEN_TTL = timedelta(days=7)
+_ALGORITHM = "HS256"
+# HS256 키는 해시 출력 길이(32바이트) 이상이어야 한다. 짧은 키는 무차별 대입으로 풀릴 수 있다.
+_MIN_SECRET_BYTES = 32
+
+
+class InvalidTokenError(Exception):
+    """토큰이 없거나, 만료됐거나, 위조됐거나, 내용이 올바르지 않다."""
+
+
+def is_configured() -> bool:
+    # 빈 키로 서명하면 누구나 토큰을 만들 수 있으므로 발급과 검증을 모두 막는다.
+    return len(settings.jwt_secret.encode()) >= _MIN_SECRET_BYTES
+
+
+def create_access_token(user_id: int, now: datetime | None = None) -> str:
+    now = now or datetime.now(timezone.utc)
+    # PyJWT 2.10부터 sub가 문자열이 아니면 검증에서 거절하므로 문자열로 넣는다.
+    payload = {"sub": str(user_id), "iat": now, "exp": now + ACCESS_TOKEN_TTL}
+    return jwt.encode(payload, settings.jwt_secret, algorithm=_ALGORITHM)
+
+
+def decode_access_token(token: str) -> int:
+    """토큰을 검증하고 회원 id를 돌려준다."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=[_ALGORITHM],
+            options={"require": ["sub", "iat", "exp"]},
+        )
+        return int(payload["sub"])
+    except (jwt.InvalidTokenError, ValueError) as e:
+        raise InvalidTokenError from e
