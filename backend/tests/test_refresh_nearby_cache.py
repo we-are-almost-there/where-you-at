@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import MagicMock, call, patch
 
 from scripts import refresh_nearby_cache as script
+from app.crud import nearby
 
 
 def connection(ids=()):
@@ -102,20 +103,92 @@ class TestWarmAll(unittest.TestCase):
 
 
 class TestCacheMaintenance(unittest.TestCase):
-    def test_manual_refresh_clears_all_target_rows_before_warming(self):
+    def test_expiring_selection_requires_available_route_and_keeps_empty_markers(self):
+        sql = " ".join(script._EXPIRING_COMBINATIONS_SQL.split())
+        self.assertIn("SELECT DISTINCT course_id, route_type FROM course_waypoint", sql)
+        self.assertIn("lat IS NOT NULL AND lng IS NOT NULL", sql)
+        self.assertIn("JOIN available_routes r ON r.course_id = c.id", sql)
+        self.assertIn("ns.expires_at IS NULL", sql)
+        self.assertNotIn("nearby_content_id", sql)
+
+    def test_force_refresh_bypasses_valid_cache(self):
+        conn = connection()
+        with (
+            patch.object(nearby, "_fetch_live", return_value=[]) as live,
+            patch.object(nearby, "_refresh_cache") as save,
+        ):
+            nearby.list_nearby_spots(conn, 5, "attraction", force_refresh=True, strict_cache=True)
+        live.assert_called_once()
+        save.assert_called_once_with(conn, 5, "attraction", "trail", [],
+                                     strict_cache=True, delete_missing_route=True)
+        conn.cursor.assert_not_called()
+
+    def test_failed_live_refresh_does_not_replace_old_cache(self):
+        with (
+            patch.object(nearby, "_fetch_live", side_effect=RuntimeError("query failed")),
+            patch.object(nearby, "_refresh_cache") as save,
+        ):
+            with self.assertRaises(RuntimeError):
+                nearby.list_nearby_spots(connection(), 5, "attraction", force_refresh=True)
+        save.assert_not_called()
+
+    def test_manual_refresh_preserves_rows_until_replacement(self):
         conn = connection()
         cursor = conn.cursor.return_value.__enter__.return_value
         cursor.fetchone.return_value = (1,)
         with patch.object(script, "warm_course") as warm:
-            def verify_warm(*args):
+            def verify_warm(*args, **kwargs):
                 conn.commit.assert_called_once()
             warm.side_effect = verify_warm
             script.refresh_course(conn, 5)
         calls = cursor.execute.call_args_list
-        self.assertIn("DELETE FROM nearby_spot", calls[1].args[0])
-        self.assertEqual(calls[1].args[1], ("5",))
-        self.assertNotIn("nearby_content_id", calls[1].args[0])
-        warm.assert_called_once_with(conn, 5)
+        self.assertEqual(len(calls), 1)
+        warm.assert_called_once_with(conn, 5, force_refresh=True)
+
+    def test_expiring_refresh_skips_fresh_combinations(self):
+        conn = connection()
+        cursor = conn.cursor.return_value.__enter__.return_value
+        cursor.fetchall.return_value = [(5, "trail", "restaurant"), (8, "bicycle", "attraction")]
+        with (
+            patch.object(script, "get_db_connection", return_value=conn),
+            patch.object(script, "list_nearby_spots", return_value=(0, [], "v")) as spots,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(script.warm_all(refresh_before_hours=48), 0)
+        cursor.execute.assert_called_once_with(script._EXPIRING_COMBINATIONS_SQL,
+                                              (list(script._ROUTE_TYPES), list(script._CATEGORIES), 48))
+        self.assertEqual([(c.args[1], c.args[2], c.args[3]) for c in spots.call_args_list],
+                         [(5, "restaurant", "trail"), (8, "attraction", "bicycle")])
+        self.assertTrue(all(c.kwargs["force_refresh"] for c in spots.call_args_list))
+
+    def test_no_expiring_combinations_does_not_recalculate(self):
+        conn = connection()
+        with (
+            patch.object(script, "get_db_connection", return_value=conn),
+            patch.object(script, "warm_course") as warm,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(script.warm_all(refresh_before_hours=48), 0)
+        conn.cursor.return_value.__enter__.return_value.execute.assert_called_once()
+        warm.assert_not_called()
+        conn.close.assert_called_once()
+
+    def test_expiring_failure_reconnects_and_keeps_selected_combinations(self):
+        first, second = connection(), connection()
+        first.cursor.return_value.__enter__.return_value.fetchall.return_value = [
+            (5, "trail", "restaurant"), (8, "bicycle", "attraction")]
+        with (
+            patch.object(script, "get_db_connection", side_effect=[first, second]),
+            patch.object(script, "warm_course", side_effect=[RuntimeError("failed"), None]) as warm,
+            patch.object(script, "logger"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(script.warm_all(refresh_before_hours=48), 1)
+        self.assertEqual(warm.call_args_list, [
+            call(first, 5, force_refresh=True, combinations=[("trail", "restaurant")]),
+            call(second, 8, force_refresh=True, combinations=[("bicycle", "attraction")])])
+        first.close.assert_called_once()
+        second.close.assert_called_once()
 
     def test_cleanup_includes_empty_markers(self):
         conn = connection()

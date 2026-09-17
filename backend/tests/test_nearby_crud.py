@@ -10,6 +10,14 @@ from app.crud import nearby
 
 
 class TestNearbySqlOrdering(unittest.TestCase):
+    def test_live_queries_prefilter_geometry_and_keep_exact_distance(self):
+        for sql, alias in ((nearby._LIVE_QUERY_SQL, "ts"), (nearby._BICYCLE_LIVE_QUERY_SQL, "bf")):
+            with self.subTest(alias=alias):
+                self.assertIn(f"{alias}.geom && cl.bounds", sql)
+                self.assertIn(f"ST_DWithin({alias}.geom::geography, cl.geom::geography, %(radius)s)", sql)
+                self.assertIn("ST_Segmentize(geom::geography, 1000)", sql)
+                self.assertIn("ELSE ST_MakeEnvelope(-180, -90, 180, 90, 4326)", sql)
+
     def assert_final_order_by(self, sql: str, expected: str) -> None:
         normalized = " ".join(sql.lower().split()).rstrip(";")
         # 경로 좌표를 잇는 ORDER BY sequence_order와 최종 목록 정렬을 구분한다.

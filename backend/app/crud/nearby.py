@@ -4,6 +4,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor, execute_values
 import hashlib
 import json
+from typing import Literal
+from time import perf_counter
 
 _CATEGORY_CONTENT_TYPES = {
     "attraction": ["12", "14", "38"],
@@ -58,12 +60,38 @@ WHERE ns.base_type = 'course' AND ns.base_id = %(course_id)s
 ORDER BY ns.distance_km, ns.nearby_content_id
 """
 
-_LIVE_QUERY_SQL = """
+# 기존 geom 공간 인덱스로 후보를 먼저 거르기 위한 보수적인 검색 범위.
+# 최종 포함 여부와 거리는 기존 geography 조건으로 계산한다.
+#
+# 국내 주변 범위(경도 120~135, 위도 30~45)에서는 경도 1도가 약 78km 이상이다.
+# 반경(m)을 70000으로 나누면 경도·위도 양쪽에 필요한 범위보다 넓은 여유를 둔다.
+# 111000(위도 1도의 근삿값)으로 바꾸면 경도 방향 범위가 좁아져 장소가 누락될 수 있다.
+#
+# ST_Segmentize의 1000은 geography 경로를 최대 1km 길이의 구간으로 나누는 값이다.
+# 추가 0.001도는 구간 사이 곡선과 수치 오차를 고려한 보수적인 여유이며,
+# 엄밀히 계산한 최대 오차를 뜻하지 않는다.
+#
+# 위 좌표 범위를 벗어나는 경로는 환산 가정을 적용하지 않고,
+# 전 세계 경계 상자를 사용해 후보 범위를 제한하지 않는다.
+_COURSE_BOUNDS_CTE = """
 WITH course_line AS (
     SELECT ST_MakeLine(ST_MakePoint(lng, lat) ORDER BY sequence_order) AS geom
     FROM course_waypoint
     WHERE course_id = %(course_id)s AND route_type = %(route_type)s
+), course_bounds AS (
+    SELECT geom,
+        CASE WHEN ST_XMin(Box2D(geom)) >= 120 AND ST_XMax(Box2D(geom)) <= 135
+                  AND ST_YMin(Box2D(geom)) >= 30 AND ST_YMax(Box2D(geom)) <= 45
+             THEN ST_Expand(
+                 ST_Envelope(ST_Segmentize(geom::geography, 1000)::geometry),
+                 %(radius)s / 70000.0 + 0.001)
+             ELSE ST_MakeEnvelope(-180, -90, 180, 90, 4326)
+        END AS bounds
+    FROM course_line
 )
+"""
+
+_LIVE_QUERY_SQL = _COURSE_BOUNDS_CTE + """
 SELECT
     ts.content_id,
     ts.tour_spot_title AS name,
@@ -72,19 +100,15 @@ SELECT
     ts.map_y AS lat,
     ts.map_x AS lng,
     ST_Distance(ts.geom::geography, cl.geom::geography) AS distance_m
-FROM tour_spot ts, course_line cl
+FROM tour_spot ts, course_bounds cl
 WHERE ts.content_type_id = ANY(%(content_types)s)
     AND cl.geom IS NOT NULL
+    AND ts.geom && cl.bounds
     AND ST_DWithin(ts.geom::geography, cl.geom::geography, %(radius)s)
 ORDER BY distance_m, ts.content_id
 """
 
-_BICYCLE_LIVE_QUERY_SQL = """
-WITH course_line AS (
-    SELECT ST_MakeLine(ST_MakePoint(lng, lat) ORDER BY sequence_order) AS geom
-    FROM course_waypoint
-    WHERE course_id = %(course_id)s AND route_type = %(route_type)s
-)
+_BICYCLE_LIVE_QUERY_SQL = _COURSE_BOUNDS_CTE + """
 SELECT
     bf.bicycle_id::text AS content_id,
     bf.facility_title AS name,
@@ -93,8 +117,9 @@ SELECT
     bf.map_y AS lat,
     bf.map_x AS lng,
     ST_Distance(bf.geom::geography, cl.geom::geography) AS distance_m
-FROM bicycle_facility bf, course_line cl
+FROM bicycle_facility bf, course_bounds cl
 WHERE cl.geom IS NOT NULL
+    AND bf.geom && cl.bounds
     AND ST_DWithin(bf.geom::geography, cl.geom::geography, %(radius)s)
 ORDER BY distance_m, bf.bicycle_id::text
 """
@@ -141,11 +166,14 @@ def _refresh_cache(
     rows: list[dict],
     *,
     strict_cache: bool = False,
-) -> None:
+    delete_missing_route: bool = False,
+) -> Literal["success", "failed", "skipped"]:
     """기존 캐시를 교체한다. 장소 목록과 정상 조회의 빈 결과 모두 30일 보관한다.
 
     경로가 있고 0건이면 기존 테이블에 예약 ID의 표시 행 하나를 저장한다. distance_km=0은
     필수 컬럼을 채우는 값이며, 빈 결과 여부는 거리 대신 예약 ID로 판별한다.
+    delete_missing_route=True이면 경로 없는 조합의 기존 캐시만 삭제한다.
+    처리 결과로 success(완료), failed(실패), skipped(건너뜀)를 반환한다.
 
     DB 오류 시 로그를 남기고 연결 전체의 롤백을 시도한다.
     기본 모드에서는 호출부가 이미 구한 조회 결과를 반환할 수 있도록
@@ -172,7 +200,15 @@ def _refresh_cache(
                     {"course_id": course_id, "route_type": route_type},
                 )
                 if cur.fetchone() is None:
-                    return
+                    if delete_missing_route:
+                        cur.execute(
+                            _DELETE_STALE_CACHE_SQL,
+                            {"course_id": str(course_id), "category": category,
+                             "route_type": route_type},
+                        )
+                        conn.commit()
+                        return "success"
+                    return "skipped"
             cur.execute(
                 _DELETE_STALE_CACHE_SQL,
                 {
@@ -198,8 +234,9 @@ def _refresh_cache(
             else:
                 values = [("course", str(course_id), category, _EMPTY_CONTENT_ID,
                            route_type, 0, now, expires)]
-            execute_values(cur, _UPSERT_CACHE_SQL, values)
+            execute_values(cur, _UPSERT_CACHE_SQL, values, page_size=1000)
         conn.commit()
+        return "success"
 
     except psycopg2.Error:
         logger.exception(
@@ -215,6 +252,7 @@ def _refresh_cache(
 
         if strict_cache:
             raise
+        return "failed"
 
 
 def _rows_from_cache(cached_rows: list[dict]) -> list[dict]:
@@ -251,6 +289,7 @@ def _get_rows(
     route_type: str,
     *,
     strict_cache: bool = False,
+    force_refresh: bool = False,
 ) -> list[dict]:
     """nearby_spot 캐시(30일, route_type별 구분)를 우선 조회하고, 없거나 만료됐으면 PostGIS로
     재계산 후 캐시에 저장한다. 이름·주소·이미지·좌표는 원본 테이블에서 조회한다.
@@ -261,6 +300,9 @@ def _get_rows(
     경로가 아직 없는 경우에는 빈 결과를 저장하지 않는다.
     원본 변경 시 자동 무효화하지 않으며, 만료 또는 수동 재생성 때 다시 조회한다.
     """
+    if force_refresh:
+        return refresh_nearby_rows(conn, course_id, category, route_type,
+                                   strict_cache=strict_cache, delete_missing_route=True)
     if category == "bicycle":
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
@@ -275,19 +317,7 @@ def _get_rows(
         if _has_empty_cache(conn, course_id, category, route_type):
             return []
 
-        radius = _RADIUS_M.get(route_type, _RADIUS_M["trail"]).get("bicycle", 1000)
-        rows = _fetch_bicycle_live(conn, course_id, route_type, radius)
-        _refresh_cache(
-            conn,
-            course_id,
-            "bicycle",
-            route_type,
-            rows,
-            strict_cache=strict_cache,
-        )
-        return rows
-
-    content_types = _CATEGORY_CONTENT_TYPES[category]
+        return refresh_nearby_rows(conn, course_id, category, route_type, strict_cache=strict_cache)
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
@@ -302,16 +332,44 @@ def _get_rows(
     if _has_empty_cache(conn, course_id, category, route_type):
         return []
 
-    radius = _RADIUS_M.get(route_type, _RADIUS_M["trail"]).get(category, 1500)
-    rows = _fetch_live(conn, course_id, route_type, content_types, radius)
-    _refresh_cache(
-        conn,
-        course_id,
-        category,
-        route_type,
-        rows,
-        strict_cache=strict_cache,
-    )
+    return refresh_nearby_rows(conn, course_id, category, route_type, strict_cache=strict_cache)
+
+
+def refresh_nearby_rows(
+    conn,
+    course_id: int,
+    category: str,
+    route_type: str,
+    *,
+    strict_cache: bool,
+    delete_missing_route: bool = False,
+) -> list[dict]:
+    """주변 장소를 재계산한 뒤 기존 캐시를 트랜잭션으로 교체한다.
+
+    조회 실패 또는 저장 실패 시 기존 캐시는 보존한다.
+    strict_cache=True이면 캐시 저장 중 발생한 DB 오류를 다시 전파한다.
+    경로 없는 조합의 빈 결과는 저장하지 않는다.
+    delete_missing_route=True이면 경로가 없다고 확인된 조합의 기존 캐시를 삭제한다.
+    """
+    started = perf_counter()
+    radius = _RADIUS_M.get(route_type, _RADIUS_M["trail"])[category]
+    if category == "bicycle":
+        rows = _fetch_bicycle_live(conn, course_id, route_type, radius)
+    else:
+        rows = _fetch_live(conn, course_id, route_type, _CATEGORY_CONTENT_TYPES[category], radius)
+    queried = perf_counter()
+    # 예외가 전파되거나 내부 처리된 실패를 성공으로 기록하지 않는다.
+    status = "failed"
+    try:
+        status = _refresh_cache(conn, course_id, category, route_type, rows,
+                                strict_cache=strict_cache, delete_missing_route=delete_missing_route)
+    finally:
+        log = logger.warning if status == "failed" else logger.info
+        log(
+            "nearby_refresh course_id=%s route_type=%s category=%s rows=%s status=%s live_ms=%.1f cache_ms=%.1f",
+            course_id, route_type, category, len(rows), status,
+            (queried - started) * 1000, (perf_counter() - queried) * 1000,
+        )
     return rows
 
 
@@ -369,6 +427,7 @@ def list_nearby_spots(
     size: int = 20,
     *,
     strict_cache: bool = False,
+    force_refresh: bool = False,
 ) -> tuple[int, list[dict], str]:
     """주변 장소의 전체 개수, 현재 페이지 목록, 전체 목록 버전을 반환한다."""
     if category != "bicycle" and category not in _CATEGORY_CONTENT_TYPES:
@@ -382,6 +441,7 @@ def list_nearby_spots(
         category,
         route_type,
         strict_cache=strict_cache,
+        force_refresh=force_refresh,
     )
     version = _make_list_version(course_id, category, route_type, rows)
     total, spots = _paginate(rows, category, route_type, page, size)

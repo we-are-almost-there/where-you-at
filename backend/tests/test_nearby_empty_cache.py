@@ -9,6 +9,78 @@ from app.crud import nearby
 
 
 class TestEmptyCache(unittest.TestCase):
+    def test_refresh_log_records_actual_cache_result(self):
+        # 정상 저장, 경로 없음, 내부 처리된 오류, 전파된 오류를 각각 검증한다.
+        for has_route, write_fails, strict, delete_missing, expected in (
+            (True, False, False, False, "success"),
+            (False, False, False, False, "skipped"),
+            (False, False, True, True, "success"),
+            (True, True, False, False, "failed"),
+            (True, True, True, False, "failed"),
+        ):
+            with self.subTest(expected=expected, strict=strict, has_route=has_route):
+                conn, _ = self.make_conn(has_route=has_route)
+                with (
+                    patch.object(nearby, "_fetch_live", return_value=[]),
+                    patch.object(nearby, "execute_values",
+                                 side_effect=psycopg2.OperationalError("저장 실패") if write_fails else None),
+                    patch.object(nearby, "logger") as logger,
+                ):
+                    if write_fails and strict:
+                        with self.assertRaises(psycopg2.OperationalError):
+                            nearby.refresh_nearby_rows(conn, 5, "attraction", "trail",
+                                                      strict_cache=strict, delete_missing_route=delete_missing)
+                    else:
+                        self.assertEqual(nearby.refresh_nearby_rows(
+                            conn, 5, "attraction", "trail", strict_cache=strict,
+                            delete_missing_route=delete_missing), [])
+                log = logger.warning if expected == "failed" else logger.info
+                log.assert_called_once()
+                self.assertIn("status=%s", log.call_args.args[0])
+                self.assertEqual(log.call_args.args[5], expected)
+                if expected == "failed":
+                    logger.info.assert_not_called()
+                    conn.rollback.assert_called_once()
+
+    def test_forced_refresh_deletes_only_missing_route_combination(self):
+        conn, cursor = self.make_conn(has_route=False)
+        with (
+            patch.object(nearby, "_fetch_live", return_value=[]),
+            patch.object(nearby, "execute_values") as insert,
+        ):
+            self.assertEqual(nearby.list_nearby_spots(
+                conn, 5, "attraction", "trail", force_refresh=True, strict_cache=True
+            )[:2], (0, []))
+        self.assertEqual(cursor.execute.call_args.args, (
+            nearby._DELETE_STALE_CACHE_SQL,
+            {"course_id": "5", "category": "attraction", "route_type": "trail"},
+        ))
+        insert.assert_not_called()
+        conn.commit.assert_called_once()
+
+    def test_missing_route_check_failure_preserves_cache(self):
+        conn, cursor = self.make_conn(has_route=False)
+        cursor.execute.side_effect = psycopg2.OperationalError("route lookup failed")
+        with (
+            patch.object(nearby, "_fetch_live", return_value=[]),
+            patch.object(nearby.logger, "exception"),
+        ):
+            with self.assertRaises(psycopg2.OperationalError):
+                nearby.list_nearby_spots(conn, 5, "attraction", force_refresh=True, strict_cache=True)
+        self.assertEqual(cursor.execute.call_count, 1)
+        conn.commit.assert_not_called()
+        conn.rollback.assert_called_once()
+
+    def test_missing_route_delete_failure_rolls_back(self):
+        conn, cursor = self.make_conn(has_route=False)
+        cursor.execute.side_effect = [None, psycopg2.OperationalError("delete failed")]
+        with patch.object(nearby.logger, "exception"):
+            with self.assertRaises(psycopg2.OperationalError):
+                nearby._refresh_cache(conn, 5, "bicycle", "trail", [],
+                                      strict_cache=True, delete_missing_route=True)
+        conn.rollback.assert_called_once()
+        conn.commit.assert_not_called()
+
     def make_conn(self, empty_hit=False, has_route=True):
         conn = MagicMock()
         cursor = conn.cursor.return_value.__enter__.return_value
@@ -67,7 +139,7 @@ class TestEmptyCache(unittest.TestCase):
 
     def test_missing_or_expired_marker_recalculates_and_stores_thirty_days(self):
         # DB의 만료 조건으로 표시 행이 반환되지 않는 경우를 모의한다.
-        for category in ("attraction", "bicycle"):
+        for category in ("attraction", "restaurant", "accommodation", "bicycle"):
             with self.subTest(category=category):
                 conn, cursor = self.make_conn()
                 fetch = "_fetch_bicycle_live" if category == "bicycle" else "_fetch_live"
@@ -86,6 +158,24 @@ class TestEmptyCache(unittest.TestCase):
                 ))
                 self.assertEqual(values[0][-1] - values[0][-2], timedelta(days=30))
                 conn.commit.assert_called_once()
+
+    def test_forced_refresh_records_empty_result_for_both_routes(self):
+        for route in ("trail", "bicycle"):
+            for category in ("attraction", "restaurant", "accommodation", "bicycle"):
+                with self.subTest(route=route, category=category):
+                    conn, _ = self.make_conn(has_route=True)
+                    fetch = "_fetch_bicycle_live" if category == "bicycle" else "_fetch_live"
+                    with (
+                        patch.object(nearby, fetch, return_value=[]),
+                        patch.object(nearby, "execute_values") as insert,
+                    ):
+                        nearby.list_nearby_spots(conn, 5, category, route,
+                                                 force_refresh=True, strict_cache=True)
+                    value = insert.call_args.args[2][0]
+                    self.assertEqual(value[3], nearby._EMPTY_CONTENT_ID)
+                    self.assertEqual(value[4], route)
+                    self.assertEqual(value[-1] - value[-2], timedelta(days=30))
+                    conn.commit.assert_called_once()
 
     def test_live_failure_never_creates_empty_marker(self):
         for category in ("attraction", "bicycle"):
