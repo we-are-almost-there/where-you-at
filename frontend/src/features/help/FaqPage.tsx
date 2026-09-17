@@ -35,7 +35,7 @@ export default function FaqPage() {
 
   const renderBody = () => {
     if (!current) {
-      return <p className="py-16 text-center text-[14px] text-caption">자주 묻는 질문을 불러오는 중…</p>;
+      return <p role="status" className="py-16 text-center text-[14px] text-caption">자주 묻는 질문을 불러오는 중…</p>;
     }
     if (current.error || !current.faqs) {
       const error = current.error ?? toUserError(null, "자주 묻는 질문을 불러오지 못했어요");
@@ -48,7 +48,7 @@ export default function FaqPage() {
       );
     }
     if (current.faqs.length === 0) {
-      return <p className="py-16 text-center text-[14px] text-caption">등록된 질문이 없어요.</p>;
+      return <p role="status" className="py-16 text-center text-[14px] text-caption">등록된 질문이 없어요.</p>;
     }
 
     return (

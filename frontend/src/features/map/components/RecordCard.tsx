@@ -670,7 +670,7 @@ export function RecordCard({
         <button
           type="button"
           onClick={save}
-          className="h-14 flex-[2] cursor-pointer rounded-[14px] bg-accent text-[15px] font-bold text-lavender"
+          className="h-14 flex-[2] cursor-pointer rounded-[14px] bg-accent text-[15px] font-bold text-white"
         >
           이미지 저장
         </button>
@@ -792,7 +792,7 @@ function Chip({
       aria-pressed={selected}
       // 타일·슬라이더와 같은 40px — 높이가 다르면 위에 붙는 소제목의 줄이 어긋난다
       className={`h-10 shrink-0 cursor-pointer rounded-full px-3.5 text-[13px] font-bold ${
-        selected ? "bg-accent text-lavender" : "bg-white text-ink"
+        selected ? "bg-accent text-white" : "bg-white text-ink"
       }`}
     >
       {children}

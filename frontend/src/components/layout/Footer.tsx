@@ -1,5 +1,6 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
+import { NewTabHint } from "../common/a11y";
 
 // 공공데이터 출처. 항목명과 제공처를 나눠 dl로 그린다.
 const PUBLIC_DATA: [label: string, source: string][] = [
@@ -36,6 +37,7 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
   return (
     <a href={href} target="_blank" rel="noreferrer" className={LINK_CLASS}>
       {children}
+      <NewTabHint />
     </a>
   );
 }

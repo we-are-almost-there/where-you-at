@@ -21,6 +21,10 @@ import { RecordCard } from "./components/RecordCard";
 import { paceStat, type TrackingRecord } from "./trackingRecord";
 import SidebarDrawer from "../../components/layout/SidebarDrawer";
 import AppHeader from "../../components/layout/AppHeader";
+import { Tabs } from "../../components/common/Tabs";
+import { tabPanelProps } from "../../components/common/tabIds";
+import { MAIN_CONTENT_ID } from "../../components/layout/mainContent";
+import { useDocumentTitle } from "../../lib/useDocumentTitle";
 import { parseRouteTypeParam, setRouteTypeParam, parseInfoTabParam, setInfoTabParam, parseCategoryParam, setCategoryParam } from "./courseUrlState";
 
 function formatDuration(min: number): string {
@@ -85,7 +89,7 @@ function ModeCard({
       aria-pressed={active}
       className={`@container flex flex-1 cursor-pointer flex-col gap-1.5 rounded-[14px] p-3.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         active
-          ? "border-2 border-accent bg-lavender text-accent shadow-[0px_4px_14px_0px_rgba(0,0,0,0.12)]"
+          ? "border-2 border-accent bg-lavender text-accent-strong shadow-[0px_4px_14px_0px_rgba(0,0,0,0.12)]"
           : "border-[1.5px] border-divider bg-white text-caption"
       }`}
     >
@@ -109,7 +113,7 @@ function ModeCard({
 const OUTLINE_CONTROL =
   "flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] border border-accent bg-white text-[15px] font-bold text-accent";
 const FILLED_CONTROL =
-  "flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] bg-accent text-[15px] font-bold text-lavender";
+  "flex h-14 flex-1 cursor-pointer items-center justify-center rounded-[14px] bg-accent text-[15px] font-bold text-white";
 
 // 멈춰 있는 동안 쓰는 한 줄 요약. 재개할지 끝낼지 정하는 데 필요한 두 값만 남긴다.
 // 전체 통계 카드는 150px을 가져가 멈춘 화면에서 정작 보려던 것(코스 설명, 주변 목록)을 밀어낸다.
@@ -157,6 +161,12 @@ type DetailError =
   | { kind: "not-found" }
   | { kind: "request"; value: UserError };
 
+const INFO_TAB_ID_BASE = "course-info";
+const INFO_TABS = [
+  { value: "course", label: "코스 정보" },
+  { value: "nearby", label: "주변 정보" },
+] as const;
+
 export function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -166,6 +176,7 @@ export function CourseDetail() {
   const [detail, setDetail] = useState<CourseDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<DetailError | null>(null);
+  useDocumentTitle(detail?.title ?? "코스 상세");
   const routeType = parseRouteTypeParam(searchParams);
   const infoTab = parseInfoTabParam(searchParams);
   const [descExpanded, setDescExpanded] = useState(false);
@@ -248,10 +259,15 @@ export function CourseDetail() {
   const modalReturnTargetRef = useRef<"start" | "nearby-tab">("start");
 
   const nearbyRef = useRef<NearbyHandle>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  // 주변 정보 상세 시트를 패널 바로 아래에 포털로 그리기 위한 요소. ref는 렌더 중에 읽을 수 없어 state로 받는다.
+  const [panelElement, setPanelElement] = useState<HTMLElement | null>(null);
   const layoutRef = useRef<HTMLElement>(null); // 패널이 가리는 폭을 재는 기준(본문 영역)
   const [nearbySpots, setNearbySpots] = useState<NearbySpot[]>([]);
   const [selectedNearbySpotId, setSelectedNearbySpotId] = useState<string | null>(null);
+  const spotSheetOpen = infoTab === "nearby" && selectedNearbySpotId != null;
+  // 아래 패널이 코스 본문(코스명 h1 포함)을 그리는 경우. 분기 순서와 같게 맞춘다.
+  const showsCourse = validId && !loading && error == null && detail != null;
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -607,7 +623,7 @@ export function CourseDetail() {
               // 뒤쪽이 inert라 팝업 안에서 포커스가 시작되어야 키보드로 닫을 수 있다.
               autoFocus
               onClick={dismissTooFar}
-              className="mt-5 h-12 w-full cursor-pointer rounded-[14px] bg-accent text-[15px] font-bold text-lavender"
+              className="mt-5 h-12 w-full cursor-pointer rounded-[14px] bg-accent text-[15px] font-bold text-white"
             >
               알겠어요
             </button>
@@ -617,7 +633,7 @@ export function CourseDetail() {
 
       {/* 상단바 아래 본문. 지도와 패널이 여기를 기준으로 자리를 잡으므로,
         모바일(상단바 없음)에서는 이 영역이 곧 화면 전체가 된다. */}
-      <main ref={layoutRef} inert={modalOpen} className="relative flex min-h-0 flex-1">
+      <main ref={layoutRef} inert={modalOpen} id={MAIN_CONTENT_ID} tabIndex={-1} className="relative flex min-h-0 flex-1 outline-none">
         {/* 지도 (z-0으로 stacking context를 가둬 Kakao 내부 레이어가 시트를 덮지 않게 함)
           폭에 상관없이 본문 전체를 채운다 — 패널은 어느 폭에서든 지도 위에 뜬다. */}
         <div className="absolute inset-0 z-0">
@@ -635,17 +651,16 @@ export function CourseDetail() {
               }}
             >
               {showOffCourse ? (
-                <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-[13px] font-bold text-[#FF4D4F] shadow-[0_2px_10px_rgba(0,0,0,0.22)]">
+                <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-[13px] font-bold text-danger shadow-[0_2px_10px_rgba(0,0,0,0.22)]">
                   <CircleAlert size={16} aria-hidden className="shrink-0" />
                   코스에서 약 {formatDistance(offCourseMeters!)} 벗어났어요
                 </div>
               ) : (
                 // 완주는 그린으로. 강조색(바이올렛)은 화면 곳곳에 쓰여 신호가 되지 못하고,
                 // 그린은 이 앱에서 이미 '길의 시작과 끝'을 가리키는 색이다.
-                // 다만 마커용 원색(--color-start #03c75a)을 그대로 쓰면 흰 배경 위 13px 글자에서
-                // 눈이 부시고 대비도 2.25:1로 낮다. 살짝만 눌러 3.5:1로 맞춘 값 —
-                // 옆자리를 쓰는 이탈 배너의 빨강(#FF4D4F, 3.27:1)과 같은 무게로 읽힌다.
-                <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-[13px] font-bold text-[#0B9D4E] shadow-[0_2px_10px_rgba(0,0,0,0.22)]">
+                // 마커용 원색(--color-start #03c75a)은 흰 배경 위 13px 글자에서 대비가 2.25:1이라
+                // 작은 글자용 success 토큰(5.44:1)을 쓴다. 옆자리를 쓰는 이탈 배너의 danger와 같은 무게다.
+                <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-[13px] font-bold text-success shadow-[0_2px_10px_rgba(0,0,0,0.22)]">
                   <CircleCheck size={16} aria-hidden className="shrink-0" />
                   코스를 완주했어요
                 </div>
@@ -675,7 +690,10 @@ export function CourseDetail() {
           이 section이 위치 기준이어야 시트가 이 패널 안에서만 뜸.
           static으로 바꾸면 시트가 기준을 잃고 지도까지 덮는 전체화면으로 퍼져버림. */}
         <section
-          ref={panelRef}
+          ref={(el) => {
+            panelRef.current = el;
+            setPanelElement(el);
+          }}
           className={`absolute inset-x-0 bottom-0 z-10 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] transition-[max-height] duration-300 md:inset-x-auto md:bottom-4 md:left-4 md:top-4 md:max-h-none md:w-[clamp(20rem,36vw,24rem)] md:rounded-2xl md:shadow-[0_8px_28px_rgba(0,0,0,0.2)] ${
             isTracking ? "max-h-[60%]" : sheetExpanded ? "max-h-[71%]" : "max-h-[51%]"
           }`}
@@ -685,13 +703,20 @@ export function CourseDetail() {
             type="button"
             onClick={() => setSheetExpanded((v) => !v)}
             aria-label={sheetExpanded ? "코스 정보 접기" : "코스 정보 펼치기"}
+            aria-expanded={sheetExpanded}
+            inert={spotSheetOpen}
             className={`shrink-0 cursor-pointer pt-2.5 pb-1 md:hidden ${isTracking ? "hidden" : ""}`}
           >
             <span className="mx-auto block h-[5px] w-11 rounded-full bg-divider" />
           </button>
 
+          {/* 코스를 그리지 못하는 동안(로딩·오류)에도 페이지 제목이 있어야 한다.
+            코스가 그려지면 그 코스명이 유일한 h1이 되도록 이때만 둔다. */}
+          {!showsCourse && <h1 className="sr-only">코스 상세</h1>}
           {loading && validId ? (
-            <p className="py-16 text-center text-[14px] text-caption">코스를 불러오는 중…</p>
+            <p role="status" className="py-16 text-center text-[14px] text-caption">
+              코스를 불러오는 중…
+            </p>
           ) : !validId ? (
             <ErrorNotice
               title="잘못된 코스예요"
@@ -714,7 +739,10 @@ export function CourseDetail() {
               {/* 스크롤 영역 (모바일은 콘텐츠 높이에 맞춰 시트가 줄어 따라가기 버튼과 붙는다)
                 추적 중에는 모바일에서만 숨겨 지도를 넓게 쓴다. 데스크톱은 지도와 나란히 놓여
                 가릴 일이 없고, 숨기면 좌측 컬럼이 텅 비므로 그대로 둔다. */}
+              {/* 주변 정보 상세 시트가 이 패널을 통째로 덮는 동안, 가려진 내용은 초점에서 뺀다.
+                시트는 이 영역 밖(section 바로 아래)에 포털로 그려져 함께 잠기지 않는다. */}
               <div
+                inert={spotSheetOpen}
                 className={`min-h-0 overflow-y-auto px-5 pb-6 pt-3 md:flex-1 ${
                   isTracking ? "hidden md:block" : ""
                 }`}
@@ -725,7 +753,7 @@ export function CourseDetail() {
                   type="button"
                   onClick={() => navigate(-1)}
                   aria-label="뒤로"
-                  className="cursor-pointer text-[20px] leading-none text-ink"
+                  className="-m-2 flex size-10 cursor-pointer items-center justify-center text-[20px] leading-none text-ink"
                 >
                   ←
                 </button>
@@ -746,32 +774,23 @@ export function CourseDetail() {
                 )}
 
                 {/* 코스 정보 / 주변 정보 토글 */}
-                <div
-                  role="tablist"
+                <Tabs
+                  idBase={INFO_TAB_ID_BASE}
+                  label="코스 상세 정보 종류"
+                  items={INFO_TABS}
+                  value={infoTab}
+                  onChange={changeInfoTab}
+                  tabRefs={{ nearby: nearbyTabRef }}
                   className="mt-4 flex gap-1 rounded-2xl bg-lavender p-1"
-                >
-                  {([["course", "코스 정보"], ["nearby", "주변 정보"]] as const).map(([key, label]) => {
-                    const active = infoTab === key;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        ref={key === "nearby" ? nearbyTabRef : undefined}
-                        role="tab"
-                        aria-selected={active}
-                        onClick={() => changeInfoTab(key)}
-                        className={`flex-1 cursor-pointer rounded-[14px] py-2 text-[16px] font-bold transition-colors ${
-                          active ? "bg-white text-ink shadow-[0px_2px_4px_0px_rgba(0,0,0,0.12)]" : "text-caption"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
+                  tabClassName={(active) =>
+                    `flex-1 cursor-pointer rounded-[14px] py-2 text-[16px] font-bold transition-colors ${
+                      active ? "bg-white text-ink shadow-[0px_2px_4px_0px_rgba(0,0,0,0.12)]" : "text-caption"
+                    }`
+                  }
+                />
 
                 {infoTab === "course" ? (
-                  <div className="mt-4">
+                  <div className="mt-4" {...tabPanelProps(INFO_TAB_ID_BASE, 0)}>
                     {detail.description && (
                       <div>
                         {/* 모바일: 3줄로 접고 더보기 / 데스크톱(md+): 공간이 넉넉해 전체 표시 */}
@@ -787,7 +806,7 @@ export function CourseDetail() {
                           <button
                             type="button"
                             onClick={() => setDescExpanded((v) => !v)}
-                            className="mt-1 cursor-pointer text-[13px] font-bold text-accent md:hidden"
+                            className="mt-1 min-h-6 cursor-pointer text-[13px] font-bold text-accent md:hidden"
                           >
                             {descExpanded ? "접기" : "더보기"}
                           </button>
@@ -818,7 +837,7 @@ export function CourseDetail() {
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-4">
+                  <div className="mt-4" {...tabPanelProps(INFO_TAB_ID_BASE, 1)}>
                     <Nearby
                       ref={nearbyRef}
                       courseId={courseId}
@@ -828,6 +847,7 @@ export function CourseDetail() {
                       onBack={backToCourses}
                       onSpotsChange={setNearbySpots}
                       onSelectedChange={(spot) => setSelectedNearbySpotId(spot?.id ?? null)}
+                      sheetContainer={panelElement}
                     />
                   </div>
                 )}
@@ -854,6 +874,7 @@ export function CourseDetail() {
               {infoTab === "course" && (
               <div
                 // 버튼 위 여백(mt-3=12px)과 아래 흰 여백을 같게 맞춘다.
+                inert={spotSheetOpen}
                 className="shrink-0 px-5 pt-3"
                 style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
               >
@@ -928,14 +949,14 @@ export function CourseDetail() {
                   className={`flex h-14 w-full cursor-pointer items-center justify-center gap-2 rounded-[14px] text-[15px] font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
                     isTracking
                       ? "border border-accent bg-white text-accent"
-                      : "bg-accent text-lavender"
+                      : "bg-accent text-white"
                   }`}
                 >
                   {isTracking && (
                     // 작은 글리프는 뭔지 알아보기 어려워 회전 스피너로 '찾는 중'을 표현
                     <span
                       aria-hidden
-                      className="size-4 animate-spin rounded-full border-2 border-accent border-t-transparent"
+                      className="size-4 animate-spin motion-reduce:animate-none rounded-full border-2 border-accent border-t-transparent"
                     />
                   )}
                   {isTracking
@@ -950,6 +971,7 @@ export function CourseDetail() {
               여기에 조작이 없으면 멈춰 놓고 되돌릴 방법이 없다. */}
             {infoTab === "nearby" && trackingStatus === "paused" && (
               <div
+                inert={spotSheetOpen}
                 className="shrink-0 px-5 pt-3"
                 style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
               >

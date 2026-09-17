@@ -9,6 +9,10 @@ import { parseLocalDate } from "./dateUtils";
 import { useToday } from "./useToday";
 import { EVENT_TYPE_COLOR, EVENT_TYPE_LABEL, type EventType, type Race as RaceType } from "./types";
 import AppHeader from "../../components/layout/AppHeader";
+import { MAIN_CONTENT_ID } from "../../components/layout/mainContent";
+import { useDocumentTitle } from "../../lib/useDocumentTitle";
+import { useDebouncedValue } from "../../lib/useDebouncedValue";
+import { StatusMessage } from "../../components/common/a11y";
 import Footer from "../../components/layout/Footer";
 import { ErrorNotice } from "../../components/error/ErrorNotice";
 import { toUserError, type UserError } from "../../components/error/userError";
@@ -33,6 +37,7 @@ export default function Race() {
 
 
   const selectedRace = races.find((race) => race.event_id === linkedEventId) ?? null;
+  useDocumentTitle(selectedRace ? `${selectedRace.race_title} - 대회 행사` : "대회 행사");
   const eventParam = searchParams.get("eventId");
   const [prevEventParam, setPrevEventParam] = useState(eventParam);
   const [pendingSelection, setPendingSelection] = useState<{
@@ -62,8 +67,15 @@ export default function Race() {
   }
 
   const scrollTarget = useRef<number | null>(linkedEventId);
-  const selectRace = (race: RaceType | null, scroll = false) => {
+  // 모바일 상세(모달)를 닫으면 누른 대회 버튼으로 초점을 돌려준다.
+  // 캘린더에서는 여러 날에 걸친 대회가 칸마다 버튼으로 있어, 실제로 누른 버튼을 기억한다.
+  const selectTriggerRef = useRef<HTMLElement | null>(null);
+  const selectRace = (race: RaceType | null, scroll = false, returnTarget?: HTMLElement | null) => {
     const id = race?.event_id ?? null;
+    if (race) {
+      selectTriggerRef.current =
+        returnTarget ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    }
     scrollTarget.current = scroll ? id : null;
     if (id === null && !searchParams.has("eventId")) return;
     const nextEventParam = id === null ? null : String(id);
@@ -158,6 +170,13 @@ export default function Race() {
     });
   }, [races, activeType, upcomingOnly, keyword, viewMode, today]);
 
+  const debouncedCount = useDebouncedValue(filteredRaces.length, 500);
+  const raceStatusMessage = isLoading
+    ? "대회를 불러오는 중"
+    : error
+      ? ""
+      : `대회 ${debouncedCount.toLocaleString("ko-KR")}개`;
+
   const upcomingFilter = (
     <label className="flex h-10 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap text-xs text-ink">
       <input
@@ -180,17 +199,19 @@ export default function Race() {
         폭은 max-w-6xl(72rem)로 — AppHeader.tsx의 좌우 padding 계산식과
         Home.tsx의 BannerCarousel(banners.tsx)이 쓰는 max-w-6xl 기준을 그대로 따른 것.
         기준이 다르면 페이지를 옮길 때마다 헤더·본문 좌우 끝이 미묘하게 어긋나 보인다. */}
-      <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-4">
+      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="mx-auto w-full max-w-6xl px-4 pt-4 pb-4 outline-none">
         <div className="flex flex-col gap-4">
           {/* 캘린더에서 선택해도 목록으로 전환해 동일한 상세 UI를 사용한다. */}
           <div className="w-full min-w-0">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h1 className="font-bold text-ink text-[20px]">대회 행사 일정</h1>
               {!isLoading && !error && (
-                <p className="shrink-0 text-[20px] font-bold tabular-nums text-ink" aria-live={keyword.trim() ? "off" : "polite"} aria-atomic="true">
+                <p className="shrink-0 text-[20px] font-bold tabular-nums text-ink">
                   {filteredRaces.length.toLocaleString("ko-KR")}개
                 </p>
               )}
+              {/* 검색어를 칠 때마다 읽지 않도록 입력이 멈춘 뒤의 개수만 알린다 */}
+              <StatusMessage message={raceStatusMessage} />
             </div>
 
             <fieldset disabled={isLoading} className="min-w-0 disabled:opacity-60">
@@ -274,7 +295,7 @@ export default function Race() {
                     setKeyword(event.target.value);
                     selectRace(null);
                   }}
-                  className="h-10 w-full rounded-lg border border-divider bg-white pl-9 pr-3.5 text-sm text-ink placeholder:text-caption focus:border-accent focus:outline-none"
+                  className="h-10 w-full rounded-lg border border-input-border bg-white pl-9 pr-3.5 text-sm text-ink placeholder:text-caption focus:border-accent focus:outline-none"
                 />
               </div>
               {upcomingFilter}
@@ -304,14 +325,14 @@ export default function Race() {
                 <RaceCalendar
                   races={filteredRaces}
                   selectedRaceId={selectedRace?.event_id ?? null}
-                  onSelectRace={(race) => {
+                  onSelectRace={(race, returnTarget) => {
                     if (isDesktop) {
                       setKeyword("");
                       setUpcomingOnly(false);
 
                       setViewMode("list");
                     }
-                    selectRace(race, isDesktop);
+                    selectRace(race, isDesktop, returnTarget);
                   }}
                 />
               )
@@ -324,12 +345,18 @@ export default function Race() {
                 key={selectedRace.event_id}
                 race={selectedRace}
                 onClose={() => selectRace(null)}
+                getReturnTarget={() => {
+                  const trigger = selectTriggerRef.current;
+                  return trigger?.isConnected
+                    ? trigger
+                    : document.getElementById(`race-trigger-${selectedRace.event_id}`);
+                }}
                 backLabel={viewMode === "calendar" ? "캘린더로" : "목록으로"}
               />
             </div>
           )}
         </div>
-      </div>
+      </main>
       <Footer />
     </>
   );

@@ -3,10 +3,14 @@ import { Link } from "react-router";
 import AppHeader from "./AppHeader";
 import Footer from "./Footer";
 import { useScrollbarGutterStable } from "./useScrollbarGutterStable";
+import { MAIN_CONTENT_ID } from "./mainContent";
+import { useDocumentTitle } from "../../lib/useDocumentTitle";
 
 interface Props {
   /** 페이지 제목. h1으로 그린다. */
   title: string;
+  /** 탭 제목. 없으면 title을 쓴다. 공지 상세처럼 h1보다 구체적인 이름이 있을 때 넘긴다. */
+  documentTitle?: string | null;
   /** 제목 위의 뒤로가기 링크. 고객지원 하위 페이지에서 한 단계 위로 돌아갈 길을 준다. 없으면 그리지 않는다. */
   back?: { to: string; label: string };
   children?: ReactNode;
@@ -27,8 +31,9 @@ interface Props {
  * 페이지가 모두 같은 푸터를 갖는다. min-h-dvh + flex-col과 main의 flex-1이 그 자리를
  * 만든다 — Footer는 mt-auto를 갖고 있어서 내용이 짧은 페이지에서도 화면 바닥에 붙는다.
  */
-export default function DocumentPage({ title, back, children }: Props) {
+export default function DocumentPage({ title, documentTitle, back, children }: Props) {
   useScrollbarGutterStable();
+  useDocumentTitle(documentTitle ?? title);
 
   return (
     <div className="flex min-h-dvh flex-col bg-white">
@@ -37,7 +42,7 @@ export default function DocumentPage({ title, back, children }: Props) {
       {/* 본문 폭은 720px로, 헤더가 기준으로 삼는 max-w-6xl(72rem)보다 좁게 둔다.
         헤더와 좌우 끝을 맞추는 다른 페이지와 달리 여기는 긴 글을 읽는 페이지라 한 줄이
         72rem까지 늘어나면 눈이 다음 줄 첫머리를 놓친다. */}
-      <main className="mx-auto w-full max-w-[720px] flex-1 px-4 py-10 md:py-16">
+      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="mx-auto w-full max-w-[720px] flex-1 px-4 py-10 outline-none md:py-16">
         {/* 제목의 크기와 위치는 고객지원 첫 화면과 하위 화면이 똑같다. 화면을 오갈 때 제목이
           움직이거나 커졌다 작아지지 않게 하려는 것이다.
           그래서 뒤로가기 링크는 제목을 밀어내지 않도록 제목 위 여백(py-10, 넓은 화면 py-16) 안에 띄운다.

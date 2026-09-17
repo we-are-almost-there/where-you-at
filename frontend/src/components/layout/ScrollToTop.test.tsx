@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useNavigate, useSearchParams } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ScrollToTop from "./ScrollToTop";
+import { MAIN_CONTENT_ID } from "./mainContent";
 
 const scrollTo = vi.fn();
 
@@ -19,19 +20,20 @@ afterEach(() => {
 });
 
 // 버튼마다 한 가지 이동을 일으킨다. 지금 주소는 문단으로 보여 준다.
+// 실제 화면처럼 본문(main)을 두어 초점 이동도 확인한다.
 function Controls() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const page = params.get("page") ?? "";
   return (
-    <>
+    <main id={MAIN_CONTENT_ID} tabIndex={-1}>
       <p>page={page}</p>
       <button onClick={() => navigate("/privacy")}>경로 이동</button>
       <button onClick={() => setParams({ page })}>같은 쿼리 push</button>
       <button onClick={() => setParams({ page }, { replace: true })}>같은 쿼리 replace</button>
       <button onClick={() => setParams({ page: "2" })}>다른 쿼리</button>
       <button onClick={() => navigate(-1)}>뒤로</button>
-    </>
+    </main>
   );
 }
 
@@ -75,6 +77,40 @@ describe("ScrollToTop", () => {
 
     expect(screen.getByText("page=2")).toBeTruthy();
     expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("경로가 바뀌면 새 화면의 본문으로 초점을 옮기되 스크롤은 초점이 정하지 않는다", () => {
+    renderAt("/terms");
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    screen.getByRole("button", { name: "경로 이동" }).focus();
+
+    click("경로 이동");
+
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    focus.mockRestore();
+  });
+
+  it("쿼리만 바뀌면 조작하던 컨트롤에 초점을 남긴다", () => {
+    renderAt("/bicycle-facilities?page=1");
+    const button = screen.getByRole("button", { name: "다른 쿼리" });
+    button.focus();
+
+    click("다른 쿼리");
+
+    expect(document.activeElement).toBe(button);
+  });
+
+  it("뒤로가기도 본문으로 초점을 옮기지만 스크롤은 브라우저 복원에 맡긴다", () => {
+    renderAt("/terms");
+    click("경로 이동");
+    scrollTo.mockClear();
+    screen.getByRole("button", { name: "뒤로" }).focus();
+
+    click("뒤로");
+
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole("main"));
   });
 
   it("뒤로가기에는 관여하지 않는다", () => {

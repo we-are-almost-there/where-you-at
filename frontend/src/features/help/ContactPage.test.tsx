@@ -47,21 +47,63 @@ describe("ContactPage", () => {
     );
   });
 
-  it("필수 항목을 모두 채우고 동의해야 보내기 버튼이 켜진다", () => {
+  it("필수 입력칸과 동의 체크박스에 required가 있다", () => {
     renderPage();
-    expect(submitButton().disabled).toBe(true);
 
+    for (const label of ["문의 유형", "답변 받을 이메일", "문의 내용", "위 내용에 동의합니다."]) {
+      expect((screen.getByLabelText(label) as HTMLInputElement).required).toBe(true);
+    }
+  });
+
+  it("빈 폼을 보내면 요청하지 않고 모든 오류를 알린 뒤 첫 칸으로 초점을 옮긴다", () => {
+    renderPage();
+    expect(submitButton().disabled).toBe(false);
+    expect(screen.queryByText("문의 유형을 선택해 주세요.")).toBeNull(); // 누르기 전에는 꾸짖지 않는다
+
+    fireEvent.click(submitButton());
+
+    expect(mockedCreate).not.toHaveBeenCalled();
+    const category = screen.getByLabelText("문의 유형");
+    expect(document.activeElement).toBe(category);
+    for (const [label, message] of [
+      ["문의 유형", "문의 유형을 선택해 주세요."],
+      ["답변 받을 이메일", "답변 받을 이메일을 입력해 주세요."],
+      ["문의 내용", "문의 내용을 입력해 주세요."],
+      ["위 내용에 동의합니다.", "개인정보 수집·이용에 동의해야 문의를 보낼 수 있어요."],
+    ] as const) {
+      const field = screen.getByLabelText(label);
+      expect(field.getAttribute("aria-invalid")).toBe("true");
+      const describedBy = field.getAttribute("aria-describedby")!.split(" ");
+      expect(describedBy.map((id) => document.getElementById(id)?.textContent)).toContain(message);
+    }
+  });
+
+  it("10자 미만 내용과 동의 누락은 각각 알리고, 앞 칸이 맞으면 다음 오류 칸으로 초점을 옮긴다", () => {
+    renderPage();
     fireEvent.change(screen.getByLabelText("문의 유형"), { target: { value: "코스 탐색" } });
     fireEvent.change(screen.getByLabelText("답변 받을 이메일"), { target: { value: "user@example.com" } });
     fireEvent.change(screen.getByLabelText("문의 내용"), { target: { value: "짧아요" } });
-    fireEvent.click(screen.getByLabelText("위 내용에 동의합니다."));
-    expect(submitButton().disabled).toBe(true); // 내용이 10자 미만
+
+    fireEvent.click(submitButton());
+    expect(document.activeElement).toBe(screen.getByLabelText("문의 내용"));
+    expect(screen.getByText("문의 내용을 10자 이상 적어 주세요.")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("문의 내용"), { target: { value: CONTENT } });
-    expect(submitButton().disabled).toBe(false);
+    fireEvent.click(submitButton());
+    expect(document.activeElement).toBe(screen.getByLabelText("위 내용에 동의합니다."));
+    expect(screen.queryByText("문의 내용을 10자 이상 적어 주세요.")).toBeNull();
+    expect(mockedCreate).not.toHaveBeenCalled();
+  });
 
-    fireEvent.click(screen.getByLabelText("위 내용에 동의합니다."));
-    expect(submitButton().disabled).toBe(true); // 동의 해제
+  it("이메일 형식 오류는 칸을 벗어날 때 바로 알린다", () => {
+    renderPage();
+    const email = screen.getByLabelText("답변 받을 이메일");
+
+    fireEvent.change(email, { target: { value: "user@" } });
+    fireEvent.blur(email);
+
+    expect(email.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByText("이메일 형식을 확인해 주세요.")).toBeTruthy();
   });
 
   it("앞뒤 공백을 뺀 값으로 보내고 접수 완료 화면을 보여준다", async () => {
@@ -105,12 +147,18 @@ describe("ContactPage", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("서버에 연결할 수 없어요");
   });
 
-  it("숨긴 입력칸은 스크린 리더와 탭 이동에서 빠져 있다", () => {
+  it("숨긴 입력칸은 접근성 트리와 탭 이동에서 빠져 있다", () => {
     const { container } = renderPage();
 
     const honeypot = container.querySelector('input[name="website"]') as HTMLInputElement;
-    expect(honeypot.tabIndex).toBe(-1);
-    expect(honeypot.closest('[aria-hidden="true"]')).not.toBeNull();
+    // display:none(hidden) 안에 있어야 화면낭독기와 Tab 모두에서 확실히 빠진다.
+    expect(honeypot.closest("[hidden]")).not.toBeNull();
+    expect(screen.queryByRole("textbox", { name: "웹사이트" })).toBeNull();
+    // aria-hidden 안에 포커스를 받을 수 있는 요소가 남아 있으면 안 된다.
+    const focusableInsideHidden = container.querySelectorAll(
+      '[aria-hidden="true"] :is(a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"]))',
+    );
+    expect(focusableInsideHidden).toHaveLength(0);
   });
 
   it("동의 안내에 수집 항목·보유 기간을 보여준다", () => {
@@ -160,23 +208,25 @@ describe("ContactPage", () => {
     expect(screen.getByText(/^10자 ·/)).toBeTruthy();
   });
 
-  it("이모지 2000자는 보낼 수 있고, 2001자는 넘친 글자 수를 알리며 보내기를 막는다", () => {
+  it("이모지 2000자는 보낼 수 있고, 2001자는 넘친 글자 수를 알리며 보내지 않는다", async () => {
+    mockedCreate.mockResolvedValue({ received: true });
     renderPage();
     fillValidForm();
     const textarea = () => screen.getByLabelText("문의 내용") as HTMLTextAreaElement;
 
-    fireEvent.change(textarea(), { target: { value: "😀".repeat(2000) } });
-    expect(screen.getByText(/^2000자 ·/)).toBeTruthy();
-    expect(textarea().getAttribute("aria-invalid")).toBe("false");
-    expect(submitButton().disabled).toBe(false);
-
     fireEvent.change(textarea(), { target: { value: "😀".repeat(2001) } });
     expect(screen.getByText("2001자 · 2000자를 1자 넘었어요")).toBeTruthy();
     expect(textarea().getAttribute("aria-invalid")).toBe("true");
-    expect(submitButton().disabled).toBe(true);
+    fireEvent.click(submitButton());
+    expect(mockedCreate).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(textarea());
 
     fireEvent.change(textarea(), { target: { value: "😀".repeat(2000) } });
-    expect(submitButton().disabled).toBe(false);
+    expect(screen.getByText(/^2000자 ·/)).toBeTruthy();
+    expect(textarea().getAttribute("aria-invalid")).toBe("false");
+    fireEvent.click(submitButton());
+    await screen.findByText("문의가 접수됐어요");
+    expect(mockedCreate).toHaveBeenCalledTimes(1);
   });
 
   // 넘친 글자를 잘라 내면 가운데에 입력한 글자는 남고 끝 글자가 지워진다. 입력은 건드리지 않아야 한다.
