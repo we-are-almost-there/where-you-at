@@ -86,6 +86,33 @@ function currentSearch() {
   return screen.getByTestId("location-search").textContent;
 }
 
+it("exposes filter and view selection through pressed state", async () => {
+  await open("/race");
+
+  expect(screen.getByRole("button", { name: "전체", pressed: true })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "목록", pressed: true })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "캘린더", pressed: false })).toBeTruthy();
+
+  for (const name of ["러닝", "자전거"]) {
+    fireEvent.click(screen.getByRole("button", { name, pressed: false }));
+    expect(screen.getByRole("button", { name, pressed: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "전체", pressed: false })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name, pressed: true }));
+    expect(screen.getByRole("button", { name: "전체", pressed: true })).toBeTruthy();
+  }
+
+  fireEvent.click(screen.getByRole("button", { name: "러닝" }));
+  fireEvent.click(screen.getByRole("button", { name: "전체" }));
+  expect(screen.getByRole("button", { name: "러닝", pressed: false })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "캘린더" }));
+  expect(screen.getByRole("button", { name: "캘린더", pressed: true })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "목록", pressed: false })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "목록" }));
+  expect(screen.getByRole("button", { name: "목록", pressed: true })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "캘린더", pressed: false })).toBeTruthy();
+});
+
 function goBack() {
   fireEvent.click(screen.getByRole("button", { name: "뒤로" }));
 }

@@ -199,6 +199,7 @@ export default function Race() {
               <button
                 type="button"
                 onClick={() => {setActiveType(null); selectRace(null);}}
+                aria-pressed={activeType === null}
                 className={`relative pb-2 text-[15px] font-bold transition-colors ${
                   activeType === null ? "text-ink" : "text-gray-400"
                 }`}
@@ -215,6 +216,7 @@ export default function Race() {
                     key={type}
                     type="button"
                     onClick={() => {setActiveType(isActive ? null : type);  selectRace(null);}}
+                    aria-pressed={isActive}
                     className="relative pb-2 text-[15px] font-bold transition-colors"
                     style={{ color: isActive ? (type === "cycling" ? "var(--color-race-cycling-text)" : EVENT_TYPE_COLOR[type]) : undefined }}
                   >
@@ -238,6 +240,7 @@ export default function Race() {
                   setViewMode("list");
                   selectRace(null);
                 }}
+                aria-pressed={viewMode === "list"}
                 className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
                   viewMode === "list" ? "bg-white text-ink shadow-sm" : "text-gray-500"
                 }`}
@@ -250,6 +253,7 @@ export default function Race() {
                   setViewMode("calendar");
                   selectRace(null);
                 }}
+                aria-pressed={viewMode === "calendar"}
                 className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
                   viewMode === "calendar" ? "bg-white text-ink shadow-sm" : "text-gray-500"
                 }`}

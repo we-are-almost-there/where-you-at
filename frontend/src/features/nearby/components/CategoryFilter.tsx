@@ -15,6 +15,7 @@ export function CategoryFilter({ value, onChange }: Props) {
             key={c}
             type="button"
             onClick={() => onChange(c)}
+            aria-pressed={active}
             className={`rounded-full py-2.5 text-center text-[13px] font-medium transition-colors ${
               active ? "bg-accent text-white" : "border border-divider bg-white text-ink"
             }`}
