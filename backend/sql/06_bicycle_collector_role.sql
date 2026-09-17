@@ -48,6 +48,12 @@ $$;
 grant connect on database postgres to bicycle_realtime_collector;
 grant usage on schema public to bicycle_realtime_collector;
 
+-- PostGIS는 extensions 스키마에 있다. 수집 SQL이 ST_MakePoint, ST_DWithin 등을 스키마 없이
+-- 부르므로, 스키마 사용 권한과 postgres 역할과 같은 search_path가 없으면
+-- "function ... does not exist"로 실패한다. search_path는 새로 여는 연결부터 적용된다.
+grant usage on schema extensions to bicycle_realtime_collector;
+alter role bicycle_realtime_collector set search_path = public, extensions;
+
 -- 재실행할 때도 수집 대상의 권한을 초기화한 뒤 필요한 것만 다시 준다.
 -- public 전체를 대상으로 하면 PostGIS 등 확장 소유 객체까지 건드릴 수 있어 범위를 좁힌다.
 revoke all privileges on public.bicycle_facility from bicycle_realtime_collector;
@@ -151,3 +157,11 @@ create policy bicycle_realtime_collector_update
 --     as can_read_inquiry,
 --   has_table_privilege('bicycle_realtime_collector', 'public.inquiry', 'INSERT')
 --     as can_insert_inquiry;
+--
+-- 4) PostGIS 사용 준비: true, search_path에 extensions가 있어야 한다.
+-- select has_schema_privilege('bicycle_realtime_collector', 'extensions', 'USAGE')
+--   as can_use_extensions;
+-- select s.setconfig
+-- from pg_db_role_setting s
+-- join pg_roles r on r.oid = s.setrole
+-- where r.rolname = 'bicycle_realtime_collector';
