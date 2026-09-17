@@ -8,11 +8,19 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SupportRegionView } from "./SupportRegionView";
 import { fetchSupportList } from "../supportApi";
+import { getRegions } from "../../map/coursesApi";
 import type { SupportListItem } from "../support.types";
 
 vi.mock("../supportApi", () => ({ fetchSupportList: vi.fn() }));
+vi.mock("../../map/coursesApi", () => ({ getRegions: vi.fn() }));
 
 const mockedList = vi.mocked(fetchSupportList);
+const mockedRegions = vi.mocked(getRegions);
+
+/** 코스를 보유한 지역 — 화천만 있고 고성은 없다 */
+const COURSE_REGIONS = [
+  { region_code: "51790", name: "화천군", sido: "강원특별자치도", is_population_drop: true },
+];
 
 // refund_type '정률'이라 이 항목이 있으면 아래 환급 계산기도 함께 열린다
 const item = (id: number, title: string): SupportListItem => ({
@@ -38,6 +46,7 @@ beforeEach(() => {
     "fetch",
     vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(NAMES) })),
   );
+  mockedRegions.mockResolvedValue(COURSE_REGIONS);
 });
 
 afterEach(() => {
@@ -110,5 +119,63 @@ describe("SupportRegionView — 지역 전환", () => {
 
     await waitFor(() => expect(screen.getByText("불러오는 중…")).toBeTruthy());
     expect(container.querySelector("ul[aria-hidden]")).toBeNull();
+  });
+});
+
+// 코스가 없는 지역으로 보내면 '조건에 맞는 코스가 없어요'만 뜨는 목록이 나오고,
+// 그 화면의 지역 필터는 코스 보유 지역만 담고 있어 URL의 지역이 표시되지도 않는다.
+describe("SupportRegionView — 코스 링크", () => {
+  // 코스 보유 지역 목록은 모듈 캐시에 한 번만 담긴다(패널을 여닫을 때마다 요청이
+  // 나가지 않게 하려는 것). 테스트마다 첫 조회 상황을 만들려면 모듈을 다시 불러야 한다 —
+  // 그러지 않으면 앞 테스트가 채운 캐시 때문에 조회 실패 경로에 아예 닿지 못한다.
+  let Fresh: typeof SupportRegionView;
+  let regions: typeof getRegions;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    Fresh = (await import("./SupportRegionView")).SupportRegionView;
+    regions = (await import("../../map/coursesApi")).getRegions;
+    vi.mocked((await import("../supportApi")).fetchSupportList).mockResolvedValue([]);
+  });
+
+  const renderFresh = (regionCode: string) =>
+    render(
+      <MemoryRouter>
+        <Fresh regionCode={regionCode} />
+      </MemoryRouter>,
+    );
+
+  const courseLink = () => screen.queryByRole("link", { name: /코스 보러가기/ });
+  const offNotice = () => screen.queryByText("이 지역에는 등록된 코스가 없어요");
+
+  it("코스가 있는 지역은 코스 링크를 보여준다", async () => {
+    vi.mocked(regions).mockResolvedValue(COURSE_REGIONS);
+
+    renderFresh("51790");
+
+    await waitFor(() => expect(courseLink()!.getAttribute("href")).toBe("/courses?region=51790"));
+    expect(offNotice()).toBeNull();
+  });
+
+  it("코스가 없는 지역은 링크 대신 비활성 안내를 보여준다", async () => {
+    vi.mocked(regions).mockResolvedValue(COURSE_REGIONS); // 고성(48820)은 목록에 없다
+
+    renderFresh("48820");
+
+    const off = await screen.findByRole("button", { name: "이 지역에는 등록된 코스가 없어요" });
+    expect((off as HTMLButtonElement).disabled).toBe(true);
+    expect(courseLink()).toBeNull();
+  });
+
+  it("코스 보유 지역을 못 받으면 링크를 막지 않는다", async () => {
+    // 모르는 것을 없다고 단정하지 않는다 — 코스가 있는 지역의 링크를 조회 실패로
+    // 막아 버리는 쪽이, 빈 목록을 한 번 보여주는 것보다 나쁘다.
+    vi.mocked(regions).mockRejectedValue(new TypeError("Failed to fetch"));
+
+    renderFresh("48820");
+
+    await screen.findByText("이 지역에 해당하는 지원 제도가 없어요.");
+    expect(courseLink()).toBeTruthy();
+    expect(offNotice()).toBeNull();
   });
 });

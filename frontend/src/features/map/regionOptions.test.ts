@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { buildRegionOptions, type RegionGroup, type RegionSelectItem } from "./regionOptions";
+import {
+  buildRegionOptions,
+  hasRegionOption,
+  regionOptionLabel,
+  type RegionGroup,
+  type RegionSelectItem,
+} from "./regionOptions";
 import type { Region } from "./types";
 
 const asGroup = (item: RegionSelectItem, name: string): RegionGroup => {
@@ -65,5 +71,37 @@ describe("buildRegionOptions - 전남광주통합특별시", () => {
       { value: "12130", label: "여수" },
       { value: "12210", label: "동" },
     ]);
+  });
+});
+
+// 드롭다운에 없는 지역으로 들어오는 경로가 실제로 있다 — 방문 혜택 패널의
+// '이 지역 코스 보러가기'는 늘 5자리 시군구 코드를 넘긴다.
+describe("hasRegionOption", () => {
+  const opts = buildRegionOptions(regions);
+
+  it("그룹 안의 시군구도 찾는다", () => {
+    expect(hasRegionOption(opts, "48820")).toBe(true); // 경남 고성군
+    expect(hasRegionOption(opts, "26")).toBe(true); // 흡수된 부산
+  });
+
+  it("광역시의 구는 흡수돼 고를 수 있는 항목이 아니다", () => {
+    // 영도구는 응답에 있지만 드롭다운에는 '부산' 하나로만 들어간다
+    expect(hasRegionOption(opts, "26200")).toBe(false);
+  });
+
+  it("목록에 없는 지역은 없다고 답한다", () => {
+    expect(hasRegionOption(opts, "11680")).toBe(false); // 코스 없는 서울 강남구
+  });
+});
+
+describe("regionOptionLabel", () => {
+  it("시도는 축약하고 시군구 접미사는 뗀다", () => {
+    // 시도 그룹 밖에 홀로 서는 항목이라 시도를 남긴다 — '강화'만으로는 어디인지 모른다
+    expect(regionOptionLabel("인천광역시 강화군")).toBe("인천 강화");
+    expect(regionOptionLabel("서울특별시 강남구")).toBe("서울 강남");
+  });
+
+  it("시도와 이름이 같은 세종은 한 덩어리로 줄인다", () => {
+    expect(regionOptionLabel("세종특별자치시")).toBe("세종");
   });
 });

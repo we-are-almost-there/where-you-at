@@ -135,3 +135,43 @@ describe("CourseExplore 가까운 순", () => {
     expect(getAllCourses).toHaveBeenCalledTimes(1);
   });
 });
+
+// 방문 혜택 패널의 '이 지역 코스 보러가기'는 늘 5자리 시군구 코드를 넘기는데, 지역 필터
+// 항목에는 없을 수 있다 — 코스가 없는 지역이거나(/api/regions가 안 준다), 광역시의 구·군이면
+// (드롭다운이 광역시를 하나로 흡수한다) 그렇다. 그때 트리거가 '전체 지역'으로 보이면
+// 걸러진 목록을 전체로 읽게 된다 (강화군은 300개 중 4개만 뜬다).
+describe("CourseExplore 지역 필터 표시", () => {
+  const BUSAN = [
+    { region_code: "26110", name: "중구", sido: "부산광역시", is_population_drop: false },
+  ];
+
+  beforeEach(() => {
+    vi.mocked(getRegions).mockResolvedValue(BUSAN);
+    // region-index.json — DB 지역 전체의 이름
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({ json: () => Promise.resolve({ names: { "28710": "인천광역시 강화군" } }) }),
+      ),
+    );
+  });
+
+  // 데스크톱 칩과 모바일 필터가 같이 그려져 트리거는 둘 다 잡힌다
+  const regionTriggers = () => screen.getAllByRole("button", { name: "지역" });
+
+  it("항목에 없는 지역으로 들어오면 그 지역 이름을 필터에 띄운다", async () => {
+    renderAt("/courses?region=28710");
+
+    await waitFor(() =>
+      regionTriggers().forEach((t) => expect(t.textContent).toContain("인천 강화")),
+    );
+  });
+
+  it("항목에 있는 지역은 그대로 둔다", async () => {
+    renderAt("/courses?region=26");
+
+    await waitFor(() => regionTriggers().forEach((t) => expect(t.textContent).toContain("부산")));
+    // 항목이 이미 있으므로 이름 파일을 받을 이유가 없다
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+});

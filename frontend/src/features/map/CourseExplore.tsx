@@ -17,7 +17,13 @@ import { toUserError, type UserError } from "../../components/error/userError";
 import { buildCourseQuery, DEFAULT_PAGE_SIZE } from "./coursesMock";
 import { getAllCourses, getCourses, getRegions } from "./coursesApi";
 import { slicePage, sortByDistance } from "./nearestSort";
-import { buildRegionOptions, type RegionSelectItem } from "./regionOptions";
+import {
+  buildRegionOptions,
+  hasRegionOption,
+  regionOptionLabel,
+  type RegionSelectItem,
+} from "./regionOptions";
+import { loadRegionNames } from "../../lib/regionNames";
 import type { Course, CourseFilterState, CourseListResponse, LatLng, RouteType } from "./types";
 import { buildCourseSearchParams, parseCourseUrlState, type CourseUrlState } from "./courseUrlState";
 import AppHeader from "../../components/layout/AppHeader";
@@ -44,7 +50,9 @@ export function CourseExplore() {
   const { routeType, filters, page } = useMemo(() => parseCourseUrlState(searchParams), [searchParams]);
   const [userLoc, setUserLoc] = useState<LatLng | null>(null);
   const [geoDenied, setGeoDenied] = useState(false);
-  const [regionOptions, setRegionOptions] = useState<RegionSelectItem[]>([]);
+  // /api/regions가 준 항목(코스 보유 지역만). 화면에 넘기는 목록은 아래 regionOptions다.
+  const [courseRegionOptions, setCourseRegionOptions] = useState<RegionSelectItem[]>([]);
+  const [regionNames, setRegionNames] = useState<Map<string, string> | null>(null);
   const listScrollRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -83,7 +91,7 @@ export function CourseExplore() {
     let timer: ReturnType<typeof setTimeout>;
     const load = () => {
       getRegions()
-        .then((rs) => !cancelled && setRegionOptions(buildRegionOptions(rs)))
+        .then((rs) => !cancelled && setCourseRegionOptions(buildRegionOptions(rs)))
         .catch((err) => {
           if (cancelled) return;
           // 재시도가 남았으면 조용히 다시 시도하고, 다 소진되면 원인 추적용으로 한 줄 남긴다.
@@ -97,6 +105,42 @@ export function CourseExplore() {
       clearTimeout(timer);
     };
   }, []);
+
+  // URL의 지역이 드롭다운 항목에 없을 수 있다.
+  //   - 코스가 없는 지역 — /api/regions는 코스를 가진 지역만 준다
+  //   - 광역시의 구·군 — 드롭다운이 광역시를 시도 하나로 흡수해 5자리 항목이 없다
+  // 방문 혜택 패널의 '이 지역 코스 보러가기'가 늘 5자리 코드를 넘기므로 둘 다 실제로 들어온다.
+  // 항목이 없으면 트리거는 '전체 지역'으로 보이는데 목록은 걸러진 채다 — 강화군으로 들어오면
+  // 300개 중 4개만 뜨는데 필터는 전체라고 적혀 있고, 코스가 없는 지역이면 왜 비었는지 알 수 없다.
+  // 지역명을 찾아 항목을 하나 얹어, 지금 무엇으로 걸러졌는지 드러낸다.
+  const unknownRegion =
+    filters.region !== "" &&
+    courseRegionOptions.length > 0 &&
+    !hasRegionOption(courseRegionOptions, filters.region)
+      ? filters.region
+      : null;
+
+  useEffect(() => {
+    if (!unknownRegion) return;
+    let cancelled = false;
+    // 이름을 못 받으면 항목을 얹지 않는다 — 코드만 적힌 항목은 '전체 지역'보다 나을 게 없다.
+    loadRegionNames()
+      .then((names) => {
+        if (!cancelled) setRegionNames(names);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [unknownRegion]);
+
+  const regionOptions = useMemo(() => {
+    if (!unknownRegion) return courseRegionOptions;
+    const full = regionNames?.get(unknownRegion);
+    return full
+      ? [...courseRegionOptions, { value: unknownRegion, label: regionOptionLabel(full) }]
+      : courseRegionOptions;
+  }, [courseRegionOptions, unknownRegion, regionNames]);
 
   // 페이지 이동 시 목록 스크롤을 맨 위로 (다음 페이지의 첫 코스가 보이도록)
   useEffect(() => {
