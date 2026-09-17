@@ -23,3 +23,10 @@ def upsert_kakao_user(conn, *, kakao_id: int, nickname: str | None) -> dict:
         row = cur.fetchone()
     conn.commit()
     return row
+
+
+def get_user(conn, user_id: int) -> dict | None:
+    query = f"select {_USER_COLUMNS} from app_user where id = %(id)s"
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(query, {"id": user_id})
+        return cur.fetchone()
