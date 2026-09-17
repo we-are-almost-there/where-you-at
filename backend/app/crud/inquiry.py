@@ -15,7 +15,7 @@ def create_inquiry(conn, *, category: str, email: str, content: str) -> dict:
 
     consented_at은 저장 시각으로 채운다. 스키마 검증에서 동의(agreed=True)를 확인한 뒤에만
     이 함수가 불리므로, 저장 시각이 곧 동의 시각이다. 실패하면 커밋하지 않고 예외를 올린다
-    (get_db가 연결을 닫으면서 트랜잭션도 버려진다).
+    (라우터의 db_connection이 연결을 닫으면서 트랜잭션도 버려진다).
     """
     query = """
         insert into inquiry (category, email, content, consented_at)
