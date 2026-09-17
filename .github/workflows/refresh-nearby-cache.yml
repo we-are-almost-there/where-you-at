@@ -1,9 +1,9 @@
 name: Refresh expiring nearby caches
 
 on:
-  # 캐시 전용 DB 역할 및 읽기·쓰기 권한 검증 후 활성화 예정:
-  # schedule:
-  #   - cron: "17 18 * * *" # 매일 KST 03:17 (UTC 18:17)
+  # GitHub 예약 실행은 매시 정각에 몰려 지연·누락이 잦아 정각을 피한다.
+  schedule:
+    - cron: "17 18 * * *" # 매일 KST 03:17 (UTC 18:17)
   workflow_dispatch:
 
 permissions:
@@ -29,9 +29,12 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
       - run: python -m scripts.refresh_nearby_cache --refresh-expiring 48
+        # DB_USER·DB_PASSWORD Secrets는 자전거 수집 역할(06)이라 쓰지 않는다.
+        # 캐시 갱신 전용 역할(backend/sql/07_nearby_cache_role.sql)로 접속하고,
+        # 호스트·포트·DB 이름(shared transaction pooler 6543)은 공용 Secrets를 쓴다.
         env:
           DB_HOST: ${{ secrets.DB_HOST }}
           DB_PORT: ${{ secrets.DB_PORT }}
           DB_NAME: ${{ secrets.DB_NAME }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_USER: ${{ secrets.NEARBY_DB_USER }}
+          DB_PASSWORD: ${{ secrets.NEARBY_DB_PASSWORD }}
