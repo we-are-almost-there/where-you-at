@@ -150,7 +150,7 @@ export default function RaceCalendar({ races, selectedRaceId, onSelectRace }: Ra
                     );
                   })}
                   {dayRaces.length > MAX_VISIBLE_PER_DAY && (
-                    <span className="shrink-0 text-[10px] font-medium leading-3 text-gray-400 md:leading-4">
+                    <span className="shrink-0 text-[10px] font-medium leading-3 text-muted md:leading-4">
                       +{dayRaces.length - MAX_VISIBLE_PER_DAY}개
                     </span>
                   )}

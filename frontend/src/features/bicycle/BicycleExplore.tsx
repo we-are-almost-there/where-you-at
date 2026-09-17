@@ -512,7 +512,7 @@ export function BicycleExplore() {
           // 필터·탭이 바뀌어 재조회되는 중에는 이전 목록을 그대로 유지해
           // "불러오는 중..."으로 화면이 깜빡이며 지워지는 것을 막는다.
           // 다만 2페이지 이상에서 바꿔 1페이지로 돌아가면 받아 둔 목록이 1페이지가 아니라서 로딩으로 둔다.
-          <p className="py-10 text-center text-sm text-gray-400">불러오는 중...</p>
+          <p className="py-10 text-center text-sm text-muted">불러오는 중...</p>
         ) : (
           <BicycleList facilities={res.facilities} variant={dataSource as "standard" | "realtime"} />
         )}
