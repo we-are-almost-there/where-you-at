@@ -12,6 +12,7 @@
 -- - nearby_spot: base_type = 'course'인 행의 조회·삽입·일부 열 수정·삭제
 -- 문의(inquiry) 등 다른 테이블 권한은 주지 않는다.
 -- --clean-expired를 이 역할로 실행하면 코스 캐시만 지워진다(정책이 course로 제한).
+-- 대회 주변정보 캐시(base_type = 'race')를 이 역할로 갱신하게 되면 nearby_spot 정책도 함께 고친다.
 
 
 do $$
@@ -66,6 +67,7 @@ revoke all privileges on
   public.bicycle_facility,
   public.nearby_spot
   from nearby_cache_refresher;
+-- 처음 적용한 버전은 시퀀스 권한을 줬다. 다시 실행할 때 그 권한을 걷어 낸다.
 revoke all privileges on sequence public.nearby_spot_id_seq
   from nearby_cache_refresher;
 
@@ -95,9 +97,7 @@ grant update (
   cached_at,
   expires_at
 ) on public.nearby_spot to nearby_cache_refresher;
--- id는 identity 열이다. 06과 같은 방식으로 시퀀스 권한을 준다.
-grant usage, select on sequence public.nearby_spot_id_seq
-  to nearby_cache_refresher;
+-- id는 identity 열이라 INSERT할 때 시퀀스 권한을 검사하지 않는다. 시퀀스 권한은 주지 않는다.
 
 -- 대상 테이블은 모두 RLS가 켜져 있고, 기존 정책은 다른 역할용뿐이라 이 역할용 정책이 필요하다.
 drop policy if exists nearby_cache_refresher_select on public.course;
@@ -204,13 +204,15 @@ create policy nearby_cache_refresher_delete
 -- join pg_roles r on r.oid = s.setrole
 -- where r.rolname = 'nearby_cache_refresher';
 --
--- 4) 원본 테이블 쓰기와 문의 접근은 모두 false여야 한다.
+-- 4) 원본 테이블 쓰기, 문의 접근, 시퀀스 직접 사용은 모두 false여야 한다.
 -- select
 --   has_table_privilege('nearby_cache_refresher', 'public.course', 'INSERT') as can_insert_course,
 --   has_table_privilege('nearby_cache_refresher', 'public.tour_spot', 'UPDATE') as can_update_tour_spot,
 --   has_table_privilege('nearby_cache_refresher', 'public.bicycle_facility', 'INSERT')
 --     as can_insert_bicycle,
---   has_table_privilege('nearby_cache_refresher', 'public.inquiry', 'SELECT') as can_read_inquiry;
+--   has_table_privilege('nearby_cache_refresher', 'public.inquiry', 'SELECT') as can_read_inquiry,
+--   has_sequence_privilege('nearby_cache_refresher', 'public.nearby_spot_id_seq', 'USAGE')
+--     as can_use_sequence;
 --
 -- 5) 실제 읽기·쓰기 확인: 갱신 대상이 0건이면 쓰기 권한은 확인되지 않으므로,
 --    이 역할로 코스 하나를 강제 갱신한다(scripts/refresh_nearby_cache.py --course-id).
