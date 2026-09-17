@@ -6,6 +6,7 @@ import { Race } from "./features/race";
 import { BicycleExplore } from "./features/bicycle";
 import { ContactPage, FaqPage, HelpPage, NoticeDetail, NoticeList, PrivacyPage, TermsPage } from "./features/help";
 import { NotFoundPage } from "./features/notFound";
+import { KakaoCallback, KAKAO_CALLBACK_PATH } from "./features/auth";
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/bicycle-facilities" element={<BicycleExplore />} />
+      <Route path={KAKAO_CALLBACK_PATH} element={<KakaoCallback />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

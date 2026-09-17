@@ -1,5 +1,13 @@
 // API 레이어가 함께 쓰는 전송 계층 코드. 사용자 문구는 만들지 않는다.
 
+import { readAccessToken } from "./authToken";
+
+/** 로그인했으면 Authorization 헤더를, 아니면 빈 객체를 돌려준다. 로그인이 필요한 API 요청에 펼쳐 넣는다. */
+export function authHeaders(): Record<string, string> {
+  const token = readAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 /**
  * 서버가 응답은 했지만 ok가 아닐 때(4xx/5xx) API 레이어가 던진다.
  * 화면이 404처럼 상태별로 다르게 그려야 할 때 status로 구분한다.
