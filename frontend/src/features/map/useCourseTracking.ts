@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { readSession, writeSession } from "./trackingSession";
 import type { LatLng } from "./types";
 import { summarize, type RecordPoint, type TrackingRecord } from "./trackingRecord";
 import { useWakeLock } from "./useWakeLock";
@@ -29,21 +30,36 @@ export function isTerminalGeolocationError(code: number): boolean {
 /** idle=시작 전, tracking=따라가는 중, paused=주변 정보를 보느라 잠시 멈춘 상태. */
 export type TrackingStatus = "idle" | "tracking" | "paused";
 
-export function useCourseTracking() {
+interface SavedTracking {
+  points: RecordPoint[];
+  activeMs: number;
+  status: TrackingStatus;
+}
+
+export function useCourseTracking(sessionKey?: string) {
+  const [saved] = useState(() => {
+    const value = sessionKey ? readSession<SavedTracking>(sessionKey) : null;
+    return value && Array.isArray(value.points)
+      && value.points.every((point) => point && [point.lat, point.lng, point.accuracy, point.timestamp].every(Number.isFinite))
+      && Number.isFinite(value.activeMs)
+      && value.activeMs >= 0 && (value.status === "tracking" || value.status === "paused")
+      ? value : null;
+  });
   const watchIdRef = useRef<number | null>(null);
+  const watchGenerationRef = useRef(0);
   // 기록은 화면에 실시간으로 그리지 않고 종료 시 한 번만 요약하므로 ref로 모은다(렌더 유발 없음).
-  const pointsRef = useRef<RecordPoint[]>([]);
+  const pointsRef = useRef<RecordPoint[]>(saved?.points ?? []);
   // 소요시간은 벽시계가 아니라 활동 시간으로 센다. 끝난 구간들의 합과 지금 구간의 시작 시각을
   // 따로 들고 있어야 일시정지 구간을 뺄 수 있다(정지 중이면 segmentStartedAt은 null).
-  const activeMsRef = useRef(0);
+  const activeMsRef = useRef(saved?.activeMs ?? 0);
   const segmentStartedAtRef = useRef<number | null>(null);
-  const startedRef = useRef(false); // 세션을 시작한 적이 있는지 — 기록을 남길지 판단한다
+  const startedRef = useRef(saved != null); // 세션을 시작한 적이 있는지 — 기록을 남길지 판단한다
   // 재개 후 첫 표본에 구간 경계를 찍기 위한 1회성 플래그.
   // 성공 표본이 소비할 때까지 유지한다 — 에러 콜백에서 내리면 watch가 살아남는 에러 뒤에
   // 들어온 첫 표본이 경계를 잃고, 정지 중 이동한 거리가 누적 거리에 섞인다.
-  const resumedRef = useRef(false);
+  const resumedRef = useRef(saved != null);
   const [currentLocation, setCurrentLocation] = useState<TrackedLocation | null>(null);
-  const [status, setStatus] = useState<TrackingStatus>("idle");
+  const [status, setStatus] = useState<TrackingStatus>(saved?.status ?? "idle");
   const [error, setError] = useState<string | null>(null);
   // 실제로 따라가는 중에만 화면을 붙잡는다. 일시정지는 "당분간 안 움직인다"는 선언이라 놓아준다.
   // 종료 경로(종료 버튼·권한 거부·언마운트)가 여럿이라 각자 해제하게 하면
@@ -52,6 +68,7 @@ export function useCourseTracking() {
 
   const clearActiveWatch = useCallback(() => {
     if (watchIdRef.current == null) return;
+    watchGenerationRef.current += 1;
     navigator.geolocation.clearWatch(watchIdRef.current);
     watchIdRef.current = null;
   }, []);
@@ -79,9 +96,11 @@ export function useCourseTracking() {
     }
 
     setError(null);
+    const generation = ++watchGenerationRef.current;
     try {
       watchIdRef.current = navigator.geolocation.watchPosition(
         ({ coords, timestamp }) => {
+          if (generation !== watchGenerationRef.current) return;
           setCurrentLocation({
             lat: coords.latitude,
             lng: coords.longitude,
@@ -99,6 +118,7 @@ export function useCourseTracking() {
           setError(null);
         },
         ({ code }) => {
+          if (generation !== watchGenerationRef.current) return;
           setError(getGeolocationErrorMessage(code));
           if (!isTerminalGeolocationError(code)) return;
           clearActiveWatch();
@@ -186,7 +206,41 @@ export function useCourseTracking() {
     setStatus("tracking");
   }, [beginWatch]);
 
-  useEffect(() => clearActiveWatch, [clearActiveWatch]);
+  const persist = useCallback(() => {
+    if (!sessionKey) return;
+    const openMs = segmentStartedAtRef.current == null ? 0 : Date.now() - segmentStartedAtRef.current;
+    writeSession(sessionKey, startedRef.current ? {
+      points: pointsRef.current, activeMs: activeMsRef.current + openMs,
+      status: watchIdRef.current == null ? "paused" : "tracking",
+    } : null);
+  }, [sessionKey]);
+
+  useEffect(() => {
+    if (saved?.status === "tracking" && watchIdRef.current == null) {
+      resumedRef.current = true;
+      if (beginWatch()) segmentStartedAtRef.current = Date.now();
+      else {
+        // 위치 감시 등록에 실패하면 복원된 상태도 일시정지로 맞춘다.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setStatus("paused");
+      }
+    }
+    return () => { closeSegment(); clearActiveWatch(); };
+  }, [saved, beginWatch, closeSegment, clearActiveWatch]);
+
+  useEffect(() => {
+    persist();
+    if (status === "idle") return;
+    const onHidden = () => { if (document.visibilityState === "hidden") persist(); };
+    const timer = setInterval(persist, 1000);
+    window.addEventListener("pagehide", persist);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("pagehide", persist);
+      document.removeEventListener("visibilitychange", onHidden);
+    };
+  }, [persist, status, currentLocation]);
 
   return {
     currentLocation,

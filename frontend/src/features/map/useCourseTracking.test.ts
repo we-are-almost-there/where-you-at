@@ -65,6 +65,7 @@ function stopAndTakeRecord(stop: () => TrackingRecord | null) {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   watchers = [];
   now = 1_000_000;
   vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -80,6 +81,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -208,4 +210,75 @@ describe("useCourseTracking 진행 중 요약", () => {
     const sampled = result.current.sampleRecord();
     expect(stopAndTakeRecord(result.current.stopTracking)).toEqual(sampled);
   });
+});
+
+
+describe("session restoration", () => {
+  it.each(["tracking", "paused"] as const)("restores %s without counting reload time or connecting segments", (status) => {
+    const first = renderHook(() => useCourseTracking("restore-test"));
+    act(() => first.result.current.startTracking());
+    emit(0, 0);
+    emit(1, 60);
+    if (status === "paused") act(() => first.result.current.pause());
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    const before = first.result.current.sampleRecord()!;
+    first.unmount();
+    now += 600_000;
+    const restored = renderHook(() => useCourseTracking("restore-test"));
+    expect(restored.result.current.status).toBe(status);
+    expect(restored.result.current.sampleRecord()).toEqual(before);
+    expect(watchers).toHaveLength(status === "tracking" ? 2 : 1);
+    if (status === "paused") act(() => restored.result.current.resume());
+    emit(10, 0);
+    expect(restored.result.current.sampleRecord()?.distanceKm).toBe(before.distanceKm);
+    emit(11, 60);
+    const record = stopAndTakeRecord(restored.result.current.stopTracking)!;
+    expect(record.distanceKm).toBeCloseTo(before.distanceKm * 2);
+    expect(record.durationMs).toBe(before.durationMs + 60_000);
+    expect(sessionStorage.getItem("restore-test")).toBeNull();
+    restored.unmount();
+  });
+
+  it("ignores malformed storage", () => {
+    sessionStorage.setItem("restore-test", "{broken");
+    const hook = renderHook(() => useCourseTracking("restore-test"));
+    expect(hook.result.current.status).toBe("idle");
+    hook.unmount();
+  });
+});
+
+
+it("StrictMode restoration keeps only one active watch and ignores stale callbacks", () => {
+  sessionStorage.setItem("restore-test", JSON.stringify({
+    points: [], activeMs: 1000, status: "tracking",
+  }));
+  const hook = renderHook(() => useCourseTracking("restore-test"), {
+    reactStrictMode: true,
+  });
+  expect(watchers).toHaveLength(2);
+  expect(navigator.geolocation.clearWatch).toHaveBeenCalledWith(1);
+  act(() => watchers[0].error({ code: 1 } as GeolocationPositionError));
+  expect(hook.result.current.status).toBe("tracking");
+  emit(0, 0);
+  act(() => hook.result.current.pause());
+  emit(1, 60);
+  expect(hook.result.current.sampleRecord()?.distanceKm).toBe(0);
+  hook.unmount();
+});
+
+it("종료한 세션은 주기적 저장이나 페이지 이탈로 되살아나지 않는다", () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const hook = renderHook(() => useCourseTracking("restore-test"));
+  act(() => hook.result.current.startTracking());
+  emit(0, 0);
+  expect(sessionStorage.getItem("restore-test")).not.toBeNull();
+  act(() => {
+    hook.result.current.stopTracking();
+    sessionStorage.removeItem("restore-test");
+    // 상태 변경이 렌더에 반영되기 전에도 기존 인터벌이 실행될 수 있다.
+    vi.advanceTimersByTime(2000);
+    window.dispatchEvent(new Event("pagehide"));
+    expect(sessionStorage.getItem("restore-test")).toBeNull();
+  });
+  hook.unmount();
 });

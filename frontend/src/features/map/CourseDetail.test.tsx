@@ -15,6 +15,13 @@ const tracking = vi.hoisted(() => ({
 }));
 
 vi.mock("./useCourseTracking", () => ({ useCourseTracking: () => tracking }));
+vi.mock("./components/RecordCard", () => ({
+  RecordCard: ({ record, onClose }: { record: { distanceKm: number }; onClose: () => void }) => (
+    <div role="dialog" aria-label="restored record">
+      <span>{record.distanceKm}</span><button onClick={onClose}>close record</button>
+    </div>
+  ),
+}));
 vi.mock("./KakaoMap", () => ({ KakaoMap: () => null }));
 vi.mock("./endpointAddress", () => ({
   useEndpointAddresses: () => [
@@ -32,6 +39,7 @@ vi.mock("./coursesApi", () => ({
 }));
 
 beforeEach(() => {
+  sessionStorage.clear();
   vi.clearAllMocks();
   vi.stubGlobal("matchMedia", () => ({
     matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
@@ -168,6 +176,7 @@ describe("CourseDetail 기록이 있는 화면에서 이동", () => {
     expect(screen.getByText("테스트 코스")).toBeTruthy();
     confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "목록으로" }));
+    expect(tracking.stopTracking).toHaveBeenCalledTimes(1);
     expect(screen.getByText("코스 목록 화면")).toBeTruthy();
   });
 
@@ -188,4 +197,37 @@ describe("CourseDetail 기록이 있는 화면에서 이동", () => {
     expect(screen.queryByText("코스 목록 화면")).toBeNull();
     expect(tracking.stopTracking).not.toHaveBeenCalled();
   });
+});
+
+
+it("restores an unsaved record card and clears it when closed", async () => {
+  tracking.status = "idle";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({
+    direction: "reverse", progress: 85, startChecked: true,
+    record: {
+      summary: { distanceKm: 1.23, durationMs: 60_000, paceSecPerKm: 50 },
+      routeType: "\uB3C4\uBCF4", routePoints: [],
+    },
+  }));
+  await mount();
+  expect(screen.getByRole("dialog", { name: "restored record" })).toBeTruthy();
+  expect(screen.getByText("1.23")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "close record" }));
+  expect(sessionStorage.getItem("course-tracking:1:view")).toBeNull();
+});
+
+it.each([
+  { summary: null, routeType: "도보", routePoints: [] },
+  { summary: { distanceKm: -1, durationMs: 100, paceSecPerKm: null }, routeType: "도보", routePoints: [] },
+  { summary: { distanceKm: 1, durationMs: "100", paceSecPerKm: null }, routeType: "도보", routePoints: [] },
+  { summary: { distanceKm: 1, durationMs: 100, paceSecPerKm: "50" }, routeType: "도보", routePoints: [] },
+  { summary: { distanceKm: 1, durationMs: 100, paceSecPerKm: null }, routeType: "기타", routePoints: [] },
+  { summary: { distanceKm: 1, durationMs: 100, paceSecPerKm: null }, routeType: "도보", routePoints: [null] },
+  { summary: { distanceKm: 1, durationMs: 100, paceSecPerKm: null }, routeType: "도보", routePoints: [{ lat: "37", lng: 127 }] },
+])("손상된 기록 카드는 복원하지 않는다: %j", async (record) => {
+  tracking.status = "idle";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({ record }));
+  await mount();
+  expect(screen.queryByRole("dialog", { name: "restored record" })).toBeNull();
+  expect(sessionStorage.getItem("course-tracking:1:view")).toBeNull();
 });

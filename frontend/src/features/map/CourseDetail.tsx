@@ -10,6 +10,7 @@ import type { CourseDetail as CourseDetailData, LatLng, RouteDetail, RouteType }
 import { Nearby } from "../nearby";
 import type { NearbyHandle } from "../nearby";
 import type { NearbySpot } from "../nearby/types";
+import { isSavedRecord, readSession, writeSession } from "./trackingSession";
 import { useCourseTracking } from "./useCourseTracking";
 import { WAKE_LOCK_FAILURE_LINES } from "./useWakeLock";
 import { advanceProgress, distanceToCourse, nearestPointOnCourse, type Direction } from "./courseProgress";
@@ -159,9 +160,20 @@ type DetailError =
 
 export function CourseDetail() {
   const { id } = useParams();
+  return <CourseDetailSession key={id} />;
+}
+
+function CourseDetailSession() {
+  const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const courseId = Number(id);
+  const sessionKey = `course-tracking:${courseId}`;
+  const viewKey = `${sessionKey}:view`;
+  const [restored] = useState(() => readSession<{
+    direction: Direction; progress: number; startChecked: boolean;
+    record: { summary: TrackingRecord; routeType: RouteType; routePoints: LatLng[] } | null;
+  }>(viewKey));
 
   const [detail, setDetail] = useState<CourseDetailData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -189,7 +201,7 @@ export function CourseDetail() {
     resume,
     stopTracking,
     sampleRecord,
-  } = useCourseTracking();
+  } = useCourseTracking(sessionKey);
   // 진행률·이탈 감지·화면 안내는 "실제로 따라가는 중"에만 돌아야 한다.
   // 일시정지는 이 조건에서 빠지므로 아래 분기들은 그대로 두면 된다.
   const isTracking = trackingStatus === "tracking";
@@ -198,7 +210,7 @@ export function CourseDetail() {
   const sessionActive = trackingStatus !== "idle";
   // 새로고침·탭 닫기·외부 사이트 이동은 라우터를 거치지 않는다.
   // 일시정지 중에도 기록을 보호하고, 종료하거나 화면을 떠나면 리스너를 해제한다.
-  // iOS 브라우저(앱 내 브라우저 포함)는 이 경고를 띄우지 않으므로 그쪽 보호는 되지 않는다.
+  // 이탈 경고를 표시하지 않는 브라우저에서는 sessionStorage의 기록으로 복원한다.
   useEffect(() => {
     if (!sessionActive) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -215,25 +227,32 @@ export function CourseDetail() {
   useEffect(() => {
     if (blocker.state !== "blocked") return;
     if (window.confirm("이 화면을 나가면 지금까지의 따라가기 기록이 사라집니다. 이동할까요?")) {
+      // 내부 기록부터 비워 언마운트가 늦어져도 주기적 저장이 세션을 되살리지 않게 한다.
+      stopTracking();
+      writeSession(sessionKey, null);
+      writeSession(viewKey, null);
       blocker.proceed();
     } else {
       blocker.reset();
     }
-  }, [blocker]);
+  }, [blocker, sessionKey, viewKey, stopTracking]);
   const backToCourses = () => {
     navigate("/courses");
   };
   const [waypoints, setWaypoints] = useState<LatLng[]>([]);
   const [startAddress, endAddress] = useEndpointAddresses(waypoints);
-  const [direction, setDirection] = useState<Direction>("forward"); // 기본 정방향, 토글로 역방향
-  const [progress, setProgress] = useState(0); // 0~100, 최고 진행률 유지
+  const [direction, setDirection] = useState<Direction>(restored?.direction === "reverse" ? "reverse" : "forward"); // 기본 정방향, 토글로 역방향
+  const [progress, setProgress] = useState(restored && Number.isFinite(restored.progress) ? restored.progress : 0); // 0~100, 최고 진행률 유지
   // 코스 끝에 닿았다는 뜻. 진행률은 최고치를 유지하므로 한 번 서면 되돌아가지 않는다.
   // 화면과 같은 반올림을 쓴다 — 표본이 마지막 지점에 정확히 떨어지는 일은 없어서 99.9%에 멈추는데,
   // 화면은 그걸 100%로 보여준다. 기준이 어긋나면 사용자 눈에는 완주인데 이탈 경고가 계속 뜬다.
   const isFinished = Math.round(progress) >= 100;
-  const [now, setNow] = useState(0); // 예상 종료 시각 계산의 기준 시각(추적 중에만 갱신)
-  const [livePace, setLivePace] = useState<number | null>(null); // 실측 평균 페이스(초/km). 아직 못 낼 값이면 null
-  const [startChecked, setStartChecked] = useState(false); // 세션당 한 번만 시작 거리 판정
+  const [now, setNow] = useState(() => sessionActive ? Date.now() : 0); // 예상 종료 시각 계산의 기준 시각(추적 중에만 갱신)
+  const [livePace, setLivePace] = useState<number | null>(() => {
+    const sample = sampleRecord();
+    return sample && sample.distanceKm >= MIN_LIVE_PACE_KM ? sample.paceSecPerKm : null;
+  }); // 실측 평균 페이스(초/km). 아직 못 낼 값이면 null
+  const [startChecked, setStartChecked] = useState(restored?.startChecked === true); // 세션당 한 번만 시작 거리 판정
   const [tooFarMeters, setTooFarMeters] = useState<number | null>(null); // null이 아니면 안내 팝업
 
   const [offCourseMeters, setOffCourseMeters] = useState<number | null>(null); // null이 아니면 이탈 중(배너·유도선)
@@ -241,7 +260,12 @@ export function CourseDetail() {
   const wasOffCourseRef = useRef(false); // 이탈 진입 순간(아님→이탈)에만 음성이 나가도록 직전 상태 보관
   const wasFinishedRef = useRef(false); // 완주 안내도 같은 이유로 직전 상태를 본다
   // null이 아니면 종료 후 기록 카드. 카드가 열린 뒤 종목을 바꿔도 같은 기록이 달라지지 않게 종료 시점의 종목·경로를 함께 붙잡아 둔다.
-  const [record, setRecord] = useState<{ summary: TrackingRecord; routeType: RouteType; routePoints: LatLng[] } | null>(null);
+  const [record, setRecord] = useState<{ summary: TrackingRecord; routeType: RouteType; routePoints: LatLng[] } | null>(() =>
+    isSavedRecord(restored?.record) ? restored.record : null,
+  );
+  useEffect(() => {
+    writeSession(viewKey, sessionActive || record ? { direction, progress, startChecked, record } : null);
+  }, [viewKey, sessionActive, direction, progress, startChecked, record]);
   const startButtonRef = useRef<HTMLButtonElement>(null); // 모달을 닫은 뒤 포커스를 돌려놓을 자리
   const nearbyTabRef = useRef<HTMLButtonElement>(null); // 주변 정보에서 연 기록 카드는 선택된 탭으로 돌아간다
   const modalWasOpenRef = useRef(false); // 열려 있다 닫힌 순간에만 되돌린다 — 첫 렌더에도 모달은 닫혀 있다
