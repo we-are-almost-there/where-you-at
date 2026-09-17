@@ -54,10 +54,10 @@ const MENU_ITEMS: MenuItem[] = [
   },
   {
     label: "자전거 대여",
-    to: null,
+    to: "/bicycle-facilities",
     icon: Bike,
     gradientId: "menu-gradient-bike",
-    gradientStops: ["#d5d2e0", "#bcb8cb", "#a5a1b5"],
+    gradientStops: ["#ffc98f", "#ff9f4a", "#f07a1f"],
   },
 ];
 
