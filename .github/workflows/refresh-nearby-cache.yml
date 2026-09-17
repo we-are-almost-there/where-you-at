@@ -1,8 +1,9 @@
 name: Refresh expiring nearby caches
 
 on:
-  schedule:
-    - cron: "0 18 * * *"
+  # 캐시 전용 DB 역할 및 읽기·쓰기 권한 검증 후 활성화 예정:
+  # schedule:
+  #   - cron: "17 18 * * *" # 매일 KST 03:17 (UTC 18:17)
   workflow_dispatch:
 
 permissions:
