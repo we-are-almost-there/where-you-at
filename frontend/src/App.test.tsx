@@ -93,18 +93,22 @@ it.each([
 });
 
 it("홈으로 링크 이동하면 실제 홈 제목에 포커스를 둔다", async () => {
+  const homeMock = vi.mocked(Home);
+  const originalHome = homeMock.getMockImplementation();
   // jsdom에 없는 엘리먼트 스크롤 API를 배너 캐러셀에 제공한다.
   const originalScrollTo = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTo");
   Object.defineProperty(Element.prototype, "scrollTo", { configurable: true, value: vi.fn() });
   try {
     const { default: ActualHome } = await vi.importActual<typeof import("./features/home/Home")>("./features/home/Home");
-    vi.mocked(Home).mockImplementationOnce(ActualHome);
+    homeMock.mockImplementation(ActualHome);
     renderAt("/unknown");
     fireEvent.click(screen.getByRole("link", { name: "홈으로 가기" }));
     const heading = await screen.findByRole("heading", { name: "어디까지 왔니 홈", level: 1 });
     expect(document.activeElement).toBe(heading);
   } finally {
     cleanup();
+    homeMock.mockReset();
+    if (originalHome) homeMock.mockImplementation(originalHome);
     if (originalScrollTo) Object.defineProperty(Element.prototype, "scrollTo", originalScrollTo);
     else Reflect.deleteProperty(Element.prototype, "scrollTo");
   }
