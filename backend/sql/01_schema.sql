@@ -473,3 +473,36 @@ alter table notice       enable row level security;
 alter table faq_category enable row level security;
 alter table faq          enable row level security;
 alter table inquiry      enable row level security;
+
+
+-- ============================================
+-- 어디까지왔니 — 회원 테이블
+-- ============================================
+-- 카카오 로그인으로 가입한 회원. 인증은 Supabase Auth가 아니라 FastAPI가 직접 처리한다.
+--   DB를 옮겨도 회원 데이터와 인증이 그대로 따라가도록 우리 스키마의 일반 테이블로 둔다.
+-- 이미 운영 중인 공용 DB에는 08_app_user.sql로 같은 내용을 적용한다. 바꾸면 두 곳을 함께 고친다.
+
+
+-- 1. app_user (회원)
+-- 이름을 user로 하지 않는 이유: Postgres 예약어라 매번 따옴표로 감싸야 한다.
+-- kakao_id: 카카오 회원번호. 로그인할 때 이 값으로 회원을 찾고, 없으면 새로 만든다.
+-- nickname: 로그인할 때마다 카카오 값으로 갱신한다.
+-- 프로필 사진은 받지 않는다. 화면에 꼭 필요하지 않아 수집하는 개인정보를 줄였다.
+-- 보유 기간: 탈퇴할 때까지 (개인정보처리방침과 같아야 한다). 탈퇴하면 행을 삭제한다.
+-- 회원에 딸린 테이블(기록, 저장, 리뷰 등)은 app_user(id)를 on delete cascade로 참조해 탈퇴 시 함께 지운다.
+create table app_user (
+  id                bigint generated always as identity primary key,
+  kakao_id          bigint not null unique,
+  nickname          varchar(50),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+
+create trigger trg_app_user_updated_at
+  before update on app_user
+  for each row execute function set_updated_at();
+
+
+-- 행 수준 보안(RLS)
+-- 이유와 주의사항은 지원금/환급 섹션 끝의 RLS 주석 참고. 새 테이블을 추가하면 여기에도 한 줄 추가한다.
+alter table app_user enable row level security;
