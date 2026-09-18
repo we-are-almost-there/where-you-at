@@ -154,6 +154,7 @@ describe("SupportRegionView — 코스 링크", () => {
     renderFresh("51790");
 
     await waitFor(() => expect(courseLink()!.getAttribute("href")).toBe("/courses?region=51790"));
+    expect(regions).toHaveBeenCalledWith("도보");
     expect(offNotice()).toBeNull();
   });
 

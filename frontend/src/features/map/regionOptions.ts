@@ -37,15 +37,16 @@ export function hasRegionOption(items: RegionSelectItem[], value: string): boole
 }
 
 /**
- * region-index.json의 '{시도} {시군구}' 이름을 드롭다운 라벨로 줄인다 ('인천광역시 강화군' → '인천 강화').
+ * region-index.json의 '{시도} {하위 지역...}' 이름을 드롭다운 라벨로 줄인다.
+ * ('인천광역시 강화군' → '인천 강화', '경기도 수원시 장안구' → '경기 수원 장안')
  *
  * 다른 항목과 달리 시도 optgroup 밖에 홀로 서므로 시도를 라벨에 남긴다 — '강화'만 뜨면
  * 어느 시도의 어디인지 알 수 없다. 세종처럼 시도와 이름이 같아 한 덩어리인 이름은 그대로 줄인다.
  */
 export function regionOptionLabel(fullName: string): string {
-  const at = fullName.lastIndexOf(" ");
-  if (at < 0) return abbrevSido(fullName);
-  return `${abbrevSido(fullName.slice(0, at))} ${abbrevSigungu(fullName.slice(at + 1))}`;
+  const [sido, ...subregions] = fullName.split(" ");
+  if (subregions.length === 0) return abbrevSido(sido);
+  return [abbrevSido(sido), ...subregions.map(abbrevSigungu)].join(" ");
 }
 
 /**

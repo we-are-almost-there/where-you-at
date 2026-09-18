@@ -83,11 +83,11 @@ const nameOf = (b: HTMLButtonElement) => b.textContent!.replace("›", "").trim(
 
 /**
  * 색칠된 배지 이름 — 지금 신청 가능한 제도가 있는 곳.
- * 색칠된 배지만 aria-label이 없다(이름만으로 뜻이 통해서). 회색 배지는 왜 다른지
- * 설명을 달고 있으므로, 그 유무로 색칠 여부를 가른다.
+ * 활성 배지만 화면 이름 뒤에 화살표를 그리므로 그 표식으로 가른다. aria-label은
+ * 축약명에도 원래 이름을 읽어 주느라 활성 여부와 관계없이 붙을 수 있다.
  */
 const activeSidoNames = () =>
-  badgeButtons().filter((b) => !b.getAttribute("aria-label")).map(nameOf);
+  badgeButtons().filter((b) => b.textContent?.includes("›")).map(nameOf);
 
 /** 지도에 이름이 붙은 배지 전부 — 색칠 여부와 무관하다 */
 const badgeNames = () => badgeButtons().map(nameOf);

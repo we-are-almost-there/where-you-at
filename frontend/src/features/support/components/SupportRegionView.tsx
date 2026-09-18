@@ -39,15 +39,15 @@ function splitRegionName(full: string): { sido: string | null; name: string } {
 }
 
 /**
- * 코스가 있는 지역 코드. GET /api/regions는 region을 course와 조인해 돌려주므로
- * 코스가 하나도 없는 시군구는 애초에 응답에 없다.
+ * 기본 코스 탐색 화면(도보)에 코스가 있는 지역 코드. GET /api/regions?type=trail은
+ * 도보 경로가 하나도 없는 시군구를 응답에서 제외한다.
  *
  * 지역명과 같은 이유로 한 번만 받아 재사용한다 — 지역을 옮길 때마다 다시 받을 값이 아니고,
  * 패널을 여닫을 때마다 요청이 새로 나가서도 안 된다.
  */
 let courseRegionsPromise: Promise<ReadonlySet<string>> | null = null;
 function loadCourseRegions(): Promise<ReadonlySet<string>> {
-  courseRegionsPromise ??= getRegions()
+  courseRegionsPromise ??= getRegions("도보")
     .then((rows) => new Set(rows.map((r) => r.region_code)))
     .catch((err) => {
       // 실패한 Promise를 캐시로 남기면 네트워크가 돌아와도 새로고침 전까지 재요청하지 않는다

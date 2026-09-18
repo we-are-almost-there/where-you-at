@@ -107,6 +107,10 @@ describe("regionOptionLabel", () => {
     expect(regionOptionLabel("대구광역시 중구")).toBe("대구 중구");
   });
 
+  it("행정구처럼 하위 지역이 둘이어도 시도와 각 지역을 모두 줄인다", () => {
+    expect(regionOptionLabel("경기도 수원시 장안구")).toBe("경기 수원 장안");
+  });
+
   it("시도와 이름이 같은 세종은 한 덩어리로 줄인다", () => {
     expect(regionOptionLabel("세종특별자치시")).toBe("세종");
   });
