@@ -61,7 +61,7 @@ export default function MyPageLayout({ title, back, signedOutContent, children }
 
 function SignedOutNotice() {
   const location = useLocation();
-  // 처음 로그인하는 기기에서는 만 14세 이상인지 먼저 묻는다(features/auth/useKakaoLogin).
+  // 로그인할 때마다 만 14세 이상인지 먼저 묻는다(features/auth/useKakaoLogin).
   const { login, dialog } = useKakaoLogin();
   return (
     <>

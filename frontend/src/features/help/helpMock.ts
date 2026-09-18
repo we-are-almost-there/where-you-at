@@ -3,6 +3,7 @@ import type { Faq, NoticeDetail, NoticeListResponse } from "./types";
 // 화면 개발용 목 데이터. VITE_HELP_MOCK=true일 때만 쓰인다 (helpApi.ts 참고).
 // 운영 문구의 기준은 backend/sql/04_help_seed.sql이다. 첫 공지는 시드와 같은 문구로 두고,
 // 나머지 예시 공지와 FAQ는 고정 공지·페이지 나눔·마크다운 요소를 화면에서 확인하려고 만든 것이다.
+// 시드와 질문이 같은 FAQ는 답도 시드와 같아야 한다(helpMock.test.ts가 검사한다).
 
 const notices: NoticeDetail[] = [
   {
@@ -60,7 +61,7 @@ export const mockFaqs: Faq[] = [
     category: "코스 탐색",
     question: "코스 정보는 어디에서 가져오나요?",
     answer:
-      "걷기여행길 코스는 한국관광공사 두루누비, 자전거길 노선은 행정안전부 자전거길 데이터를 이용합니다.",
+      "걷기여행길 코스는 한국관광공사 두루누비, 자전거길 노선은 행정안전부 자전거길 데이터를 이용합니다.\n\n걷기여행길의 자전거 경로는 두루누비 코스를 바탕으로 경로를 다시 계산한 것이라 실제 도로 상황과 다를 수 있습니다.",
   },
   {
     id: 3,
@@ -73,7 +74,8 @@ export const mockFaqs: Faq[] = [
     id: 4,
     category: "이용 안내",
     question: "회원가입이 필요한가요?",
-    answer: "아니요. 회원가입이나 로그인 없이 모든 기능을 이용할 수 있습니다.",
+    answer:
+      "대부분의 기능은 회원가입이나 로그인 없이 이용할 수 있습니다.\n\n**마이페이지**(프로필, 찜한 코스, 내 기록, 지역 스탬프)는 카카오 로그인으로 가입해야 이용할 수 있습니다. 회원 가입은 만 14세 이상만 할 수 있습니다.",
   },
   {
     id: 5,

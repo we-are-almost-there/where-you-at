@@ -6,5 +6,5 @@ export { useAuth, signOut, updateProfile, withdraw } from "./useAuth";
 export type { AuthState } from "./useAuth";
 export type { ProfileChanges, User } from "./authApi";
 export { KAKAO_CALLBACK_PATH, startKakaoLogin } from "./kakaoRedirect";
-// 로그인 버튼은 startKakaoLogin 대신 이 훅을 쓴다. 만 14세 이상인지 먼저 확인한다.
+// 로그인 버튼은 startKakaoLogin 대신 이 훅을 쓴다. 로그인할 때마다 만 14세 이상인지 먼저 확인한다.
 export { useKakaoLogin } from "./useKakaoLogin";

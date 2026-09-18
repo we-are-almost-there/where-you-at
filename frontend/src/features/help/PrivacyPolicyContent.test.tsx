@@ -107,4 +107,3 @@ describe("PrivacyPolicyContent", () => {
     expect(link?.textContent).toContain("2026년 9월 17일 ~ 2026년 9월 18일 적용");
   });
 });
-

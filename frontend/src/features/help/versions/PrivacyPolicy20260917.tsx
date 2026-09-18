@@ -1,11 +1,11 @@
 /*
  * 개인정보처리방침 이전 버전 (2026년 9월 17일 시행본). 새 버전을 시행하면서 그대로 보관한다.
  * 방침 14번(이전 방침을 적용 기간과 함께 볼 수 있게 한다)과 약관 제3조를 지키기 위한 사본이라 내용을 고치지 않는다.
- * 원본에서 바꾼 것은 import 경로와, 공용 시행일 상수 대신 이 버전의 시행일을 글자로 적은 것뿐이다.
+ * 원본에서 바꾼 것은 import 경로와, 공용 상수(legalInfo.ts의 운영 주체·서비스 이름·공모전 이름·시행일) 대신 당시 값을
+ * 글자로 적은 것뿐이다. 현재 상수를 바꿔도 이 문서는 바뀌지 않아야 한다.
  */
 
 import { Items, LegalSection, LegalToc, P, SubTitle, Table, type LegalSectionInfo } from "../LegalDocument";
-import { OPERATOR, SERVICE } from "../legalInfo";
 
 /*
  * 개인정보처리방침 본문. /privacy 페이지와 1:1 문의의 동의 팝업(PrivacyPolicyDialog)이 함께 써서
@@ -65,7 +65,7 @@ export default function PrivacyPolicy20260917({ headingLevel = 2 }: Props) {
   return (
     <div>
       <p className="break-keep text-[14px] leading-relaxed text-ink">
-        {OPERATOR}(이하 &lsquo;운영팀&rsquo;)은 {SERVICE} 서비스(이하 &lsquo;서비스&rsquo;)를 이용하는 분의 자유와 권리를
+        거의 다왔어 팀(이하 &lsquo;운영팀&rsquo;)은 어디까지왔니 서비스(이하 &lsquo;서비스&rsquo;)를 이용하는 분의 자유와 권리를
         보호하기 위해 「개인정보 보호법」 및 관계 법령이 정한 바를 지켜 개인정보를 적법하게 처리하고 안전하게
         관리합니다. 이에 「개인정보 보호법」 제30조에 따라 개인정보의 처리와 보호에 관한 절차 및 기준을 안내하고,
         관련 고충을 신속하고 원활하게 처리하기 위해 다음과 같이 개인정보처리방침을 수립·공개합니다.

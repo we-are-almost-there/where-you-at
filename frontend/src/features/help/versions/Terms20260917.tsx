@@ -1,12 +1,12 @@
 /*
  * 이용약관 이전 버전 (2026년 9월 17일 시행본). 새 버전을 시행하면서 그대로 보관한다.
  * 방침 14번(이전 방침을 적용 기간과 함께 볼 수 있게 한다)과 약관 제3조를 지키기 위한 사본이라 내용을 고치지 않는다.
- * 원본에서 바꾼 것은 import 경로와, 공용 시행일 상수 대신 이 버전의 시행일을 글자로 적은 것뿐이다.
+ * 원본에서 바꾼 것은 import 경로와, 공용 상수(legalInfo.ts의 운영 주체·서비스 이름·공모전 이름·시행일) 대신 당시 값을
+ * 글자로 적은 것뿐이다. 현재 상수를 바꿔도 이 문서는 바뀌지 않아야 한다.
  */
 
 import { Link } from "react-router";
 import { Items, LegalSection, LegalToc, P, type LegalSectionInfo } from "../LegalDocument";
-import { CONTEST, OPERATOR, SERVICE } from "../legalInfo";
 
 /*
  * 이용약관 본문. 구조(목차 → 조항)와 모양은 개인정보처리방침과 같다(LegalDocument).
@@ -49,7 +49,7 @@ export default function Terms20260917() {
 
       <LegalSection section={S.purpose}>
         <P>
-          이 약관은 {OPERATOR}(이하 &lsquo;운영팀&rsquo;)이 제공하는 {SERVICE} 서비스(이하 &lsquo;서비스&rsquo;)의 이용
+          이 약관은 거의 다왔어 팀(이하 &lsquo;운영팀&rsquo;)이 제공하는 어디까지왔니 서비스(이하 &lsquo;서비스&rsquo;)의 이용
           조건과 절차, 운영팀과 이용자의 권리·의무 및 책임에 관한 사항을 정하는 것을 목적으로 합니다.
         </P>
       </LegalSection>
@@ -116,7 +116,7 @@ export default function Terms20260917() {
           </li>
         </Items>
         <P>
-          서비스는 무료이며 회원가입 없이 이용할 수 있습니다. 서비스는 {CONTEST} 출품작으로 운영됩니다.
+          서비스는 무료이며 회원가입 없이 이용할 수 있습니다. 서비스는 2026 관광데이터 활용 공모전 출품작으로 운영됩니다.
         </P>
       </LegalSection>
 
