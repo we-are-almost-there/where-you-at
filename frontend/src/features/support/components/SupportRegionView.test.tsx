@@ -17,7 +17,7 @@ vi.mock("../../map/coursesApi", () => ({ getRegions: vi.fn() }));
 const mockedList = vi.mocked(fetchSupportList);
 const mockedRegions = vi.mocked(getRegions);
 
-/** 코스를 보유한 지역 — 화천만 있고 고성은 없다 */
+/** 도보 코스를 보유한 지역 — 화천만 있고 고성은 없다 */
 const COURSE_REGIONS = [
   { region_code: "51790", name: "화천군", sido: "강원특별자치도", is_population_drop: true },
 ];
@@ -146,9 +146,9 @@ describe("SupportRegionView — 코스 링크", () => {
     );
 
   const courseLink = () => screen.queryByRole("link", { name: /코스 보러가기/ });
-  const offNotice = () => screen.queryByText("이 지역에는 등록된 코스가 없어요");
+  const offNotice = () => screen.queryByText("이 지역에는 등록된 도보 코스가 없어요");
 
-  it("코스가 있는 지역은 코스 링크를 보여준다", async () => {
+  it("도보 코스가 있는 지역은 코스 링크를 보여준다", async () => {
     vi.mocked(regions).mockResolvedValue(COURSE_REGIONS);
 
     renderFresh("51790");
@@ -158,16 +158,16 @@ describe("SupportRegionView — 코스 링크", () => {
     expect(offNotice()).toBeNull();
   });
 
-  it("코스가 없는 지역은 링크 대신 비활성 안내를 보여준다", async () => {
+  it("도보 코스가 없는 지역은 링크 대신 비활성 안내를 보여준다", async () => {
     vi.mocked(regions).mockResolvedValue(COURSE_REGIONS); // 고성(48820)은 목록에 없다
 
     renderFresh("48820");
 
     // 누를 것이 아니라 알리는 문구다. disabled 버튼이면 Tab 순서에서 빠져
     // 키보드로 패널을 훑는 사람이 이 문구를 만나지 못한다.
-    const off = await screen.findByText("이 지역에는 등록된 코스가 없어요");
+    const off = await screen.findByText("이 지역에는 등록된 도보 코스가 없어요");
     expect(off.tagName).toBe("P");
-    expect(screen.queryByRole("button", { name: /등록된 코스가 없어요/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /등록된 도보 코스가 없어요/ })).toBeNull();
     expect(courseLink()).toBeNull();
   });
 

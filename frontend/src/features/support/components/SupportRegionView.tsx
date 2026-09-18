@@ -285,7 +285,7 @@ export function SupportRegionView({ regionCode }: Props) {
         // 링크 자리를 그대로 차지해 없어진 게 아니라 '갈 곳이 없다'는 것으로 읽히게 하고,
         // accent 채움은 빼 흰 글자 대비 문제(opacity를 걸면 2:1까지 떨어진다)를 피한다.
         <p className="rounded-lg bg-white/60 py-3.5 text-center text-[14px] font-bold text-muted">
-          이 지역에는 등록된 코스가 없어요
+          이 지역에는 등록된 도보 코스가 없어요
         </p>
       ) : (
         <Link
