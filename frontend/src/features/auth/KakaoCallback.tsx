@@ -45,7 +45,7 @@ export default function KakaoCallback() {
       navigate(returnTo, { replace: true });
       return;
     }
-    if (!valid || code === null) return;
+    if (!valid) return;
 
     loginWithKakao(code).then(
       ({ access_token, user }) => {
