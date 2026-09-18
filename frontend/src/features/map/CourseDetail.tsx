@@ -207,6 +207,7 @@ function CourseDetailSession() {
     status: trackingStatus,
     error: trackingError,
     wakeLockFailed,
+    storageFailed,
     startTracking,
     pause,
     resume,
@@ -294,8 +295,11 @@ function CourseDetailSession() {
   const [record, setRecord] = useState<{ summary: TrackingRecord; routeType: RouteType; routePoints: LatLng[] } | null>(() =>
     isSavedRecord(restored?.record) ? restored.record : null,
   );
+  const [viewStorageFailed, setViewStorageFailed] = useState(false);
   useEffect(() => {
-    writeSession(viewKey, sessionActive || record ? { direction, progress, startChecked, tooFarMeters, record } : null);
+    const success = writeSession(viewKey, sessionActive || record ? { direction, progress, startChecked, tooFarMeters, record } : null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setViewStorageFailed(!success);
   }, [viewKey, sessionActive, direction, progress, startChecked, tooFarMeters, record]);
   // 다른 화면으로 이동하면 추적 기록과 화면 상태를 함께 지운다.
   // 새로고침에서는 React 정리가 실행되지 않아 복원할 저장값이 유지된다.
@@ -942,6 +946,12 @@ function CourseDetailSession() {
                   </p>
                 )}
 
+                {(storageFailed || viewStorageFailed) && (
+                  <p role="alert" className="mb-2 text-center text-[13px] leading-relaxed text-caption">
+                    주행 기록을 임시 저장하지 못했어요. 주행은 계속되지만 새로고침하거나 페이지를 떠나면 기록을 복원하지 못할 수 있어요.
+                  </p>
+                )}
+
                 {/* 화면 유지 실패는 추적 자체는 되는 경고라 role="alert" 없이 조용히 알린다 */}
                 {wakeLockFailed && (
                   <p className="mb-2 break-keep text-center text-[13px] leading-relaxed text-caption">
@@ -1042,6 +1052,11 @@ function CourseDetailSession() {
                 <p className="mb-2 text-center text-[13px] font-bold text-caption">
                   따라가기를 잠시 멈췄어요
                 </p>
+                {(storageFailed || viewStorageFailed) && (
+                  <p role="alert" className="mb-2 text-center text-[13px] leading-relaxed text-caption">
+                    주행 기록을 임시 저장하지 못했어요. 주행은 계속되지만 새로고침하거나 페이지를 떠나면 기록을 복원하지 못할 수 있어요.
+                  </p>
+                )}
 
                 {/* 어디까지 왔는지는 주변을 둘러보는 동안에도 알아야 재개할지 끝낼지 정할 수 있다.
                   멈췄다는 말 바로 아래에 두어 '상태 → 근거 → 조작' 순으로 읽히게 한다. */}
