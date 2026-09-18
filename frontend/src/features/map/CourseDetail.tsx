@@ -246,13 +246,11 @@ function CourseDetailSession() {
     if (window.confirm("이 화면을 나가면 지금까지의 따라가기 기록이 사라집니다. 이동할까요?")) {
       // 내부 기록부터 비워 언마운트가 늦어져도 주기적 저장이 세션을 되살리지 않게 한다.
       stopTracking();
-      writeSession(sessionKey, null);
-      writeSession(viewKey, null);
       blocker.proceed();
     } else {
       blocker.reset();
     }
-  }, [blocker, sessionKey, viewKey, stopTracking]);
+  }, [blocker, stopTracking]);
   const backToCourses = () => {
     navigate("/courses");
   };
@@ -288,8 +286,12 @@ function CourseDetailSession() {
   useEffect(() => {
     writeSession(viewKey, sessionActive || record ? { direction, progress, startChecked, tooFarMeters, record } : null);
   }, [viewKey, sessionActive, direction, progress, startChecked, tooFarMeters, record]);
-  // 다른 화면으로 이동하면 저장된 화면 상태를 지운다. 새로고침에서는 React 정리가 실행되지 않는다.
-  useEffect(() => () => { writeSession(viewKey, null); }, [viewKey]);
+  // 다른 화면으로 이동하면 추적 기록과 화면 상태를 함께 지운다.
+  // 새로고침에서는 React 정리가 실행되지 않아 복원할 저장값이 유지된다.
+  useEffect(() => () => {
+    writeSession(sessionKey, null);
+    writeSession(viewKey, null);
+  }, [sessionKey, viewKey]);
   const startButtonRef = useRef<HTMLButtonElement>(null); // 모달을 닫은 뒤 포커스를 돌려놓을 자리
   const nearbyTabRef = useRef<HTMLButtonElement>(null); // 주변 정보에서 연 기록 카드는 선택된 탭으로 돌아간다
   const modalWasOpenRef = useRef(false); // 열려 있다 닫힌 순간에만 되돌린다 — 첫 렌더에도 모달은 닫혀 있다

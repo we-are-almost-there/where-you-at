@@ -327,7 +327,9 @@ it("기록 카드를 열고 다른 화면으로 이동하면 같은 코스에 �
   }));
   const router = await mount();
   expect(screen.getByRole("dialog", { name: "restored record" })).toBeTruthy();
+  sessionStorage.setItem("course-tracking:1", JSON.stringify({ status: "paused", points: [] }));
   await act(async () => { await router.navigate(-1); });
+  expect(sessionStorage.getItem("course-tracking:1")).toBeNull();
   expect(sessionStorage.getItem("course-tracking:1:view")).toBeNull();
   await act(async () => { await router.navigate("/courses/1"); });
   expect(screen.queryByRole("dialog", { name: "restored record" })).toBeNull();
