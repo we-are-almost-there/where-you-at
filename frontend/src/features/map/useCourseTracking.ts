@@ -155,7 +155,9 @@ export function useCourseTracking(sessionKey?: string) {
           if (pointsRef.current.length >= MAX_TRACKING_POINTS) {
             const checkpoint = distanceCheckpoint(pointsRef.current, distanceMetersRef.current);
             distanceMetersRef.current = checkpoint.distanceMeters;
-            pointsRef.current = checkpoint.anchor ? [{ ...checkpoint.anchor, segmentStart: true }] : [];
+            // 유효 기준점이 없어도 마지막 표본을 남겨 권한 거부 시 세션을 유지한다.
+            const keep = checkpoint.anchor ?? pointsRef.current.at(-1);
+            pointsRef.current = keep ? [{ ...keep, segmentStart: true }] : [];
           }
           setError(null);
         },
@@ -256,8 +258,10 @@ export function useCourseTracking(sessionKey?: string) {
     const openMs = segmentStartedAtRef.current == null ? 0 : Date.now() - segmentStartedAtRef.current;
     // 기존 버전에서 복원된 대용량 세션도 첫 저장 전에 줄인다.
     const checkpoint = distanceCheckpoint(pointsRef.current, distanceMetersRef.current);
+    // 정확도가 나쁜 표본만 받은 세션도 복원 후 일시정지할 수 있게 보존한다.
+    const keep = checkpoint.anchor ?? pointsRef.current.at(-1);
     const success = writeSession(sessionKey, startedRef.current ? {
-      points: checkpoint.anchor ? [{ ...checkpoint.anchor, segmentStart: true }] : [],
+      points: keep ? [{ ...keep, segmentStart: true }] : [],
       distanceMeters: checkpoint.distanceMeters, activeMs: activeMsRef.current + openMs,
       savedAt: Date.now(),
       currentLocation: currentLocationRef.current,

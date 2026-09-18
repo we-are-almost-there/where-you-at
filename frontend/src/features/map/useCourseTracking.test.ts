@@ -142,6 +142,49 @@ it("용량 초과를 알리고 주행을 유지하며 다음 저장 성공 시 �
 });
 
 describe("useCourseTracking 권한 거부", () => {
+  it("정확도가 나쁜 표본만 쌓인 뒤 권한이 거부돼도 세션을 지킨다", () => {
+    const hook = renderHook(() => useCourseTracking("bad-accuracy"));
+    act(() => hook.result.current.startTracking());
+    act(() => {
+      for (let i = 0; i < MAX_TRACKING_POINTS; i++) {
+        now += 1000;
+        latestWatcher().success({
+          coords: { latitude: 37.5, longitude: 127, accuracy: 80, heading: null },
+          timestamp: now,
+        } as GeolocationPosition);
+      }
+    });
+
+    deny();
+
+    expect(hook.result.current.status).toBe("paused");
+    expect(hook.result.current.currentLocation?.accuracy).toBe(80);
+    now += 600_000;
+    expect(stopAndTakeRecord(hook.result.current.stopTracking)).toEqual(summarize([], MAX_TRACKING_POINTS * 1000));
+    hook.unmount();
+  });
+
+  it("정확도가 나쁜 첫 표본을 저장하고 복원해도 권한 거부 시 세션을 지킨다", () => {
+    const hook = renderHook(() => useCourseTracking("bad-accuracy-restore"));
+    act(() => hook.result.current.startTracking());
+    now += 1000;
+    act(() => latestWatcher().success({
+      coords: { latitude: 37.5, longitude: 127, accuracy: 80, heading: null },
+      timestamp: now,
+    } as GeolocationPosition));
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    expect(JSON.parse(sessionStorage.getItem("bad-accuracy-restore")!).points).toEqual([
+      { lat: 37.5, lng: 127, accuracy: 80, timestamp: now, segmentStart: true },
+    ]);
+    hook.unmount();
+
+    const restored = renderHook(() => useCourseTracking("bad-accuracy-restore"));
+    deny();
+    expect(restored.result.current.status).toBe("paused");
+    expect(stopAndTakeRecord(restored.result.current.stopTracking)).toEqual(summarize([], 1000));
+    restored.unmount();
+  });
+
   it("시작하자마자 거부되면 남길 기록이 없어 초기 상태로 돌아간다", () => {
     const { result } = renderHook(() => useCourseTracking());
 
