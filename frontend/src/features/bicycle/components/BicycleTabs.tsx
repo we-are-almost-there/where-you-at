@@ -1,6 +1,8 @@
-export type DataSourceTab = "운영 정보" | "실시간";
+import { Tabs } from "../../../components/common/Tabs";
+import { BICYCLE_TAB_ID_BASE as ID_BASE, BICYCLE_TABS as TABS, type DataSourceTab } from "./bicycleTabItems";
 
-const TABS: DataSourceTab[] = ["운영 정보", "실시간"];
+export type { DataSourceTab };
+
 interface Props {
   value: DataSourceTab;
   onChange: (value: DataSourceTab) => void;
@@ -8,23 +10,20 @@ interface Props {
 
 export function BicycleTabs({ value, onChange }: Props) {
   return (
-    <div className="flex gap-6" role="tablist">
-      {TABS.map((tab) => {
-        const active = tab === value;
-        return (
-          <button
-            key={tab}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onChange(tab)}
-            className="relative cursor-pointer pb-2 text-[15px] font-bold"
-          >
-            <span className={active ? "text-accent" : "text-caption"}>{tab}</span>
-            {active && <span className="absolute inset-x-0 bottom-0 h-[3px] rounded-full bg-accent" />}
-          </button>
-        );
-      })}
-    </div>
+    <Tabs
+      idBase={ID_BASE}
+      label="자전거 대여소 정보 종류"
+      items={TABS}
+      value={value}
+      onChange={onChange}
+      className="flex gap-6"
+      tabClassName={() => "relative cursor-pointer pb-2 text-[15px] font-bold"}
+      renderLabel={(tab, active) => (
+        <>
+          <span className={active ? "text-accent" : "text-muted"}>{tab.label}</span>
+          {active && <span className="absolute inset-x-0 bottom-0 h-[3px] rounded-full bg-accent" />}
+        </>
+      )}
+    />
   );
 }

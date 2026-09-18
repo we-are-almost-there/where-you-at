@@ -175,7 +175,7 @@ export default function RaceMap({ raceTitle, lat, lng, onAddressResolved, compac
   }
 
   if (!sdkReady) {
-    return <div role="status" aria-label="지도 불러오는 중" className={`${compact ? "h-40" : "h-64"} w-full animate-pulse rounded-t-lg bg-gray-100`} />;
+    return <div role="status" aria-label="지도 불러오는 중" className={`${compact ? "h-40" : "h-64"} w-full animate-pulse motion-reduce:animate-none rounded-t-lg bg-gray-100`} />;
   }
 
   const racePinSize = 32;

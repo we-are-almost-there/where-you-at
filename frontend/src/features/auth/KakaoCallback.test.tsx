@@ -62,6 +62,17 @@ it("state가 맞으면 한 번만 교환하고 로그인한 뒤 원래 경로로
   expect(sessionStorage.getItem("auth.kakaoLogin")).toBeNull();
 });
 
+it("다른 화면처럼 본문 영역·페이지 제목·h1을 갖춘다", () => {
+  loginWithKakao.mockReturnValue(new Promise(() => {}));
+  renderCallback("?code=abc&state=saved-state");
+
+  const main = screen.getByRole("main");
+  expect(main.id).toBe("main-content"); // 본문 바로가기·화면 이동 초점의 대상
+  expect(main.tabIndex).toBe(-1);
+  expect(screen.getByRole("heading", { level: 1, name: "카카오 로그인" })).toBeTruthy();
+  expect(document.title).toBe("카카오 로그인 | 어디까지왔니");
+});
+
 it("state가 다르거나 저장된 시도가 없으면 교환하지 않는다", () => {
   for (const setup of [() => {}, () => sessionStorage.clear()]) {
     setup();

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { Race } from "../types";
-import { EVENT_TYPE_COLOR, EVENT_TYPE_LABEL } from "../types";
+import { EVENT_TYPE_COLOR, EVENT_TYPE_LABEL, UNSPECIFIED_BADGE_COLOR } from "../types";
 import { parseLocalDate } from "../dateUtils";
 import RaceDetailSheet from "./RaceDetailSheet";
 
@@ -63,7 +63,14 @@ export default function RaceList({ races, selectedRaceId, onSelectRace, isDeskto
           ) / 86_400_000) + 1;
           const isEnded = end.getTime() < today;
           const color = race.event_type ? EVENT_TYPE_COLOR[race.event_type] : "var(--color-race-unspecified)";
-          const textColor = race.event_type === "cycling" ? "var(--color-race-cycling-text)" : color;
+          // 옅은 종목색 배경 위 글자는 종목색보다 진하게 쓴다. 원색 그대로면 러닝 4.31:1,
+          // 종목 미지정 회색은 2.5:1로 모자라다.
+          const textColor =
+            race.event_type === "cycling"
+              ? "var(--color-race-cycling-text)"
+              : race.event_type === "running"
+                ? "var(--color-accent-strong)"
+                : UNSPECIFIED_BADGE_COLOR;
           const location = race.location_name?.replace(/\s*·\s*/g, " | ");
 
           return (

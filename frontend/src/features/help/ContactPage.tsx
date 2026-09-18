@@ -25,9 +25,20 @@ function countChars(value: string): number {
 
 // 코스 필터 검색칸(CourseFilters)과 같은 입력칸 모양
 const INPUT_CLASS =
-  "w-full rounded-lg border border-divider bg-white px-3.5 py-2.5 text-[14px] text-ink placeholder:text-caption focus:border-accent focus:outline-none";
-// 라벨은 제목·동의 섹션 제목과 같은 ink. accent는 오류 안내와 보내기 버튼에만 써서 눈에 띄게 한다.
+  "w-full rounded-lg border border-input-border bg-white px-3.5 py-2.5 text-[14px] text-ink placeholder:text-caption focus:border-accent focus:outline-none";
+// 라벨은 제목·동의 섹션 제목과 같은 ink.
 const FIELD_LABEL_CLASS = "text-[12px] font-bold text-ink";
+// 오류 안내. 색만으로 알리지 않도록 문장 자체가 무엇이 잘못됐는지 말한다.
+const FIELD_ERROR_CLASS = "text-[12px] text-danger";
+
+// 필수 표시. 라벨 밖에 두고 숨겨서 이름("문의 유형 별표")에 섞이지 않게 한다. 필수 여부는 required 속성이 알린다.
+function RequiredMark() {
+  return (
+    <span aria-hidden="true" className="ml-0.5 text-danger">
+      *
+    </span>
+  );
+}
 
 type SubmitState =
   | { status: "idle" }
@@ -63,6 +74,12 @@ export default function ContactPage() {
   const [state, setState] = useState<SubmitState>({ status: "idle" });
   const [policyOpen, setPolicyOpen] = useState(false);
   const policyButtonRef = useRef<HTMLButtonElement>(null);
+  // 보내기를 한 번 누른 뒤부터 빠진 항목을 모두 알린다. 처음부터 오류를 띄우면 쓰기도 전에 꾸중을 듣는 셈이다.
+  const [attempted, setAttempted] = useState(false);
+  const categoryRef = useRef<HTMLSelectElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+  const agreeRef = useRef<HTMLInputElement>(null);
 
   const trimmedEmail = email.trim();
   const contentLength = countChars(content.trim());
@@ -70,12 +87,49 @@ export default function ContactPage() {
   const contentValid = contentLength >= CONTENT_MIN && contentLength <= CONTENT_MAX;
   const contentOver = contentLength - CONTENT_MAX;
   const submitting = state.status === "submitting";
-  const canSubmit = category !== "" && emailValid && contentValid && agreed && !submitting;
+
+  // 항목별 오류 문구. 화면에 보일지는 아래 show* 가 정한다.
+  const categoryError = category === "" ? "문의 유형을 선택해 주세요." : null;
+  const emailError =
+    trimmedEmail === "" ? "답변 받을 이메일을 입력해 주세요." : !emailValid ? "이메일 형식을 확인해 주세요." : null;
+  const contentError =
+    contentLength === 0
+      ? "문의 내용을 입력해 주세요."
+      : contentLength < CONTENT_MIN
+        ? `문의 내용을 ${CONTENT_MIN}자 이상 적어 주세요.`
+        : null;
+  const agreeError = agreed ? null : "개인정보 수집·이용에 동의해야 문의를 보낼 수 있어요.";
+
+  const showCategoryError = attempted && categoryError !== null;
+  // 이메일은 칸을 벗어날 때 형식도 바로 알려 준다(빈 칸은 보내기를 누른 뒤에만).
+  const showEmailError = emailError !== null && (attempted || (emailTouched && trimmedEmail !== ""));
+  const showContentError = attempted && contentError !== null;
+  const showAgreeError = attempted && agreeError !== null;
+  // 2000자 초과는 입력하는 동안에도 글자 수 안내가 알린다.
+  const contentInvalid = showContentError || contentOver > 0;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    // canSubmit이 category !== ""를 포함하므로, 이 검사 뒤에는 category가 문의 유형으로 좁혀진다.
-    if (!canSubmit) return;
+    if (submitting) return;
+
+    // 버튼을 끄지 않고, 누르면 빠진 항목을 알리고 첫 번째 칸으로 초점을 옮긴다.
+    // 꺼진 버튼은 초점을 받지 못해 무엇이 부족한지 알 길이 없다.
+    const firstInvalid =
+      categoryError !== null
+        ? categoryRef.current
+        : emailError !== null
+          ? emailRef.current
+          : !contentValid
+            ? contentRef.current
+            : agreeError !== null
+              ? agreeRef.current
+              : null;
+    // category === "" 검사는 타입을 좁히려는 것. 비어 있으면 firstInvalid도 있다.
+    if (firstInvalid || category === "") {
+      setAttempted(true);
+      firstInvalid?.focus();
+      return;
+    }
 
     setState({ status: "submitting" });
     try {
@@ -107,8 +161,6 @@ export default function ContactPage() {
     );
   }
 
-  const showEmailHint = emailTouched && trimmedEmail !== "" && !emailValid;
-
   return (
     <DocumentPage title="1:1 문의" back={{ to: "/help", label: "고객지원" }}>
       <form onSubmit={submit} noValidate className="mt-6 flex flex-col gap-5 md:mt-8">
@@ -120,14 +172,21 @@ export default function ContactPage() {
         </p>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="inquiry-category" className={FIELD_LABEL_CLASS}>
-            문의 유형
-          </label>
+          <div className="flex items-center">
+            <label htmlFor="inquiry-category" className={FIELD_LABEL_CLASS}>
+              문의 유형
+            </label>
+            <RequiredMark />
+          </div>
           {/* 브라우저 기본 화살표는 안쪽 여백과 상관없이 오른쪽 끝에 붙어서 위치를 옮길 수 없다.
             기본 화살표를 숨기고(appearance-none), 글자 여백(px-3.5)과 같은 거리에 아이콘을 직접 둔다. */}
           <div className="relative">
             <select
+              ref={categoryRef}
               id="inquiry-category"
+              required
+              aria-invalid={showCategoryError}
+              aria-describedby={showCategoryError ? "inquiry-category-error" : undefined}
               value={category}
               onChange={(e) => setCategory(e.target.value as InquiryCategory | "")}
               // 선택 상자는 브라우저 기본 높이가 입력칸보다 낮아서, 한 줄 입력칸과 같은 높이(h-11)로 고정한다.
@@ -150,14 +209,24 @@ export default function ContactPage() {
               className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-caption"
             />
           </div>
+          {showCategoryError && (
+            <p id="inquiry-category-error" className={FIELD_ERROR_CLASS}>
+              {categoryError}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="inquiry-email" className={FIELD_LABEL_CLASS}>
-            답변 받을 이메일
-          </label>
+          <div className="flex items-center">
+            <label htmlFor="inquiry-email" className={FIELD_LABEL_CLASS}>
+              답변 받을 이메일
+            </label>
+            <RequiredMark />
+          </div>
           <input
+            ref={emailRef}
             id="inquiry-email"
+            required
             type="email"
             inputMode="email"
             autoComplete="email"
@@ -166,39 +235,49 @@ export default function ContactPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             onBlur={() => setEmailTouched(true)}
-            aria-invalid={showEmailHint}
-            aria-describedby={showEmailHint ? "inquiry-email-hint" : undefined}
+            aria-invalid={showEmailError}
+            aria-describedby={showEmailError ? "inquiry-email-hint" : undefined}
             className={`${INPUT_CLASS} h-11`}
           />
-          {/* 디자인 토큰에 오류용 빨간색이 없어, 강조색(accent)으로 알린다. */}
-          {showEmailHint && (
-            <p id="inquiry-email-hint" className="text-[12px] text-accent">
-              이메일 형식을 확인해 주세요.
+          {showEmailError && (
+            <p id="inquiry-email-hint" className={FIELD_ERROR_CLASS}>
+              {emailError}
             </p>
           )}
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="inquiry-content" className={FIELD_LABEL_CLASS}>
-            문의 내용
-          </label>
+          <div className="flex items-center">
+            <label htmlFor="inquiry-content" className={FIELD_LABEL_CLASS}>
+              문의 내용
+            </label>
+            <RequiredMark />
+          </div>
           <textarea
+            ref={contentRef}
             id="inquiry-content"
+            required
             rows={8}
             placeholder="어떤 화면에서 어떤 점이 궁금하거나 잘못되었는지 적어 주시면 더 빨리 확인할 수 있어요."
             value={content}
             // maxLength는 UTF-16 단위라 이모지를 2자로 세서 서버 기준보다 일찍 입력을 막는다.
             // 넘친 글자를 잘라 내면 가운데에 입력했을 때 끝 글자가 지워지므로, 입력은 그대로 두고
-            // 넘친 글자 수를 알려 주며 보내기 버튼을 끈다(canSubmit).
+            // 넘친 글자 수를 알려 주고, 보내기를 누르면 이 칸으로 돌려보낸다.
             onChange={(e) => setContent(e.target.value)}
-            aria-invalid={contentOver > 0}
-            aria-describedby="inquiry-content-count"
+            aria-invalid={contentInvalid}
+            aria-describedby={
+              showContentError ? "inquiry-content-error inquiry-content-count" : "inquiry-content-count"
+            }
             className={`${INPUT_CLASS} resize-y leading-relaxed`}
           />
-          {/* 이메일 안내와 같이 오류용 빨간색 대신 강조색(accent)으로 알린다. */}
+          {showContentError && (
+            <p id="inquiry-content-error" className={FIELD_ERROR_CLASS}>
+              {contentError}
+            </p>
+          )}
           <p
             id="inquiry-content-count"
-            className={`text-right text-[12px] ${contentOver > 0 ? "text-accent" : "text-caption"}`}
+            className={`text-right text-[12px] ${contentOver > 0 ? "text-danger" : "text-caption"}`}
           >
             {contentOver > 0
               ? `${contentLength}자 · ${CONTENT_MAX}자를 ${contentOver}자 넘었어요`
@@ -206,9 +285,10 @@ export default function ContactPage() {
           </p>
         </div>
 
-        {/* 숨긴 입력칸(허니팟). sr-only로 화면에서 빼고, aria-hidden과 tabIndex -1로 스크린 리더와
-          탭 이동에서도 빼서 사람이 실수로 채울 일이 없게 한다. */}
-        <div aria-hidden="true" className="sr-only">
+        {/* 숨긴 입력칸(허니팟). hidden(display:none)으로 화면·접근성 트리·탭 이동에서 모두 뺀다.
+          aria-hidden만 걸면 칸이 여전히 포커스를 받을 수 있어 화면낭독기 사용자가 보이지 않는 칸에 들어가게 된다.
+          폼을 자동으로 채우는 봇은 숨긴 칸도 채운다. */}
+        <div hidden>
           <label htmlFor="inquiry-website">웹사이트</label>
           <input
             id="inquiry-website"
@@ -257,13 +337,22 @@ export default function ContactPage() {
           {/* 방문 혜택 신청 체크리스트(SupportDetail)와 같은 체크박스 */}
           <label className="mt-3 flex cursor-pointer items-start gap-2.5">
             <input
+              ref={agreeRef}
               type="checkbox"
+              required
+              aria-invalid={showAgreeError}
+              aria-describedby={showAgreeError ? "inquiry-agree-error" : undefined}
               checked={agreed}
               onChange={(e) => setAgreed(e.target.checked)}
               className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-accent"
             />
             <span className="text-[13px] text-ink">위 내용에 동의합니다.</span>
           </label>
+          {showAgreeError && (
+            <p id="inquiry-agree-error" className={`mt-1.5 ${FIELD_ERROR_CLASS}`}>
+              {agreeError}
+            </p>
+          )}
         </section>
 
         {state.status === "error" && (
@@ -278,7 +367,7 @@ export default function ContactPage() {
         {/* 방문 혜택 환급 계산 버튼(SupportCalculator)과 같은 주 버튼 */}
         <button
           type="submit"
-          disabled={!canSubmit}
+          disabled={submitting}
           className="w-full cursor-pointer rounded-lg bg-accent py-3 text-[14px] font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? "보내는 중…" : "문의 보내기"}

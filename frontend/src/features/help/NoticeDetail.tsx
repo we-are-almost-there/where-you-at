@@ -68,7 +68,7 @@ export default function NoticeDetail() {
       return <ErrorNotice title={NOT_FOUND.title} description={NOT_FOUND.description} onBack={backToList} />;
     }
     if (!current) {
-      return <p className="py-16 text-center text-[14px] text-caption">공지사항을 불러오는 중…</p>;
+      return <p role="status" className="py-16 text-center text-[14px] text-caption">공지사항을 불러오는 중…</p>;
     }
     if (current.status === "error") {
       return (
@@ -124,7 +124,11 @@ export default function NoticeDetail() {
 
   // 상세의 한 단계 위는 공지 목록이다. 목록에서 다시 고객지원으로 갈 수 있다.
   return (
-    <DocumentPage title="공지사항" back={{ to: listPath, label: "공지사항" }}>
+    <DocumentPage
+      title="공지사항"
+      documentTitle={current?.status === "ok" ? `${current.notice.title} - 공지사항` : "공지사항"}
+      back={{ to: listPath, label: "공지사항" }}
+    >
       {renderBody()}
     </DocumentPage>
   );

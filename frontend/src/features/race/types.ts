@@ -27,3 +27,10 @@ export const EVENT_TYPE_COLOR: Record<EventType, string> = {
   running: "var(--color-race-running)",
   cycling: "var(--color-race-cycling)",
 };
+
+// 흰 글자를 올리는 배지·캘린더 칸 배경. 위 종목색은 점·범례용이라 자전거색 위 흰 글자가 2.54:1이다.
+export const EVENT_TYPE_BADGE_COLOR: Record<EventType, string> = {
+  running: "var(--color-race-running)", // 흰 글자 4.86
+  cycling: "var(--color-race-cycling-strong)", // 흰 글자 5.26
+};
+export const UNSPECIFIED_BADGE_COLOR = "var(--color-race-unspecified-strong)"; // 흰 글자 5.36

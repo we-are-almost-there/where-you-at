@@ -13,6 +13,7 @@ export function SpotCard({ spot, routeType, onSelect }: Props) {
   return (
     <button
       type="button"
+      data-spot-id={spot.id}
       onClick={() => onSelect(spot)}
       className="flex w-full flex-col self-start overflow-hidden rounded-xl bg-white text-left shadow-[0px_3px_10px_0px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0px_5px_16px_0px_rgba(0,0,0,0.16)]"
     >
@@ -20,7 +21,8 @@ export function SpotCard({ spot, routeType, onSelect }: Props) {
         {spot.image_url ? (
           <img
             src={spot.image_url}
-            alt={spot.name}
+            // 장소 이름이 바로 아래 글자로 있어 버튼 이름이 두 번 읽히지 않게 장식으로 둔다.
+            alt=""
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : (

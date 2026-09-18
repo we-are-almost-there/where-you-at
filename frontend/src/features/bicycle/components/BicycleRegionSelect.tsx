@@ -4,6 +4,8 @@ interface Props {
   value: string;
   onChange: (value: string) => void;
   regions: RegionSelectItem[];
+  /** 보이는 레이블이 없어서 화면낭독기용 이름을 받는다. 첫 옵션(placeholder)은 값이 바뀌면 사라져 이름이 될 수 없다. */
+  label: string;
   className?: string;
   placeholder?: string;
   disabled?: boolean;
@@ -17,6 +19,7 @@ export function BicycleRegionSelect({
   value,
   onChange,
   regions,
+  label,
   className,
   placeholder = "전체 지역",
   disabled,
@@ -25,6 +28,7 @@ export function BicycleRegionSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      aria-label={label}
       className={className}
       disabled={disabled}
     >
