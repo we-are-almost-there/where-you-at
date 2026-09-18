@@ -6,6 +6,9 @@ import { Race } from "./features/race";
 import { BicycleExplore } from "./features/bicycle";
 import { ContactPage, FaqPage, HelpPage, NoticeDetail, NoticeList, PrivacyPage, TermsPage } from "./features/help";
 import { NotFoundPage } from "./features/notFound";
+// 다른 페이지와 달리 배럴이 아니라 파일에서 직접 가져온다. 이유는 features/auth/index.ts 주석 참고.
+import KakaoCallback from "./features/auth/KakaoCallback";
+import { KAKAO_CALLBACK_PATH } from "./features/auth";
 
 function App() {
   return (
@@ -23,6 +26,7 @@ function App() {
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/bicycle-facilities" element={<BicycleExplore />} />
+      <Route path={KAKAO_CALLBACK_PATH} element={<KakaoCallback />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
