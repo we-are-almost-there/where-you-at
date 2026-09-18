@@ -486,7 +486,11 @@ export function SupportRegionMap() {
 
   if (error) return <SupportErrorText error={error} className="py-16" />;
   if (!sido || !regions)
-    return <p className="py-16 text-center text-[14px] text-caption">지도를 불러오는 중…</p>;
+    return (
+      <p role="status" className="py-16 text-center text-[14px] text-caption">
+        지도를 불러오는 중…
+      </p>
+    );
 
   const selectedSidoName =
     selectedSido != null

@@ -60,8 +60,10 @@ export function CourseKeywordSearch({ value, onChange }: Pick<Props, "value" | "
           changeKeyword(e.currentTarget.value);
         }}
         onBlur={(e) => scheduleKeywordChange(e.currentTarget.value, 0)}
+        // placeholder는 입력을 시작하면 사라져 이름이 될 수 없다. 보이는 라벨 자리가 없어 이름을 따로 준다.
+        aria-label="코스 이름 검색"
         placeholder="코스 이름 검색"
-        className="w-full rounded-lg border border-divider bg-white px-3.5 py-2.5 text-[14px] text-ink placeholder:text-caption focus:border-accent focus:outline-none"
+        className="w-full rounded-lg border border-input-border bg-white px-3.5 py-2.5 text-[14px] text-ink placeholder:text-caption focus:border-accent focus:outline-none"
       />
     </div>
   );
@@ -234,7 +236,7 @@ function FilterDropdown({
         onClick={() => setOpen((current) => !current)}
         className={`flex items-center text-[13px] focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent/30 ${
           variant === "chip"
-            ? "w-full justify-between rounded-xl border border-divider bg-white py-2.5 pl-4 pr-3 font-medium text-ink hover:border-caption"
+            ? "w-full justify-between rounded-xl border border-input-border bg-white py-2.5 pl-4 pr-3 font-medium text-ink hover:border-ink"
             : "justify-end gap-1.5 rounded-md py-1 text-caption hover:text-ink"
         }`}
       >

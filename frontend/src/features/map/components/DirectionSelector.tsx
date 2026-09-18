@@ -11,16 +11,19 @@ const END_COLOR = "#FF4D4F"; // 도착 전용 토큰이 없어 KakaoMap 마커�
 // 굵은 줄이 대부분 짧아졌지만, "구산면 마전리 111-7"처럼 여전히 길어질 수 있는
 // 조합이 남아 있다. 말줄임으로 자르면 정확히 필요한 번지 정보가 잘려나가므로,
 // 카드 높이가 조금 늘어나는 쪽을 택한다.
-function Endpoint({ color, address }: { color: string; address: EndpointAddress }) {
+// 색 점만으로는 색을 구분하기 어려운 사용자나 화면낭독기가 출발·도착을 알 수 없어,
+// "출발"/"도착" 글자를 dt로 함께 둔다.
+function Endpoint({ color, label, address }: { color: string; label: string; address: EndpointAddress }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-      <div className="min-w-0">
+      <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      <dt className="w-7 shrink-0 text-[12px] font-bold text-caption">{label}</dt>
+      <dd className="min-w-0">
         {address.caption && (
           <span className="block break-keep text-[11px] leading-[1.3] text-caption">{address.caption}</span>
         )}
         <span className="block break-keep text-[14px] font-bold leading-[1.3] text-ink">{address.main}</span>
-      </div>
+      </dd>
     </div>
   );
 }
@@ -49,11 +52,11 @@ export function DirectionSelector({
     <div>
       <p className="mb-1.5 text-[12px] font-bold text-caption">진행 방향</p>
       <div className="flex items-center gap-3 rounded-[14px] border border-divider bg-white px-4 py-2.5">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <Endpoint color={START_COLOR} address={forward ? start : end} />
+        <dl className="flex min-w-0 flex-1 flex-col">
+          <Endpoint color={START_COLOR} label="출발" address={forward ? start : end} />
           <div aria-hidden="true" className="my-2 h-px bg-divider" />
-          <Endpoint color={END_COLOR} address={forward ? end : start} />
-        </div>
+          <Endpoint color={END_COLOR} label="도착" address={forward ? end : start} />
+        </dl>
         <button
           type="button"
           onClick={onToggle}

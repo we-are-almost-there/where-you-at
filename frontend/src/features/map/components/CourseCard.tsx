@@ -76,10 +76,13 @@ export function CourseCard({ course, routeType, onSelect, onHoverChange, active 
         {/* 본문 (flex-1로 카드 높이를 채워, 아래 구분선+footer를 mt-auto로 바닥 정렬) */}
         <div className="flex flex-1 flex-col p-4">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="font-bold text-ink text-[17px] @[280px]:text-[19px]">
+            {/* 목록 화면에는 h1(코스 목록)과 카드 사이에 다른 제목이 없어 h2로 둔다. */}
+            <h2 className="font-bold text-ink text-[17px] @[280px]:text-[19px]">
               {course.title}
-            </h3>
-            <span className="shrink-0 text-[18px] leading-none text-caption">›</span>
+            </h2>
+            <span aria-hidden="true" className="shrink-0 text-[18px] leading-none text-caption">
+              ›
+            </span>
           </div>
           <p className="mt-1.5 truncate text-[13px] text-caption">{course.start_address}</p>
           <p className="mt-1 font-bold text-figure text-[16px]">
@@ -92,7 +95,7 @@ export function CourseCard({ course, routeType, onSelect, onHoverChange, active 
               {course.landmarks.slice(0, 3).map((name) => (
                 <li
                   key={name}
-                  className="rounded-full bg-lavender px-2 py-0.5 text-[11px] font-medium text-accent"
+                  className="rounded-full bg-lavender px-2 py-0.5 text-[11px] font-medium text-accent-strong"
                 >
                   {name}
                 </li>

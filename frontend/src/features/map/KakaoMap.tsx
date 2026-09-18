@@ -241,6 +241,13 @@ const CLUSTER_STYLES = [
 ];
 
 // 출발/도착 지점 라벨 + 색상 점 (디자인: 초록 출발 / 빨강 도착)
+// 흰 글자를 올리는 라벨 배경. 점 색(#03C75A·#FF4D4F) 그대로면 대비가 2.25·3.27:1이라
+// 상태 글자 토큰(success·danger)을 쓴다 (흰 글자 대비 5.44·5.46:1).
+const ENDPOINT_LABEL_COLOR: Record<string, string> = {
+  "#03C75A": "var(--color-success)",
+  "#FF4D4F": "var(--color-danger)",
+};
+
 function EndpointMarker({
   point,
   color,
@@ -259,7 +266,7 @@ function EndpointMarker({
           className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md px-2 py-0.5 text-[13px] font-bold text-white ${
             labelBelow ? "top-full mt-1.5" : "bottom-full mb-1.5"
           }`}
-          style={{ backgroundColor: color, boxShadow: "0 1px 4px rgba(0,0,0,0.3)" }}
+          style={{ backgroundColor: ENDPOINT_LABEL_COLOR[color] ?? color, boxShadow: "0 1px 4px rgba(0,0,0,0.3)" }}
         >
           {label}
         </span>
@@ -990,13 +997,14 @@ export function KakaoMap({
             type="button"
             onClick={handleLocate}
             disabled={locating}
-            aria-label="현재 위치로 이동"
+            aria-busy={locating}
+            aria-label={locating ? "현재 위치 찾는 중" : "현재 위치로 이동"}
             className="pointer-events-auto grid size-11 place-items-center rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.25)] transition-transform active:scale-95 disabled:opacity-70"
           >
             {locating ? (
               <span
                 aria-hidden
-                className="size-5 animate-spin rounded-full border-2 border-accent border-t-transparent"
+                className="size-5 animate-spin motion-reduce:animate-none rounded-full border-2 border-accent border-t-transparent"
               />
             ) : (
               <LocateIcon />

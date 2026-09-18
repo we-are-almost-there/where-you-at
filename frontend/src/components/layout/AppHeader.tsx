@@ -1,9 +1,19 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { Link, useLocation } from "react-router";
 import { UserRound } from "lucide-react";
 import SidebarDrawer from "./SidebarDrawer";
 import { startKakaoLogin, useAuth } from "../../features/auth";
 import logoUrl from "../../assets/logo.svg";
+import { MAIN_CONTENT_ID } from "./mainContent";
+
+// 주소에 #main-content를 남기면 라우터가 새 이동으로 받고 새로고침·공유 주소에도 남는다.
+// 기본 이동은 막고 본문에 포커스만 옮긴다(포커스가 가면 브라우저가 알아서 스크롤한다).
+function skipToMain(event: MouseEvent<HTMLAnchorElement>) {
+  const main = document.getElementById(MAIN_CONTENT_ID);
+  if (!main) return;
+  event.preventDefault();
+  main.focus();
+}
 
 interface NavItem {
   label: string;
@@ -40,6 +50,7 @@ export default function AppHeader({
 
   const location = useLocation();
   const auth = useAuth();
+  const normalizedPath = location.pathname.replace(/\/+$/, "");
   const headerRef = useRef<HTMLElement>(null);
   const alignmentRef = useRef<HTMLDivElement>(null);
 
@@ -79,6 +90,15 @@ export default function AppHeader({
 
   return (
     <header ref={headerRef} className="sticky top-0 z-50 shrink-0 border-b border-divider bg-white">
+      {/* 키보드 사용자가 매 페이지 메뉴를 반복해서 지나지 않게 한다. 평소엔 숨기고 포커스될 때만 보인다.
+          대상은 각 페이지의 <main id={MAIN_CONTENT_ID}>. */}
+      <a
+        href={`#${MAIN_CONTENT_ID}`}
+        onClick={skipToMain}
+        className="sr-only rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-[60]"
+      >
+        본문 바로가기
+      </a>
       <div ref={alignmentRef}>
         <div className={sidePadding}>
           <div className="flex h-16 items-center gap-3 md:h-auto md:py-5">
@@ -91,15 +111,24 @@ export default function AppHeader({
               ☰
             </button>
 
-            <Link to="/" className="shrink-0">
+            <Link
+              to="/"
+              aria-current={normalizedPath === "" ? "page" : undefined}
+              className="shrink-0"
+            >
               <img src={logoUrl} alt="어디까지왔니" className="h-7 w-auto md:h-8" />
             </Link>
 
             <nav
+              aria-label="주요 메뉴"
               className="hidden min-w-0 flex-1 items-center justify-center md:flex gap-[clamp(1rem,4vw,7rem)] px-[clamp(1rem,4vw,2rem)]"
             >
               {NAV_ITEMS.map((item) => {
-                const isActive = item.to !== null && location.pathname === item.to;
+                // 하위 경로(/courses/5)도 같은 메뉴 구간이다. 홈("/")은 모든 경로의 접두어라 정확히 같을 때만.
+                const isActive =
+                  item.to !== null &&
+                  (normalizedPath === (item.to === "/" ? "" : item.to) ||
+                    (item.to !== "/" && normalizedPath.startsWith(`${item.to}/`)));
                 const isDisabled = item.to === null;
 
                 if (isDisabled) {
@@ -117,6 +146,8 @@ export default function AppHeader({
                   <Link
                     key={item.label}
                     to={item.to as string}
+                    // 굵은 글씨만으로는 화면낭독기가 지금 페이지를 알 수 없다.
+                    aria-current={isActive ? "page" : undefined}
                     className={`whitespace-nowrap text-[16px] leading-8 transition-colors ${
                       isActive ? "font-bold text-ink" : "font-medium text-ink/70 hover:text-ink"
                     }`}

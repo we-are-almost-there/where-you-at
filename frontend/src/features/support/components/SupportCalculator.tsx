@@ -84,7 +84,7 @@ export function SupportCalculator({ regionCode }: Props) {
           {CATEGORIES.map(({ key, label }) => (
             <label key={key} className="flex flex-col gap-1.5">
               <span className="text-[12px] font-bold text-caption">{label}</span>
-              <div className="flex items-center rounded-lg border border-divider bg-white px-3.5 py-2.5 focus-within:border-accent">
+              <div className="flex items-center rounded-lg border border-input-border bg-white px-3.5 py-2.5 focus-within:border-accent">
                 <input
                   type="text"
                   inputMode="numeric"
@@ -100,7 +100,7 @@ export function SupportCalculator({ regionCode }: Props) {
 
           <label className="flex flex-col gap-1.5">
             <span className="text-[12px] font-bold text-caption">숙박일수</span>
-            <div className="flex items-center rounded-lg border border-divider bg-white px-3.5 py-2.5 focus-within:border-accent">
+            <div className="flex items-center rounded-lg border border-input-border bg-white px-3.5 py-2.5 focus-within:border-accent">
               <input
                 type="text"
                 inputMode="numeric"

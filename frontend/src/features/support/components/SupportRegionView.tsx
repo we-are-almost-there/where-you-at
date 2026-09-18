@@ -170,7 +170,9 @@ export function SupportRegionView({ regionCode }: Props) {
         {/* 첫 로드에는 문구, 지역을 바꾸는 중에는 직전 목록 길이만큼 빈 칸을 둔다.
             직전 목록 자체를 그리면 남의 제도가 이 지역 것으로 읽히고 눌리기까지 한다. */}
         {loading && placeholderCount === 0 && (
-          <p className="py-6 text-center text-[13px] text-caption">불러오는 중…</p>
+          <p role="status" className="py-6 text-center text-[13px] text-caption">
+            불러오는 중…
+          </p>
         )}
         {loading && placeholderCount > 0 && (
           <>
@@ -180,7 +182,7 @@ export function SupportRegionView({ regionCode }: Props) {
             <p role="status" className="sr-only">
               지원 제도를 불러오는 중이에요.
             </p>
-            <ul aria-hidden className="flex animate-pulse flex-col gap-3">
+            <ul aria-hidden className="flex animate-pulse motion-reduce:animate-none flex-col gap-3">
               {Array.from({ length: placeholderCount }, (_, i) => (
                 <li key={i} className="rounded-lg bg-white/50 p-4">
                   <span className="mb-2 block h-[18px] w-16 rounded-full bg-ink/5" />
@@ -193,7 +195,7 @@ export function SupportRegionView({ regionCode }: Props) {
         )}
         {error && <SupportErrorText error={error} />}
         {!loading && !error && items.length === 0 && (
-          <p className="py-6 text-center text-[13px] text-caption">
+          <p role="status" className="py-6 text-center text-[13px] text-caption">
             이 지역에 해당하는 지원 제도가 없어요.
           </p>
         )}

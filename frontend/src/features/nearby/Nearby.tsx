@@ -19,6 +19,8 @@ interface NearbyProps {
   /** 선택된(상세 시트가 열린) 스팟이 바뀔 때마다 호출 (지도 마커 강조용). */
   onSelectedChange?: (spot: NearbySpot | null) => void;
   onBack?: () => void;
+  /** 상세 시트를 포털로 그릴 요소. SpotDetailSheet의 container 설명 참고. */
+  sheetContainer?: HTMLElement | null;
 }
 
 export interface NearbyHandle {
@@ -27,10 +29,15 @@ export interface NearbyHandle {
 }
 
 export const Nearby = forwardRef<NearbyHandle, NearbyProps>(function Nearby(
-  { courseId, routeType = "trail", category, onCategoryChange, onSpotsChange, onSelectedChange, onBack },
+  { courseId, routeType = "trail", category, onCategoryChange, onSpotsChange, onSelectedChange, onBack, sheetContainer },
   ref
 ) {
   const [selected, setSelected] = useState<NearbySpot | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  // 시트를 닫으면 초점을 그 장소의 카드로 돌려준다. 지도 마커로 연 경우에도 같은 카드로 간다
+  // (마커는 초점을 받을 수 없어 돌아갈 자리가 따로 없다). 카드가 목록에 없으면 null.
+  const findSpotCard = (id: string) =>
+    listRef.current?.querySelector<HTMLElement>(`[data-spot-id="${CSS.escape(id)}"]`) ?? null;
   // SpotList가 페이지네이션으로 관리하는 스팟 목록의 로컬 미러.
   // 지도 마커 클릭(selectSpotById)에서 id로 스팟을 찾기 위해 필요하다.
   const currentSpotsRef = useRef<NearbySpot[]>([]);
@@ -82,7 +89,7 @@ export const Nearby = forwardRef<NearbyHandle, NearbyProps>(function Nearby(
       {/* 주변정보 탭 콘텐츠 전체에 최소 높이를 건다 — 카테고리 전환 때마다(로딩/빈 결과/실제
         목록 상관없이) 시트가 코스 정보 탭에서 사용자가 정해둔 펼침 상태(71%)를 그대로
         유지하게 한다. 개별 분기(로딩만 등)에 걸면 카테고리 바뀔 때마다 시트가 오르락내리락한다. */}
-      <div className="min-h-[71dvh] md:min-h-0">
+      <div ref={listRef} className="min-h-[71dvh] md:min-h-0">
         <SpotList
           key={`${courseId}:${category}:${routeType}`}
           courseId={courseId}
@@ -96,7 +103,13 @@ export const Nearby = forwardRef<NearbyHandle, NearbyProps>(function Nearby(
       </div>
 
       {selected && (
-        <SpotDetailSheet key={selected.id} spot={selected} onClose={handleClose} />
+        <SpotDetailSheet
+          key={selected.id}
+          spot={selected}
+          onClose={handleClose}
+          container={sheetContainer}
+          getReturnTarget={() => findSpotCard(selected.id)}
+        />
       )}
     </>
   );
@@ -404,7 +417,7 @@ function SpotList({
 
   if (state.loading) {
     return (
-      <p className="pt-10 text-center text-[13px] text-caption">
+      <p role="status" className="pt-10 text-center text-[13px] text-caption">
         불러오는 중…
       </p>
     );
@@ -412,7 +425,7 @@ function SpotList({
 
   if (state.spots.length === 0 && state.error === null) {
     return (
-      <p className="pt-10 text-center text-[13px] text-caption">
+      <p role="status" className="pt-10 text-center text-[13px] text-caption">
         주변 정보가 없어요
       </p>
     );
@@ -432,14 +445,12 @@ function SpotList({
       </div>
 
       {state.error !== null ? (
-        <div role="alert">
-          <ErrorNotice
-            title={state.error.title}
-            description={state.error.description}
-            onRetry={retry}
-            onBack={onBack}
-          />
-        </div>
+        <ErrorNotice
+          title={state.error.title}
+          description={state.error.description}
+          onRetry={retry}
+          onBack={onBack}
+        />
       ) : (
         hasMore && (
           <div

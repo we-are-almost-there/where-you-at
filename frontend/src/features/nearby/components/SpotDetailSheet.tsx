@@ -1,11 +1,21 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { NearbySpot } from "../types";
 import { getTourSpotDetail, getBicycleFacilityDetail } from "../nearbyApi";
 import { toSafeHttpUrl } from "../../../lib/externalUrl";
+import { useDialogFocus } from "../../../lib/useDialogFocus";
+import { NewTabHint, StatusMessage } from "../../../components/common/a11y";
 
 interface Props {
   spot: NearbySpot;
   onClose: () => void;
+  /**
+   * 시트를 그릴 요소(코스 상세 패널). 넘기면 포털로 그 바로 아래에 그려, 패널의 가려진 내용을
+   * inert로 잠가도 시트는 함께 잠기지 않는다. 없으면 제자리에 그린다(테스트 등).
+   */
+  container?: HTMLElement | null;
+  /** 닫은 뒤 초점을 받을 요소. 보통 이 장소의 카드다. */
+  getReturnTarget?: () => HTMLElement | null | undefined;
 }
 
 const FALLBACK = "-";
@@ -30,7 +40,17 @@ type DetailFields = Partial<{
   available_bikes: number;
 }>;
 
-export function SpotDetailSheet({ spot, onClose }: Props) {
+/**
+ * 주변 장소 상세. 코스 상세 패널만 덮고 지도는 그대로 두어, 시트를 연 채로 지도 마커를 눌러
+ * 다른 장소로 바꿀 수 있다. 그래서 배경 전체를 막는 모달이 아니라 비모달 대화상자로 둔다
+ * (aria-modal 없음). 가려진 패널 내용은 코스 상세가 inert로 잠근다.
+ */
+export function SpotDetailSheet({ spot, onClose, container, getReturnTarget }: Props) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  useDialogFocus({ initialFocusRef: closeButtonRef, containerRef: dialogRef, onEscape: onClose, getReturnTarget });
+
   // 시트는 absolute+inset-0으로 밑에 깔린 CourseDetail 패널(section)을 containing block으로
   // 삼아 그 높이를 그대로 따라간다 — 패널이 접힘(51%)이든 펼침(71%)이든 항상 정확히 덮는다.
   // 드래그는 닫기 전용이라 아래 방향 이동량(delta)만 다루면 된다 — 절대 좌표를 쫓을 필요가 없다.
@@ -100,16 +120,21 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
 
   const reservationHref = toSafeHttpUrl(detail?.reservation_url);
 
-  return (
+  const sheet = (
     <>
-      <div className="absolute inset-0 z-40 bg-black/30" onClick={onClose} />
+      <div aria-hidden="true" className="absolute inset-0 z-40 bg-black/30" onClick={onClose} />
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-labelledby={titleId}
         className={`absolute inset-0 z-50 flex flex-col overflow-hidden rounded-t-[24px] bg-white shadow-[0px_-6px_14px_0px_rgba(0,0,0,0.16)] md:rounded-none md:shadow-none ${
           isDragging ? "" : "transition-transform duration-200 ease-out"
         }`}
         style={dragDeltaPx != null ? { transform: `translateY(${dragDeltaPx}px)` } : undefined}
       >
+        {/* 끌어서 닫는 손잡이는 터치 전용 보조 수단이다. 키보드는 닫기 버튼과 Escape를 쓴다. */}
         <div
+          aria-hidden="true"
           className="flex shrink-0 cursor-grab touch-none justify-center py-2.5 active:cursor-grabbing"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -120,8 +145,10 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
           <div className="mb-3 flex items-start justify-between">
-            <h2 className="text-[18px] font-bold text-ink">{spot.name}</h2>
-            <button type="button" onClick={onClose} className="text-[20px] text-caption" aria-label="닫기">
+            <h2 id={titleId} className="text-[18px] font-bold text-ink">
+              {spot.name}
+            </h2>
+            <button ref={closeButtonRef} type="button" onClick={onClose} className="-mr-2 -mt-1 flex size-9 shrink-0 cursor-pointer items-center justify-center text-[20px] text-caption hover:text-ink" aria-label="닫기">
               ✕
             </button>
           </div>
@@ -137,9 +164,8 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
           <dl className="mt-4 flex flex-col gap-2.5 text-[13px]">
             <Row label="주소" value={spot.address} />
 
-            {detailLoading ? (
-              <p className="pt-2 text-center text-caption">불러오는 중…</p>
-            ) : (
+            {/* dl에는 dt·dd(와 그 묶음 div)만 둘 수 있어, 불러오는 중 표시는 목록 밖에 둔다. */}
+            {!detailLoading && (
               <>
                 {spot.category === "attraction" && (
                   <>
@@ -177,6 +203,7 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
                         <dd>
                           <a href={reservationHref} target="_blank" rel="noreferrer" className="text-accent underline">
                             예약 페이지로 이동
+                            <NewTabHint />
                           </a>
                         </dd>
                       </div>
@@ -210,6 +237,12 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
               </>
             )}
           </dl>
+          {detailLoading && (
+            <p aria-hidden="true" className="pt-2 text-center text-[13px] text-caption">
+              불러오는 중…
+            </p>
+          )}
+          <StatusMessage message={detailLoading ? "상세 정보를 불러오는 중" : ""} />
         </div>
 
         {/* 시트 하단 페이드 — CourseDetail과 동일한 처리 */}
@@ -220,6 +253,8 @@ export function SpotDetailSheet({ spot, onClose }: Props) {
       </div>
     </>
   );
+
+  return container ? createPortal(sheet, container) : sheet;
 }
 
 function formatTourText(text: string) {

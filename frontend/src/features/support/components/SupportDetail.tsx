@@ -5,6 +5,7 @@ import { fetchSupportDetail } from "../supportApi";
 import { toUserError, type UserError } from "../../../components/error/userError";
 import { HttpError } from "../../../lib/http";
 import { SupportErrorText } from "./SupportErrorText";
+import { NewTabHint } from "../../../components/common/a11y";
 
 const STORAGE_KEY = (id: number) => `support_checklist_${id}`;
 
@@ -105,7 +106,11 @@ export function SupportDetail({ id }: Props) {
         ← 목록으로
       </button>
 
-      {loading && <p className="py-6 text-center text-[13px] text-caption">불러오는 중…</p>}
+      {loading && (
+        <p role="status" className="py-6 text-center text-[13px] text-caption">
+          불러오는 중…
+        </p>
+      )}
       {error && <SupportErrorText error={error} />}
 
       {!loading && !error && detail && (
@@ -163,7 +168,7 @@ export function SupportDetail({ id }: Props) {
                     >
                       {item.content}
                       {item.is_essential && (
-                        <span className="ml-1.5 rounded-full bg-lavender px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                        <span className="ml-1.5 rounded-full bg-lavender px-1.5 py-0.5 text-[10px] font-medium text-accent-strong">
                           필수
                         </span>
                       )}
@@ -182,6 +187,7 @@ export function SupportDetail({ id }: Props) {
               className="rounded-lg bg-accent py-3.5 text-center text-[14px] font-bold text-white transition-opacity hover:opacity-90"
             >
               신청 페이지로 이동
+              <NewTabHint />
             </a>
           )}
         </>

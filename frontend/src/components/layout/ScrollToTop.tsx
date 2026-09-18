@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import { useLocation, useNavigationType } from "react-router";
+import { MAIN_CONTENT_ID } from "./mainContent";
 
 /**
  * 링크로 다른 화면에 가면 맨 위에서 시작하게 한다.
@@ -17,6 +18,11 @@ import { useLocation, useNavigationType } from "react-router";
  * - 뒤로/앞으로 가기(POP)는 브라우저의 기본 복원에 맡긴다. 그래서 돌아온 화면이 처음에
  *   더 짧게 그려지면(펼쳐 둔 푸터 출처가 다시 접힘, 목록을 다시 불러옴) 원래 위치로
  *   돌아가지 못할 수 있다.
+ *
+ * 초점도 함께 옮긴다. SPA는 화면이 바뀌어도 초점이 이전 화면의 링크 자리(이미 사라진 요소)에
+ * 남아, 화면낭독기 사용자는 페이지가 바뀐 줄 모른다. 경로가 바뀌면(POP 포함) 새 화면의
+ * 본문(main)으로 초점을 옮기되, 스크롤은 위 규칙대로 두도록 preventScroll로 옮긴다.
+ * 쿼리만 바뀌는 필터·페이지 이동은 사용자가 조작하던 컨트롤에 초점이 있어야 하므로 건드리지 않는다.
  */
 export default function ScrollToTop() {
   const { pathname } = useLocation();
@@ -26,7 +32,9 @@ export default function ScrollToTop() {
   useLayoutEffect(() => {
     const changed = prevPathname.current !== pathname;
     prevPathname.current = pathname;
-    if (changed && navigationType !== "POP") window.scrollTo(0, 0);
+    if (!changed) return;
+    if (navigationType !== "POP") window.scrollTo(0, 0);
+    document.getElementById(MAIN_CONTENT_ID)?.focus({ preventScroll: true });
   }, [pathname, navigationType]);
 
   return null;
