@@ -164,7 +164,7 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
         </Panel>
       </div>
 
-      <div className="mt-5 grid gap-5 lg:mt-6 lg:grid-cols-2 lg:gap-6">
+      <div className="mt-5 grid gap-5 md:grid-cols-2 lg:mt-6 lg:gap-6">
         <Panel id="mypage-records">
           <SectionHeader
             id="mypage-records"

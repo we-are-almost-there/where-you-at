@@ -1,6 +1,6 @@
 import type { RunRecord, SavedRecordCard, Stamp } from "./types";
 
-// 화면 개발용 예시 데이터. VITE_MYPAGE_PREVIEW=true일 때만 쓰인다 (mypageData.ts 참고).
+// 화면 개발용 예시 데이터. 개발 서버에서 VITE_MYPAGE_PREVIEW=true일 때만 쓰인다 (mypageData.ts 참고).
 // 기록·기록 카드·스탬프 API가 생기기 전에, 내용이 채워졌을 때와 페이지가 여러 장일 때의 배치를 확인하려고 둔다.
 // 코스 이름과 수치는 지어낸 값이다. 코스 ID가 실제와 맞지 않아 상세로 이동하면 없는 코스일 수 있다.
 

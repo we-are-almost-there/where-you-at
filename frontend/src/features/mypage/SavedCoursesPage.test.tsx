@@ -9,7 +9,7 @@ import type { Course } from "../map/types";
 import SavedCoursesPage from "./SavedCoursesPage";
 import { fetchSavedCourses } from "./mypageData";
 
-vi.mock("../auth", () => ({ useAuth: vi.fn(), startKakaoLogin: vi.fn() }));
+vi.mock("../auth", () => ({ useAuth: vi.fn(), useKakaoLogin: () => ({ login: vi.fn(), dialog: null }) }));
 vi.mock("./mypageData", () => ({ fetchSavedCourses: vi.fn() }));
 vi.mock("../../components/layout/AppHeader", () => ({ default: () => null }));
 
@@ -48,7 +48,8 @@ afterEach(() => {
 });
 
 describe("SavedCoursesPage", () => {
-  it("코스 카드를 12개씩 나눠 보여 준다", async () => {
+  // 코스 카드 12장을 두 번 그려 다른 테스트와 함께 돌면 기본 제한 시간(5초)을 넘길 때가 있어 넉넉히 둔다.
+  it("코스 카드를 12개씩 나눠 보여 준다", { timeout: 15_000 }, async () => {
     vi.mocked(fetchSavedCourses).mockResolvedValue(Array.from({ length: 14 }, (_, i) => course(i + 1)));
     renderPage();
 
