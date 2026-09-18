@@ -138,6 +138,15 @@ class TestDeleteMe(AuthTestCase):
         self.assertEqual(res.status_code, 204)
         mock_delete.assert_called_once()
 
+    def test_unavailable_unlink_still_deletes_user(self, mock_get_kakao_id, mock_delete, mock_post):
+        # 휴면이거나 없는 계정(-103)은 다시 요청해도 해제되지 않는다. 우리 데이터 삭제까지 막지 않는다.
+        mock_post.return_value = httpx.Response(400, json={"code": -103})
+
+        res = self._delete()
+
+        self.assertEqual(res.status_code, 204)
+        mock_delete.assert_called_once()
+
     def test_already_deleted_user_returns_204_without_unlink(self, mock_get_kakao_id, mock_delete, mock_post):
         # 프론트는 401을 "탈퇴되지 않음"으로 본다. 지울 행이 없다고 401을 돌려주면 그 약속이 깨진다.
         mock_get_kakao_id.return_value = None
@@ -151,7 +160,6 @@ class TestDeleteMe(AuthTestCase):
     def test_unlink_failure_returns_502_and_keeps_user(self, mock_get_kakao_id, mock_delete, mock_post):
         cases = {
             "어드민 키 오류": httpx.Response(401, json={"msg": "wrong appKey", "code": -401}),
-            "휴면이거나 없는 카카오 계정": httpx.Response(400, json={"code": -103}),
             "JSON이 아닌 응답": httpx.Response(502, text="<html>Bad Gateway</html>"),
             "시간 초과": httpx.ReadTimeout("timeout"),
         }

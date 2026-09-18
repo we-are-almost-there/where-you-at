@@ -23,6 +23,9 @@ def delete_me(user_id: int = Depends(get_current_user)):
     """회원 탈퇴. 카카오 연결을 해제한 뒤 회원 행을 지운다. 회원에 딸린 데이터는 on delete cascade로 함께 지워진다.
 
     - 카카오 연결 해제가 실패하면 행을 남기고 502를 돌려준다. 다시 요청하면 처음부터 진행된다.
+    - 다만 휴면이거나 없는 계정(-103)은 다시 요청해도 해제되지 않는다. 이때는 경고만 남기고 행을 지운다.
+      개인정보 보유 기간을 "탈퇴 시까지"로 안내하므로, 해제할 수 없는 카카오 연결 때문에 우리 데이터 삭제까지
+      막지는 않는다.
     - 연결 해제 뒤 행 삭제가 실패해도, 다시 요청하면 카카오가 "이미 해제됨"(-101)을 돌려줘 삭제까지 진행된다.
     - 카카오 응답을 기다리는 동안 DB 연결을 붙잡지 않도록, 조회와 삭제 때만 따로 연결한다.
     - 이미 지운 회원이 다시 요청해도 204다. 401은 토큰이 없거나 만료, 위조된 경우에만 나가므로,
@@ -40,6 +43,8 @@ def delete_me(user_id: int = Depends(get_current_user)):
 
     try:
         kakao_oauth.unlink_user(kakao_id)
+    except kakao_oauth.KakaoUnlinkUnavailableError as e:
+        print(f"[WARN] 카카오 연결 해제를 건너뛰고 탈퇴를 진행합니다: {e}")
     except kakao_oauth.KakaoUpstreamError as e:
         print(f"[ERROR] 카카오 연결 해제 실패: {e}")
         raise HTTPException(status_code=502, detail="탈퇴를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")

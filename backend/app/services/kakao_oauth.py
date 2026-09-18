@@ -24,6 +24,10 @@ _USER_ERROR_CODES = {"KOE320"}
 # 연결 해제 요청에서 "앱에 연결되지 않은 사용자"를 뜻하는 코드. 이미 끊겨 있으므로 성공으로 본다.
 _ALREADY_UNLINKED_CODE = -101
 
+# 휴면이거나 없는 카카오계정. 카카오 에러 코드 문서에 해결 방법이 없어, 다시 요청해도 연결이 해제되지 않는다.
+# -101과 달리 연결이 끊겼다고 단정할 수 없으므로 같은 코드로 묶지 않는다.
+_UNLINK_UNAVAILABLE_CODE = -103
+
 
 class KakaoAuthError(Exception):
     """인가 코드가 유효하지 않다. 다시 로그인하면 해결된다."""
@@ -31,6 +35,13 @@ class KakaoAuthError(Exception):
 
 class KakaoUpstreamError(Exception):
     """설정 오류나 카카오 서버 문제. 다시 로그인해도 해결되지 않는다."""
+
+
+class KakaoUnlinkUnavailableError(Exception):
+    """연결 해제를 끝낼 수 없는 계정 상태. 다시 요청해도 같으므로 재시도할 필요가 없다.
+
+    KakaoUpstreamError를 상속하지 않는다. 상속하면 except 순서에 따라 502로 묶여 버린다.
+    """
 
 
 @dataclass(frozen=True)
@@ -110,6 +121,7 @@ def unlink_user(kakao_id: int) -> None:
     카카오는 서비스 탈퇴 과정에 연결 해제를 반드시 포함하도록 안내한다.
     우리는 카카오 액세스 토큰을 저장하지 않으므로, 서버 전용 어드민 키와 회원번호로 요청한다.
     이미 연결이 끊긴 사용자(-101)면 성공으로 본다.
+    휴면이거나 없는 계정(-103)이면 KakaoUnlinkUnavailableError를 올려, 호출한 쪽이 재시도 여부를 판단하게 한다.
     """
     try:
         resp = httpx.post(
@@ -126,8 +138,11 @@ def unlink_user(kakao_id: int) -> None:
     code = _json_object(resp).get("code")
     if code == _ALREADY_UNLINKED_CODE:
         return
-    # 어드민 키는 요청 헤더에만 있고 여기에는 남기지 않는다.
-    raise KakaoUpstreamError(f"연결 해제 실패: status={resp.status_code} code={code}")
+    # 어드민 키와 회원번호는 메시지에 남기지 않는다. 요청 헤더와 본문에만 있다.
+    detail = f"status={resp.status_code} code={code}"
+    if code == _UNLINK_UNAVAILABLE_CODE:
+        raise KakaoUnlinkUnavailableError(detail)
+    raise KakaoUpstreamError(f"연결 해제 실패: {detail}")
 
 
 def _json_object(resp: httpx.Response) -> dict:
