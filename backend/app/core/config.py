@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     # Render 공개 트래픽은 Cloudflare를 거친다. 그 배포에서만 true로 켜고,
     # 로컬이나 다른 호스팅에서는 클라이언트가 직접 보낼 수 있는 헤더를 믿지 않는다.
     trust_cloudflare_ip_header: bool = False
+    # Cloudflare R2(S3 호환) 비공개 버킷. 프로필 사진과 기록 카드 이미지를 폴더로 나눠 둔다.
+    # 하나라도 비어 있으면 이미지 저장 기능만 쓸 수 없다(storage.is_configured()).
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
