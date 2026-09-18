@@ -348,7 +348,8 @@ function CourseDetailSession() {
   const [lastLocation, setLastLocation] = useState<LatLng | null>(null);
   if (currentLocation !== lastLocation) {
     setLastLocation(currentLocation);
-    if (isTracking && currentLocation && waypoints.length > 0) {
+    if (isTracking && currentLocation && waypoints.length > 0 && tooFarMeters == null) {
+      // 시작 거리 경고가 열려 있는 동안에는 판정과 진행률 갱신을 보류한다.
       if (!startChecked) {
         // 첫 위치가 잡힌 순간에만 "코스에서 너무 멂"을 판정한다.
         // 걷는 도중의 일시적 이탈까지 막으면 오히려 방해가 된다.

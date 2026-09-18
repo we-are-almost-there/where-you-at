@@ -5,10 +5,12 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CourseDetail } from "./CourseDetail";
 import { announce, primeSpeech } from "./speech";
+import { getCourseGpx } from "./coursesApi";
+import type { LatLng } from "./types";
 
 const tracking = vi.hoisted(() => ({
   status: "paused" as "idle" | "tracking" | "paused",
-  currentLocation: null,
+  currentLocation: null as LatLng | null,
   error: null,
   wakeLockFailed: false,
   startTracking: vi.fn(), pause: vi.fn(), resume: vi.fn(),
@@ -34,7 +36,7 @@ vi.mock("../nearby/nearbyApi", () => ({
   getNearbySpots: async () => { throw new TypeError("Failed to fetch"); },
 }));
 vi.mock("./coursesApi", () => ({
-  getCourseGpx: async () => [],
+  getCourseGpx: vi.fn(async (): Promise<LatLng[]> => []),
   getCourseDetail: async () => ({
     id: 1, title: "테스트 코스", description: "", image_url: "", routes: [],
   }),
@@ -43,6 +45,8 @@ vi.mock("./coursesApi", () => ({
 beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
+  tracking.currentLocation = null;
+  vi.mocked(getCourseGpx).mockResolvedValue([]);
   vi.stubGlobal("matchMedia", () => ({
     matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
   }));
@@ -264,6 +268,29 @@ it.each([-1, 101, null, "100"])("잘못된 진행률 %s는 복원하지 않는�
   sessionStorage.setItem("course-tracking:1:view", JSON.stringify({ progress }));
   await mount();
   expect(JSON.parse(sessionStorage.getItem("course-tracking:1:view")!).progress).toBe(0);
+  expect(announce).not.toHaveBeenCalled();
+});
+
+it.each([false, true])("시작 거리 경고 중 코스로 이동해도 진행률과 저장값을 유지한다 (복원: %s)", async (restore) => {
+  vi.mocked(getCourseGpx).mockResolvedValue([
+    { lat: 37.5, lng: 127 }, { lat: 37.52, lng: 127 },
+  ]);
+  tracking.status = "tracking";
+  if (restore) {
+    sessionStorage.setItem("course-tracking:1:view", JSON.stringify({
+      progress: 0, startChecked: false, tooFarMeters: 5500,
+    }));
+  }
+  const router = await mount();
+  for (const lat of [37.45, 37.48, 37.51, 37.52]) {
+    tracking.currentLocation = { lat, lng: 127 };
+    await act(async () => { await router.navigate(`/courses/1?tab=course&lat=${lat}`); });
+    expect(screen.getByRole("alertdialog", { name: "코스에서 너무 멀어요" })).toBeTruthy();
+    const saved = JSON.parse(sessionStorage.getItem("course-tracking:1:view")!);
+    expect(saved.startChecked).toBe(false);
+    expect(saved.progress).toBe(0);
+    expect(saved.tooFarMeters).toBeGreaterThan(1000);
+  }
   expect(announce).not.toHaveBeenCalled();
 });
 
