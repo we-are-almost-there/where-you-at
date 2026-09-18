@@ -5,7 +5,7 @@ import { buildProjection, geometryPath, labelPoint } from "../../support/koreaMa
 import { STAMP_SIDO, sidoCodeOf } from "../stampRegions";
 import { formatDate } from "../format";
 import type { Stamp } from "../types";
-import MyPageDialog from "./MyPageDialog";
+import ModalDialog from "../../../components/common/ModalDialog";
 
 // SVG fill은 토큰 클래스를 못 써서 값으로 둔다. 방문 혜택 지도와 같은 색이다.
 const COLOR_ACCENT = "#6C5CE7"; // --color-accent: 받은 시군구
@@ -184,7 +184,7 @@ export default function StampMapDialog({ stamps, onClose, onSelectSigungu }: Pro
   const selectedStamp = selected ? stampByCode.get(selected.code) : undefined;
 
   return (
-    <MyPageDialog title="스탬프 지도" onClose={onClose} size="lg">
+    <ModalDialog title="스탬프 지도" onClose={onClose} size="lg">
       <div className="flex min-h-8 items-center gap-2">
         {!nation && (
           <button
@@ -323,6 +323,6 @@ export default function StampMapDialog({ stamps, onClose, onSelectSigungu }: Pro
           )}
         </>
       )}
-    </MyPageDialog>
+    </ModalDialog>
   );
 }

@@ -5,7 +5,7 @@ import Footer from "../../../components/layout/Footer";
 import { MAIN_CONTENT_ID } from "../../../components/layout/mainContent";
 import { useScrollbarGutterStable } from "../../../components/layout/useScrollbarGutterStable";
 import { useDocumentTitle } from "../../../lib/useDocumentTitle";
-import { startKakaoLogin, useAuth, type User } from "../../auth";
+import { useAuth, useKakaoLogin, type User } from "../../auth";
 import ProfileAvatar from "./ProfileAvatar";
 import { PRIMARY_BUTTON } from "../buttonStyles";
 
@@ -61,21 +61,26 @@ export default function MyPageLayout({ title, back, signedOutContent, children }
 
 function SignedOutNotice() {
   const location = useLocation();
+  // 처음 로그인하는 기기에서는 만 14세 이상인지 먼저 묻는다(features/auth/useKakaoLogin).
+  const { login, dialog } = useKakaoLogin();
   return (
-    <Notice
-      title="로그인이 필요해요"
-      description={"로그인하면 찜한 코스와 완주 기록,\n지역 스탬프를 한곳에서 모아 볼 수 있어요."}
-      action={
-        <button
-          type="button"
-          // 전체 보기 화면에서 로그인해도 보던 화면(탭·페이지 포함)으로 돌아오게 한다.
-          onClick={() => startKakaoLogin(location.pathname + location.search)}
-          className={`mt-6 ${PRIMARY_BUTTON}`}
-        >
-          카카오로 로그인
-        </button>
-      }
-    />
+    <>
+      <Notice
+        title="로그인이 필요해요"
+        description={"로그인하면 찜한 코스와 완주 기록,\n지역 스탬프를 한곳에서 모아 볼 수 있어요."}
+        action={
+          <button
+            type="button"
+            // 전체 보기 화면에서 로그인해도 보던 화면(탭·페이지 포함)으로 돌아오게 한다.
+            onClick={() => login(location.pathname + location.search)}
+            className={`mt-6 ${PRIMARY_BUTTON}`}
+          >
+            카카오로 로그인
+          </button>
+        }
+      />
+      {dialog}
+    </>
   );
 }
 

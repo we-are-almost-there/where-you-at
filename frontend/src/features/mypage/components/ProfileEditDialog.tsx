@@ -2,7 +2,7 @@ import { useId, useRef, useState, type FormEvent, type RefObject } from "react";
 import { updateProfile, type ProfileChanges, type User } from "../../auth";
 import { HttpError, NetworkError } from "../../../lib/http";
 import ProfileAvatar from "./ProfileAvatar";
-import MyPageDialog from "./MyPageDialog";
+import ModalDialog from "../../../components/common/ModalDialog";
 import { charLength, limitInput, toOneLine } from "../oneLineText";
 
 // 서버(backend/app/schemas/user.py NICKNAME_MAX_LENGTH·BIO_MAX_LENGTH)와 같은 값. 바꾸면 두 곳을 함께 고친다.
@@ -86,7 +86,7 @@ export default function ProfileEditDialog({ user, onClose, onSaved }: Props) {
   };
 
   return (
-    <MyPageDialog title="프로필 수정" onClose={onClose} initialFocusRef={nicknameRef} busy={saving}>
+    <ModalDialog title="프로필 수정" onClose={onClose} initialFocusRef={nicknameRef} busy={saving}>
       <form onSubmit={handleSubmit} noValidate>
         <div className="flex justify-center pb-5 pt-1">
           <ProfileAvatar size="lg" />
@@ -147,7 +147,7 @@ export default function ProfileEditDialog({ user, onClose, onSaved }: Props) {
           </button>
         </div>
       </form>
-    </MyPageDialog>
+    </ModalDialog>
   );
 }
 

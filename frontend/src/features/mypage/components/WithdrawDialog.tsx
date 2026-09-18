@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { withdraw } from "../../auth";
 import { HttpError, NetworkError } from "../../../lib/http";
-import MyPageDialog from "./MyPageDialog";
+import ModalDialog from "../../../components/common/ModalDialog";
 
 interface Props {
   onClose: () => void;
@@ -38,7 +38,7 @@ export default function WithdrawDialog({ onClose, onWithdrawn }: Props) {
   };
 
   return (
-    <MyPageDialog title="정말 탈퇴할까요?" onClose={onClose} initialFocusRef={cancelRef} busy={busy}>
+    <ModalDialog title="정말 탈퇴할까요?" onClose={onClose} initialFocusRef={cancelRef} busy={busy}>
       <p className="text-[14px] leading-6 text-ink">탈퇴하면 아래 정보가 모두 지워지고 되돌릴 수 없어요.</p>
       <ul className="mt-3 list-disc space-y-1 rounded-[10px] bg-surface-muted py-3 pl-8 pr-4 text-[14px] leading-6 text-muted">
         <li>닉네임 등 회원 정보</li>
@@ -74,6 +74,6 @@ export default function WithdrawDialog({ onClose, onWithdrawn }: Props) {
           {busy ? "처리 중…" : "탈퇴하기"}
         </button>
       </div>
-    </MyPageDialog>
+    </ModalDialog>
   );
 }

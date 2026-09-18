@@ -15,11 +15,11 @@ interface Props {
 }
 
 /**
- * 마이페이지의 프로필 수정·탈퇴 확인·스탬프 지도 대화상자 틀.
+ * 가운데에 띄우는 모달 대화상자 틀. 마이페이지(프로필 수정·탈퇴 확인·스탬프 지도)와 로그인 전 나이 확인이 쓴다.
  * 배경 잠금(스크롤·#root inert)과 초점 처리는 개인정보처리방침 팝업(help/PrivacyPolicyDialog)과 같다.
  * 닫힌 뒤에는 열 때 초점이 있던 버튼으로 돌려준다.
  */
-export default function MyPageDialog({ title, onClose, initialFocusRef, busy = false, size = "sm", children }: Props) {
+export default function ModalDialog({ title, onClose, initialFocusRef, busy = false, size = "sm", children }: Props) {
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const busyRef = useRef(busy);

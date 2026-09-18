@@ -9,7 +9,7 @@ import RecordsPage from "./RecordsPage";
 import { getRecordCards, getRecords } from "./mypageData";
 import type { RunRecord, SavedRecordCard } from "./types";
 
-vi.mock("../auth", () => ({ useAuth: vi.fn(), startKakaoLogin: vi.fn() }));
+vi.mock("../auth", () => ({ useAuth: vi.fn(), useKakaoLogin: () => ({ login: vi.fn(), dialog: null }) }));
 vi.mock("./mypageData", () => ({ getRecords: vi.fn(), getRecordCards: vi.fn() }));
 vi.mock("../../components/layout/AppHeader", () => ({ default: () => null }));
 

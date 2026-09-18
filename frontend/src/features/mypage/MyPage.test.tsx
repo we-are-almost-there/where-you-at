@@ -12,13 +12,18 @@ import { fetchSavedCourses, getRecords, getStamps } from "./mypageData";
 import type { Course } from "../map/types";
 import type { RunRecord } from "./types";
 
-vi.mock("../auth", () => ({
-  useAuth: vi.fn(),
-  signOut: vi.fn(),
-  startKakaoLogin: vi.fn(),
-  updateProfile: vi.fn(),
-  withdraw: vi.fn(),
-}));
+vi.mock("../auth", () => {
+  const startKakaoLogin = vi.fn();
+  return {
+    useAuth: vi.fn(),
+    signOut: vi.fn(),
+    startKakaoLogin,
+    // 나이 확인 팝업은 useKakaoLogin.test.tsx가 본다. 여기서는 확인을 마친 것처럼 바로 로그인을 시작한다.
+    useKakaoLogin: () => ({ login: startKakaoLogin, dialog: null }),
+    updateProfile: vi.fn(),
+    withdraw: vi.fn(),
+  };
+});
 vi.mock("./mypageData", () => ({
   fetchSavedCourses: vi.fn(),
   getRecords: vi.fn(),
