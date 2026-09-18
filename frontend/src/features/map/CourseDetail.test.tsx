@@ -4,10 +4,13 @@ import { StrictMode } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CourseDetail } from "./CourseDetail";
+import { announce, primeSpeech } from "./speech";
+import { getCourseGpx } from "./coursesApi";
+import type { LatLng } from "./types";
 
 const tracking = vi.hoisted(() => ({
   status: "paused" as "idle" | "tracking" | "paused",
-  currentLocation: null,
+  currentLocation: null as LatLng | null,
   error: null,
   wakeLockFailed: false,
   startTracking: vi.fn(), pause: vi.fn(), resume: vi.fn(),
@@ -15,6 +18,14 @@ const tracking = vi.hoisted(() => ({
 }));
 
 vi.mock("./useCourseTracking", () => ({ useCourseTracking: () => tracking }));
+vi.mock("./speech", () => ({ announce: vi.fn(), primeSpeech: vi.fn() }));
+vi.mock("./components/RecordCard", () => ({
+  RecordCard: ({ record, onClose }: { record: { distanceKm: number }; onClose: () => void }) => (
+    <div role="dialog" aria-label="restored record">
+      <span>{record.distanceKm}</span><button onClick={onClose}>close record</button>
+    </div>
+  ),
+}));
 vi.mock("./KakaoMap", () => ({ KakaoMap: () => null }));
 vi.mock("./endpointAddress", () => ({
   useEndpointAddresses: () => [
@@ -25,14 +36,17 @@ vi.mock("../nearby/nearbyApi", () => ({
   getNearbySpots: async () => { throw new TypeError("Failed to fetch"); },
 }));
 vi.mock("./coursesApi", () => ({
-  getCourseGpx: async () => [],
+  getCourseGpx: vi.fn(async (): Promise<LatLng[]> => []),
   getCourseDetail: async () => ({
     id: 1, title: "테스트 코스", description: "", image_url: "", routes: [],
   }),
 }));
 
 beforeEach(() => {
+  sessionStorage.clear();
   vi.clearAllMocks();
+  tracking.currentLocation = null;
+  vi.mocked(getCourseGpx).mockResolvedValue([]);
   vi.stubGlobal("matchMedia", () => ({
     matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
   }));
@@ -168,6 +182,7 @@ describe("CourseDetail 기록이 있는 화면에서 이동", () => {
     expect(screen.getByText("테스트 코스")).toBeTruthy();
     confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "목록으로" }));
+    expect(tracking.stopTracking).toHaveBeenCalledTimes(1);
     expect(screen.getByText("코스 목록 화면")).toBeTruthy();
   });
 
@@ -188,4 +203,134 @@ describe("CourseDetail 기록이 있는 화면에서 이동", () => {
     expect(screen.queryByText("코스 목록 화면")).toBeNull();
     expect(tracking.stopTracking).not.toHaveBeenCalled();
   });
+});
+
+
+it("저장하지 않은 기록 카드를 복원하고 닫으면 저장값을 지운다", async () => {
+  tracking.status = "idle";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({
+    direction: "reverse", progress: 85, startChecked: true,
+    record: {
+      summary: { distanceKm: 1.23, durationMs: 60_000, paceSecPerKm: 50 },
+      routeType: "\uB3C4\uBCF4", routePoints: [],
+    },
+  }));
+  await mount();
+  expect(screen.getByRole("dialog", { name: "restored record" })).toBeTruthy();
+  expect(screen.getByText("1.23")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "close record" }));
+  expect(sessionStorage.getItem("course-tracking:1:view")).toBeNull();
+});
+
+it.each([
+  { summary: null, routeType: "도보", routePoints: [] },
+  { summary: { distanceKm: -1, durationMs: 100, paceSecPerKm: null }, routeType: "도보", routePoints: [] },
+  { summary: { distanceKm: 1, durationMs: "100", paceSecPerKm: null }, routeType: "도보", routePoints: [] },
+  { summary: { distanceKm: 1, durationMs: 100, paceSecPerKm: "50" }, routeType: "도보", routePoints: [] },
+  { summary: { distanceKm: 1, durationMs: 100, paceSecPerKm: null }, routeType: "기타", routePoints: [] },
+  { summary: { distanceKm: 1, durationMs: 100, paceSecPerKm: null }, routeType: "도보", routePoints: [null] },
+  { summary: { distanceKm: 1, durationMs: 100, paceSecPerKm: null }, routeType: "도보", routePoints: [{ lat: "37", lng: 127 }] },
+])("손상된 기록 카드는 복원하지 않는다: %j", async (record) => {
+  tracking.status = "idle";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({ record }));
+  await mount();
+  expect(screen.queryByRole("dialog", { name: "restored record" })).toBeNull();
+  expect(sessionStorage.getItem("course-tracking:1:view")).toBeNull();
+});
+
+
+it.each(["tracking", "paused"] as const)("복원된 %s 상태에서 첫 사용자 입력으로 음성 재생을 한 번 준비한다", async (status) => {
+  tracking.status = status;
+  await mount();
+  expect(primeSpeech).not.toHaveBeenCalled();
+  fireEvent.keyDown(document, { key: "Tab" });
+  expect(primeSpeech).not.toHaveBeenCalled();
+  fireEvent.click(document.body);
+  expect(primeSpeech).toHaveBeenCalledTimes(1);
+  fireEvent.click(document.body);
+  fireEvent.keyDown(document, { key: "Enter" });
+  expect(primeSpeech).toHaveBeenCalledTimes(1);
+});
+
+it("복원 후 키보드 실행 입력으로 음성 재생을 준비하고 화면 이동 시 입력 리스너를 해제한다", async () => {
+  tracking.status = "tracking";
+  const router = await mount();
+  fireEvent.keyDown(document, { key: "Enter" });
+  expect(primeSpeech).toHaveBeenCalledTimes(1);
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  await act(async () => { await router.navigate("/courses"); });
+  fireEvent.click(document.body);
+  expect(primeSpeech).toHaveBeenCalledTimes(1);
+});
+
+it.each([-1, 101, null, "100"])("잘못된 진행률 %s는 복원하지 않는다", async (progress) => {
+  tracking.status = "paused";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({ progress }));
+  await mount();
+  expect(JSON.parse(sessionStorage.getItem("course-tracking:1:view")!).progress).toBe(0);
+  expect(announce).not.toHaveBeenCalled();
+});
+
+it.each([false, true])("시작 거리 경고 중 코스로 이동해도 진행률과 저장값을 유지한다 (복원: %s)", async (restore) => {
+  vi.mocked(getCourseGpx).mockResolvedValue([
+    { lat: 37.5, lng: 127 }, { lat: 37.52, lng: 127 },
+  ]);
+  tracking.status = "tracking";
+  if (restore) {
+    sessionStorage.setItem("course-tracking:1:view", JSON.stringify({
+      progress: 0, startChecked: false, tooFarMeters: 5500,
+    }));
+  }
+  const router = await mount();
+  for (const lat of [37.45, 37.48, 37.51, 37.52]) {
+    tracking.currentLocation = { lat, lng: 127 };
+    await act(async () => { await router.navigate(`/courses/1?tab=course&lat=${lat}`); });
+    expect(screen.getByRole("alertdialog", { name: "코스에서 너무 멀어요" })).toBeTruthy();
+    const saved = JSON.parse(sessionStorage.getItem("course-tracking:1:view")!);
+    expect(saved.startChecked).toBe(false);
+    expect(saved.progress).toBe(0);
+    expect(saved.tooFarMeters).toBeGreaterThan(1000);
+  }
+  expect(announce).not.toHaveBeenCalled();
+});
+
+it("시작 거리 경고를 복원해 경고가 열린 상태에서 진행률이 계산되지 않도록 한다", async () => {
+  tracking.status = "tracking";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({
+    progress: 0, startChecked: false, tooFarMeters: 2000,
+  }));
+  await mount();
+  expect(screen.getByRole("alertdialog", { name: "코스에서 너무 멀어요" })).toBeTruthy();
+  const saved = JSON.parse(sessionStorage.getItem("course-tracking:1:view")!);
+  expect(saved.tooFarMeters).toBe(2000);
+  expect(saved.startChecked).toBe(false);
+  expect(saved.progress).toBe(0);
+});
+
+it.each([100, 99.9])("진행률 %s를 복원하면 완주 음성을 반복하지 않는다", async (progress) => {
+  tracking.status = "paused";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({ progress }));
+  const router = await mount();
+  expect(announce).not.toHaveBeenCalled();
+  tracking.status = "tracking";
+  await act(async () => { await router.navigate("/courses/1?tab=course"); });
+  expect(announce).not.toHaveBeenCalled();
+});
+
+it("기록 카드를 열고 다른 화면으로 이동하면 같은 코스에 다시 들어와도 카드가 열리지 않는다", async () => {
+  tracking.status = "idle";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({
+    record: {
+      summary: { distanceKm: 1, durationMs: 60_000, paceSecPerKm: 60 },
+      routeType: "도보", routePoints: [],
+    },
+  }));
+  const router = await mount();
+  expect(screen.getByRole("dialog", { name: "restored record" })).toBeTruthy();
+  sessionStorage.setItem("course-tracking:1", JSON.stringify({ status: "paused", points: [] }));
+  await act(async () => { await router.navigate(-1); });
+  expect(sessionStorage.getItem("course-tracking:1")).toBeNull();
+  expect(sessionStorage.getItem("course-tracking:1:view")).toBeNull();
+  await act(async () => { await router.navigate("/courses/1"); });
+  expect(screen.queryByRole("dialog", { name: "restored record" })).toBeNull();
 });
