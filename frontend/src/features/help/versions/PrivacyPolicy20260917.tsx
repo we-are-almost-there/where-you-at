@@ -1,6 +1,11 @@
-import { Items, LegalSection, LegalToc, P, SubTitle, Table, type LegalSectionInfo } from "./LegalDocument";
-import { NewTabHint } from "../../components/common/a11y";
-import { EFFECTIVE_DATE, OPERATOR, PREVIOUS_VERSIONS, SERVICE } from "./legalInfo";
+/*
+ * 개인정보처리방침 이전 버전 (2026년 9월 17일 시행본). 새 버전을 시행하면서 그대로 보관한다.
+ * 방침 14번(이전 방침을 적용 기간과 함께 볼 수 있게 한다)과 약관 제3조를 지키기 위한 사본이라 내용을 고치지 않는다.
+ * 원본에서 바꾼 것은 import 경로와, 공용 시행일 상수 대신 이 버전의 시행일을 글자로 적은 것뿐이다.
+ */
+
+import { Items, LegalSection, LegalToc, P, SubTitle, Table, type LegalSectionInfo } from "../LegalDocument";
+import { OPERATOR, SERVICE } from "../legalInfo";
 
 /*
  * 개인정보처리방침 본문. /privacy 페이지와 1:1 문의의 동의 팝업(PrivacyPolicyDialog)이 함께 써서
@@ -16,20 +21,13 @@ import { EFFECTIVE_DATE, OPERATOR, PREVIOUS_VERSIONS, SERVICE } from "./legalInf
  * - 접속 IP 주소(요청 제한): backend/app/api/routers/inquiries.py, backend/app/services/rate_limit.py
  * - 새 문의 Slack 알림: 문의 유형·이메일·내용을 보낸다(backend/app/services/inquiry_notify.py). 항목·업체·보존 설정이
  *   바뀌면 7·8번과 README "새 문의 알림"을 함께 고친다.
- * - 운영팀 서버로 보내지 않고 기기 안에서 처리하는 곳(2번 ④): 가까운 순 정렬(홈, 코스 탐색, 자전거 대여), features/map/useCourseTracking.ts,
+ * - 운영팀 서버로 보내지 않고 기기 안에서 처리하는 곳(2번 ③): 가까운 순 정렬(홈, 코스 탐색, 자전거 대여), features/map/useCourseTracking.ts,
  *   features/map/components/RecordCard.tsx, features/support/components/SupportDetail.tsx(localStorage)
  * - 배포 환경: Vercel(웹사이트), Render 싱가포르(API 서버), Supabase 서울 Free 요금제(DB).
  *   서버 접속 기록 보관 기간은 Vercel·Render Hobby 요금제 기준이다. 요금제나 업체를 바꾸면 2·4·5·7·8번을 고친다
  *   (5번: Supabase Free에는 자동 백업이 없다는 전제로 적었다).
  * - 파기: Supabase Cron 예약 작업이 매일 보유 기간이 지난 문의를 지운다(sql/05_inquiry_retention.sql).
  *   이 작업이 DB에 등록돼 있어야 5번이 사실이다.
- * - 회원 정보(2번 ②): 카카오 로그인으로 받는 항목은 backend/app/services/kakao_oauth.py(회원번호·닉네임만 읽는다),
- *   저장하는 칸은 sql/01_schema.sql app_user(kakao_id·nickname·bio), 수정은 PATCH /api/me(schemas/user.py).
- *   카카오 접근 토큰은 회원 확인에만 쓰고 저장하지 않는다. 운영팀 로그인 토큰(회원 번호·발급·만료 시각, 7일)은
- *   services/auth_token.py가 만들고 프론트가 localStorage에 둔다(lib/authToken.ts, 10번).
- *   탈퇴(DELETE /api/me)는 카카오 연결 해제 후 회원 행을 지운다(5번). 카카오 동의 항목·저장 칸이 바뀌면 2·4·7·8번을 고친다.
- * - 법적 근거: 회원 정보는 제15조제1항제4호(계약 이행)로 정했다. 로그인해서 마이페이지를 쓰는 것이 이용 계약이고,
- *   한 줄 소개는 이용자가 직접 적고 언제든 지우는 선택 항목이라 별도 동의 화면을 두지 않았다.
  *
  * 현재 위치: 가까운 순 정렬은 서버로 좌표를 보내지 않고 브라우저에서 계산한다(위치기반서비스사업 신고 대상에서
  * 벗어나기 위한 결정, #97). 보장하는 범위는 "원본 좌표를 운영팀 서버로 보내지 않는다"까지다.
@@ -61,7 +59,7 @@ interface Props {
   headingLevel?: 2 | 3;
 }
 
-export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
+export default function PrivacyPolicy20260917({ headingLevel = 2 }: Props) {
   const level = headingLevel;
 
   return (
@@ -82,10 +80,6 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         </P>
         <Items ordered>
           <li>
-            <strong>회원 관리</strong>: 카카오 로그인으로 회원 가입과 본인 식별, 로그인 상태 유지, 마이페이지 제공(닉네임·한
-            줄 소개 표시와 수정), 회원 탈퇴 처리
-          </li>
-          <li>
             <strong>1:1 문의 접수 및 답변</strong>: 문의 내용 확인, 입력한 이메일로 답변 회신, 문의 처리 상태 관리
           </li>
           <li>
@@ -99,9 +93,8 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
 
       <LegalSection section={S.items} level={level}>
         <P>
-          서비스는 로그인하지 않고도 이용할 수 있으며, 마이페이지는 카카오 로그인으로 가입한 회원만 이용합니다. 이름,
-          전화번호, 주소 같은 정보는 받지 않습니다. 운영팀은 처리 목적에 필요한 최소한의 개인정보만 다음과 같이
-          처리합니다.
+          서비스는 회원가입 없이 이용하므로 이름, 전화번호, 주소 같은 정보는 받지 않습니다. 운영팀은 처리 목적에 필요한
+          최소한의 개인정보만 다음과 같이 처리합니다.
         </P>
 
         <SubTitle>① 정보주체의 동의를 받아 처리하는 개인정보</SubTitle>
@@ -116,30 +109,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
           ]}
         />
 
-        <SubTitle>② 회원 가입·이용 계약의 이행을 위해 처리하는 개인정보</SubTitle>
-        <Table
-          head={["구분", "처리하는 항목", "법적 근거"]}
-          rows={[
-            [
-              "회원 가입 및 로그인 (필수)",
-              "카카오 회원번호, 닉네임 (가입·수정 일시는 자동으로 기록)",
-              "「개인정보 보호법」 제15조제1항제4호(계약의 체결·이행)",
-            ],
-            [
-              "마이페이지 프로필 (선택)",
-              "한 줄 소개 (이용자가 마이페이지에서 직접 적은 경우에만)",
-              "「개인정보 보호법」 제15조제1항제4호(계약의 체결·이행)",
-            ],
-          ]}
-        />
-        <P>
-          카카오 로그인을 할 때 카카오로부터 회원번호와 닉네임만 받습니다. 카카오 계정의 이메일, 전화번호, 프로필 사진
-          등은 받지 않으며, 카카오가 발급한 접근 토큰은 회원을 확인하는 데에만 쓰고 저장하지 않습니다. 닉네임은 처음
-          가입할 때 카카오 닉네임으로 정해지고, 이후에는 마이페이지에서 바꿀 수 있습니다. 한 줄 소개는 적지 않아도
-          서비스를 이용할 수 있으며, 앞으로 쪽지·리뷰 기능에서 다른 이용자에게 보일 수 있습니다.
-        </P>
-
-        <SubTitle>③ 정보주체의 동의 없이 처리하는 개인정보</SubTitle>
+        <SubTitle>② 정보주체의 동의 없이 처리하는 개인정보</SubTitle>
         <Table
           head={["구분", "처리하는 항목", "법적 근거"]}
           rows={[
@@ -152,7 +122,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
           ]}
         />
 
-        <SubTitle>④ 운영팀 서버로 보내지 않고 기기 안에서 처리하는 정보</SubTitle>
+        <SubTitle>③ 운영팀 서버로 보내지 않고 기기 안에서 처리하는 정보</SubTitle>
         <P>다음 기능에 쓰는 정보는 운영팀 서버로 보내지 않고 이용자의 기기(브라우저) 안에서 처리합니다.</P>
         <Items>
           <li>
@@ -180,11 +150,6 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
           아동이 1:1 문의를 하려면 법정대리인이 대신 문의해 주세요. 14세 미만 아동이 보낸 문의임을 알게 되면 해당
           개인정보를 지체 없이 파기합니다.
         </P>
-        <P>
-          회원 가입(카카오 로그인)은 만 14세 이상만 할 수 있습니다. 로그인하기 전에 만 14세 이상인지 확인하는 안내를
-          보여 드리며, 14세 미만 아동이 가입한 사실을 알게 되면 해당 회원 정보를 지체 없이 파기합니다. 로그인하지 않고
-          이용하는 기능은 나이와 상관없이 이용할 수 있습니다.
-        </P>
       </LegalSection>
 
       <LegalSection section={S.retention} level={level}>
@@ -195,10 +160,6 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         <Table
           head={["구분", "보유 기간"]}
           rows={[
-            [
-              "회원 정보 (카카오 회원번호, 닉네임, 한 줄 소개)",
-              "회원 탈퇴 시까지. 탈퇴하면 지체 없이 파기합니다. 한 줄 소개는 이용자가 지우면 바로 삭제합니다.",
-            ],
             [
               "1:1 문의 (이메일, 문의 유형, 문의 내용)",
               "문의 처리 완료 후 1년. 답변이 끝나지 않은 문의는 처리가 끝날 때까지 보유합니다.",
@@ -225,8 +186,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             파기합니다.
           </li>
           <li>
-            <strong>파기 절차</strong>: 회원이 마이페이지에서 탈퇴하면 카카오에 연결 해제를 요청한 뒤 데이터베이스의 회원
-            정보를 바로 삭제합니다. 보유 기간이 지난 1:1 문의는 데이터베이스의 예약 작업이 매일 자동으로 찾아
+            <strong>파기 절차</strong>: 보유 기간이 지난 1:1 문의는 데이터베이스의 예약 작업이 매일 자동으로 찾아
             파기합니다. 삭제 또는 동의 철회 요청을 확인하거나 14세 미만 아동의 문의임을 알게 되면, 운영팀은 관련 Slack
             알림과 데이터베이스의 문의를 직접 찾아 지체 없이 삭제합니다. 서버 접속 기록은 각 업체가 정한 로그 보관
             기간(4번)에 따라 처리됩니다.
@@ -257,9 +217,9 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         <Table
           head={["위탁받는 자(수탁자)", "위탁하는 업무"]}
           rows={[
-            ["Supabase, Inc.", "회원 정보와 1:1 문의 정보를 보관하는 데이터베이스(클라우드) 운영"],
+            ["Supabase, Inc.", "1:1 문의 정보를 보관하는 데이터베이스(클라우드) 운영"],
             ["Vercel Inc.", "웹사이트 호스팅 (웹사이트 전송 과정에서 서버 접속 기록 처리)"],
-            ["Render Services, Inc.", "API 서버 운영 (회원 정보, 1:1 문의 정보, 서버 접속 기록 처리)"],
+            ["Render Services, Inc.", "API 서버 운영 (1:1 문의 정보와 서버 접속 기록 처리)"],
             ["Slack Technologies Limited", "새 1:1 문의 접수 알림 전송 및 보관"],
           ]}
         />
@@ -292,20 +252,20 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
               "Render Services, Inc. (legal@render.com)",
               // API 서버 리전은 DB(Supabase 서울)와 가장 가까운 싱가포르로 정했다. 리전을 바꾸면 여기도 고친다.
               "싱가포르",
-              "회원 정보(카카오 회원번호, 닉네임, 한 줄 소개), 1:1 문의 정보(이메일, 문의 유형, 문의 내용), 서버 접속 기록(접속 IP 주소, 요청 일시, 요청 주소)",
+              "1:1 문의 정보(이메일, 문의 유형, 문의 내용), 서버 접속 기록(접속 IP 주소, 요청 일시, 요청 주소)",
               "서비스를 이용할 때 네트워크를 통해 전송",
               "API 서버 운영",
-              "회원 정보와 1:1 문의 정보는 요청을 처리한 뒤 저장하지 않음. 로그 보관 기간 7일 (Hobby 요금제 기준)",
+              "1:1 문의 정보는 요청을 처리한 뒤 저장하지 않음. 로그 보관 기간 7일 (Hobby 요금제 기준)",
             ],
             [
               // 데이터는 서울 리전에 저장하지만, Supabase DPA는 Supabase와 하위 처리자가 시설을 둔 곳에서 처리될 수
               // 있다고 정한다. 운영·지원을 위한 원격 접근 가능성을 보수적으로 국외 이전으로 적는다.
               "Supabase, Inc. (privacy@supabase.com)",
               "미국 (데이터는 대한민국 서울 지역 서버에 저장)",
-              "회원 정보(카카오 회원번호, 닉네임, 한 줄 소개, 가입·수정 일시), 1:1 문의 정보(이메일, 문의 유형, 문의 내용, 접수·동의·처리 일시)",
+              "1:1 문의 정보(이메일, 문의 유형, 문의 내용, 접수·동의·처리 일시)",
               "데이터베이스 운영과 장애 대응 등 기술 지원이 필요할 때 원격으로 접근",
               "데이터베이스(클라우드) 운영과 기술 지원",
-              "회원 정보는 회원 탈퇴 시까지, 1:1 문의는 문의 처리 완료 후 1년 (4번과 같음)",
+              "1:1 문의 보유 기간(문의 처리 완료 후 1년)과 같음",
             ],
             [
               "Slack Technologies Limited (privacy@slack.com / dpo@slack.com)",
@@ -322,7 +282,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
           개인정보처리방침에 공개)
         </P>
         <P>
-          국외 이전을 원하지 않으면 회원 가입과 1:1 문의를 이용하지 않을 수 있습니다. 다만 웹사이트와 API 서버가 위 업체를 통해
+          국외 이전을 원하지 않으면 1:1 문의를 이용하지 않을 수 있습니다. 다만 웹사이트와 API 서버가 위 업체를 통해
           운영되므로 국외 이전을 거부하면 서비스를 이용할 수 없습니다.
         </P>
       </LegalSection>
@@ -352,18 +312,12 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
           행태정보를 수집하도록 허용하지 않습니다.
         </P>
         <P>
-          로그인하면 로그인 상태를 유지하기 위해 운영팀이 발급한 로그인 토큰을 브라우저 저장소(localStorage)에
-          저장합니다. 토큰에는 회원 번호와 발급·만료 시각만 담기며 7일 뒤 만료됩니다. 로그아웃하거나 브라우저에서 사이트
-          데이터를 삭제하면 지워집니다.
-        </P>
-        <P>
           방문 혜택 체크리스트의 체크 상태는 브라우저 저장소(localStorage)에 저장됩니다. 개인을 알아볼 수 있는 정보는
           담지 않으며, 브라우저 설정에서 사이트 데이터를 삭제하면 지워집니다.
         </P>
         <P>
-          지도를 보여 주기 위해 카카오맵을 불러오고, 코스 사진은 한국관광공사 서버에서 불러옵니다. 카카오 로그인을 하면
-          카카오 로그인 화면으로 이동합니다. 이 과정에서 카카오와 한국관광공사가 이용자의 접속 정보를 처리할 수 있으며,
-          이에 대해서는 각자의 개인정보처리방침이 적용됩니다.
+          지도를 보여 주기 위해 카카오맵을 불러오고, 코스 사진은 한국관광공사 서버에서 불러옵니다. 이 과정에서 카카오와
+          한국관광공사가 이용자의 접속 정보를 처리할 수 있으며, 이에 대해서는 각자의 개인정보처리방침이 적용됩니다.
         </P>
         <P>
           가까운 순으로 고른 코스의 사진을 불러오거나 지도를 현재 위치·가까운 코스 주변으로 옮기면, 그 요청으로 이용자가
@@ -379,14 +333,9 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             행사&rsquo;)할 수 있습니다.
           </li>
           <li>
-            회원은 마이페이지에서 닉네임과 한 줄 소개를 직접 확인하고 고칠 수 있으며, 회원 탈퇴로 회원 정보의 삭제를
-            요구할 수 있습니다.
-          </li>
-          <li>
-            그 밖의 권리 행사는 아래 개인정보 보호책임자의 이메일이나 1:1 문의로 할 수 있으며, 운영팀은 요청을 받은
-            날부터 10일 이내에 회신합니다. 1:1 문의에 관한 요청은 로그인과 연결되어 있지 않으므로 기존 문의에 입력한
-            이메일로 확인 메일을 보내고, 회신 여부를 통해 요청자임을 확인합니다. 확인을 마치면 요청 범위에 해당하는
-            데이터베이스의 문의와 Slack 알림을 함께 처리합니다.
+            권리 행사는 아래 개인정보 보호책임자의 이메일이나 1:1 문의로 할 수 있으며, 운영팀은 요청을 받은 날부터 10일
+            이내에 회신합니다. 회원 기능이 없으므로 기존 문의에 입력한 이메일로 확인 메일을 보내고, 회신 여부를 통해
+            요청자임을 확인합니다. 확인을 마치면 요청 범위에 해당하는 데이터베이스의 문의와 Slack 알림을 함께 처리합니다.
           </li>
           <li>
             법정대리인이나 위임을 받은 사람 등 대리인을 통해서도 권리를 행사할 수 있습니다. 이 경우 「개인정보 처리 방법에
@@ -432,29 +381,10 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
 
       <LegalSection section={S.changes} level={level}>
         <Items ordered>
-          <li>이 개인정보처리방침은 {EFFECTIVE_DATE}부터 적용됩니다.</li>
+          <li>이 개인정보처리방침은 2026년 9월 17일부터 적용됩니다.</li>
           <li>
             내용을 바꿀 때는 시행 전에 공지사항으로 알리고, 이전 개인정보처리방침은 적용 기간과 함께 이 페이지에서 볼 수
             있게 하겠습니다.
-          </li>
-          <li>
-            이전 개인정보처리방침
-            <ul className="mt-1 list-disc pl-5">
-              {PREVIOUS_VERSIONS.map((version) => (
-                <li key={version.privacyPath}>
-                  {/* 새 탭으로 연다. 1:1 문의의 동의 팝업에서도 이 본문을 쓰는데, 같은 탭에서 옮기면 적던 문의가 사라진다. */}
-                  <a
-                    href={version.privacyPath}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-accent underline underline-offset-4"
-                  >
-                    {version.period} 적용
-                    <NewTabHint />
-                  </a>
-                </li>
-              ))}
-            </ul>
           </li>
         </Items>
       </LegalSection>
