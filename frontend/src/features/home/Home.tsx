@@ -17,6 +17,7 @@ import AppHeader from "../../components/layout/AppHeader";
 import { MAIN_CONTENT_ID } from "../../components/layout/mainContent";
 import { useDocumentTitle } from "../../lib/useDocumentTitle";
 import { smoothScrollBehavior, usePrefersReducedMotion } from "../../lib/motion";
+import { useDialogFocus } from "../../lib/useDialogFocus";
 import Footer from "../../components/layout/Footer";
 import { fetchFeaturedCourses, fetchNearbyCourses, fetchUpcomingRaces } from "./homeApi";
 import type { CourseItem, UpcomingRace } from "./homeApi";
@@ -233,22 +234,10 @@ function BannerCard({
 
 function BannerGalleryModal({ onClose }: { onClose: () => void }) {
   const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  // 열리면 닫기 버튼으로 초점을 옮기고, 닫히면 연 버튼(배너 전체보기)으로 돌려준다.
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    closeButtonRef.current?.focus();
-    return () => opener?.focus();
-  }, []);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  // 열리면 닫기 버튼으로 초점을 옮기고, Escape로 닫고, 닫히면 연 버튼(배너 전체보기)으로 돌려준다.
+  useDialogFocus({ initialFocusRef: closeButtonRef, containerRef: dialogRef, onEscape: onClose });
 
   // 모달이 자체 스크롤을 가지므로 뒤 페이지까지 스크롤되면 스크롤바가 두 개 나란히 보인다.
   // 모달이 화면을 꽉 덮고 있어 잠그는 동안 생기는 리플로우는 눈에 띄지 않는다.
@@ -261,7 +250,13 @@ function BannerGalleryModal({ onClose }: { onClose: () => void }) {
   }, []);
 
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="fixed inset-0 z-50 overflow-y-auto bg-white">
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 overflow-y-auto bg-white"
+    >
       {/* 카드도 relative라 z-index가 없으면 DOM 순서대로 그려져 헤더 위로 올라탄다 */}
       <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b border-divider bg-white px-4">
         <button

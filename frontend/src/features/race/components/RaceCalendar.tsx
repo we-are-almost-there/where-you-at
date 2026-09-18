@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Ref } from "react";
 import type { Race } from "../types";
 import { EVENT_TYPE_BADGE_COLOR, EVENT_TYPE_LABEL, UNSPECIFIED_BADGE_COLOR } from "../types";
+import { useDialogFocus } from "../../../lib/useDialogFocus";
 import { parseLocalDate } from "../dateUtils";
 
 interface RaceCalendarProps {
@@ -239,17 +240,20 @@ function CalendarRaceButton({
   selectedRaceId,
   onSelect,
   wide = false,
+  buttonRef,
 }: {
   race: Race;
   dateLabel: string;
   selectedRaceId?: number | null;
   onSelect: (race: Race) => void;
   wide?: boolean;
+  buttonRef?: Ref<HTMLButtonElement>;
 }) {
   const isSelected = race.event_id === selectedRaceId;
   const typeLabel = race.event_type ? EVENT_TYPE_LABEL[race.event_type] : "종목 미정";
   return (
     <button
+      ref={buttonRef}
       type="button"
       data-race-id={race.event_id}
       onClick={() => onSelect(race)}
@@ -283,36 +287,28 @@ function DayRacesPopover({
   alignEnd: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const firstButtonRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
   });
 
+  // 바깥을 누르면 닫는다. 여는 버튼("+N개")을 다시 누르는 건 그 버튼의 onClick이 닫으므로 제외한다
+  // (여기서도 닫으면 닫혔다 곧바로 다시 열린다). 여는 버튼은 초점이 옮겨지기 전에 기억해야 해서
+  // 이 이펙트를 useDialogFocus보다 먼저 선언한다(이펙트는 선언 순서대로 돈다).
   useEffect(() => {
     const root = rootRef.current;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    root?.querySelector<HTMLElement>("button")?.focus();
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      onCloseRef.current();
-    };
-    // 여는 버튼을 다시 누르는 건 그 버튼의 onClick이 닫는다. 여기서도 닫으면 닫혔다 곧바로 다시 열린다.
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
       if (root && !root.contains(target) && !opener?.contains(target)) onCloseRef.current();
     };
-    document.addEventListener("keydown", handleKeyDown);
     document.addEventListener("pointerdown", handlePointerDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      document.removeEventListener("pointerdown", handlePointerDown);
-      const active = document.activeElement;
-      const focusStillHere = !active || active === document.body || Boolean(root?.contains(active));
-      if (focusStillHere && opener?.isConnected) opener.focus();
-    };
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, []);
+
+  // 열리면 첫 대회로 초점, Escape로 닫기, 닫히면 "+N개" 버튼으로 복귀(대화상자와 같은 규칙).
+  useDialogFocus({ initialFocusRef: firstButtonRef, containerRef: rootRef, onEscape: onClose });
 
   return (
     <div
@@ -327,7 +323,7 @@ function DayRacesPopover({
       }}
     >
       <p className="px-0.5 text-[12px] font-bold text-ink">{dateLabel}</p>
-      {races.map((race) => (
+      {races.map((race, index) => (
         <CalendarRaceButton
           key={race.event_id}
           race={race}
@@ -335,6 +331,7 @@ function DayRacesPopover({
           selectedRaceId={selectedRaceId}
           onSelect={onSelect}
           wide
+          buttonRef={index === 0 ? firstButtonRef : undefined}
         />
       ))}
     </div>

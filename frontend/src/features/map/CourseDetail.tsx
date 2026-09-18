@@ -575,13 +575,18 @@ export function CourseDetail() {
 
   // 안내 팝업은 할 수 있는 일이 닫기 하나뿐이라 Escape로도 닫는다.
   // (기록 카드는 편집하던 사진·배치·글꼴이 확인 없이 사라지므로 넣지 않는다)
+  // 이 팝업은 맨 위에 뜨는 모달이라, 먼저 열려 있던 대화상자(주변 장소 시트 등)보다 Escape를 먼저 받아야 한다.
+  // 버블 단계의 document 핸들러는 등록 순서대로 돌아 먼저 열린 쪽이 먼저 닫히므로, 캡처 단계에서 처리하고
+  // preventDefault로 표시해 useDialogFocus 쪽이 이미 처리된 Escape를 무시하게 한다(사이드바와 같은 방식).
   useEffect(() => {
     if (tooFarMeters == null || !isTracking) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") dismissTooFar();
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      dismissTooFar();
     };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
+    document.addEventListener("keydown", closeOnEscape, true);
+    return () => document.removeEventListener("keydown", closeOnEscape, true);
   }, [tooFarMeters, isTracking, dismissTooFar]);
 
   return (
