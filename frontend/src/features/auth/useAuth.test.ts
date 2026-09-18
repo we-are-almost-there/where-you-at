@@ -8,6 +8,7 @@
 //   - 401이면 토큰을 지우고, 연결 실패나 서버 오류면 토큰을 남겨 다음 구독 때 다시 확인한다
 //   - 로그인 뒤 늦게 온 /api/me 응답이 상태를 덮어쓰지 않는다
 //   - 탈퇴는 204일 때만 완료다. 401이면 로그아웃하되 오류를 던지고, 그 밖의 실패는 로그인 상태를 유지한다
+//   - 프로필 수정은 응답 값으로 상태를 바꾸고, 401이면 로그아웃한다. 기다리는 사이 로그아웃했으면 되살리지 않는다
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -178,5 +179,63 @@ describe("withdraw", () => {
 
     expect(result.current.status).toBe("signedIn");
     expect(localStorage.getItem(TOKEN_KEY)).toBe("our-token");
+  });
+});
+
+describe("updateProfile", () => {
+  it("성공하면 서버가 돌려준 닉네임으로 로그인 상태를 바꾼다", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { id: 7, nickname: "새 이름" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { useAuth, signIn, updateProfile } = await loadAuth();
+    const { result } = renderHook(() => useAuth());
+    act(() => signIn("our-token", USER));
+
+    await act(() => updateProfile({ nickname: "새 이름" }));
+
+    expect(result.current).toEqual({ status: "signedIn", user: { id: 7, nickname: "새 이름" } });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(new URL(String(url)).pathname).toBe("/api/me");
+    expect(init).toEqual({
+      method: "PATCH",
+      headers: { Authorization: "Bearer our-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ nickname: "새 이름" }),
+    });
+  });
+
+  it("401이면 로그아웃한 뒤 오류를 던진다", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(401)));
+    const { useAuth, signIn, updateProfile } = await loadAuth();
+    const { result } = renderHook(() => useAuth());
+    act(() => signIn("expired-token", USER));
+
+    await act(() => expect(updateProfile({ nickname: "새 이름" })).rejects.toMatchObject({ status: 401 }));
+
+    expect(result.current.status).toBe("signedOut");
+  });
+
+  it("그 밖의 실패는 오류를 던지고 닉네임을 그대로 둔다", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(500)));
+    const { useAuth, signIn, updateProfile } = await loadAuth();
+    const { result } = renderHook(() => useAuth());
+    act(() => signIn("our-token", USER));
+
+    await expect(updateProfile({ nickname: "새 이름" })).rejects.toMatchObject({ status: 500 });
+
+    expect(result.current).toEqual({ status: "signedIn", user: USER });
+  });
+
+  it("응답을 기다리는 사이 로그아웃했으면 다시 로그인 상태로 되돌리지 않는다", async () => {
+    let resolve: (value: unknown) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise((r) => (resolve = r))));
+    const { useAuth, signIn, signOut, updateProfile } = await loadAuth();
+    const { result } = renderHook(() => useAuth());
+    act(() => signIn("our-token", USER));
+
+    const pending = updateProfile({ nickname: "새 이름" });
+    act(() => signOut());
+    resolve(jsonResponse(200, { id: 7, nickname: "새 이름" }));
+    await act(() => pending);
+
+    expect(result.current.status).toBe("signedOut");
   });
 });
