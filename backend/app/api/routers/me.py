@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ...crud import user as user_crud
 from ...deps import db_connection, get_current_user, get_db, unauthorized_error
-from ...schemas.user import UserOut
+from ...schemas.user import UserOut, UserUpdate
 from ...services import kakao_oauth
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -13,6 +13,19 @@ router = APIRouter(prefix="/api/me", tags=["me"])
 def read_me(user_id: int = Depends(get_current_user), conn=Depends(get_db)):
     """로그인한 회원 정보. 토큰은 유효하지만 회원 행이 없으면(탈퇴) 401로 로그인을 다시 받게 한다."""
     user = user_crud.get_user(conn, user_id)
+    if user is None:
+        raise unauthorized_error()
+    return user
+
+
+@router.patch("", response_model=UserOut)
+def update_me(body: UserUpdate, user_id: int = Depends(get_current_user)):
+    """프로필(닉네임·한 줄 소개) 수정. 보낸 칸만 바꾼다. 탈퇴해 회원 행이 없으면 조회와 같이 401로 로그인을 다시 받게 한다.
+
+    get_db 의존성을 쓰지 않는 이유: 의존성은 본문 검증보다 먼저 풀려서, 값이 잘못된 요청도 DB에 연결하게 된다.
+    """
+    with db_connection() as conn:
+        user = user_crud.update_profile(conn, user_id, body.changes())
     if user is None:
         raise unauthorized_error()
     return user

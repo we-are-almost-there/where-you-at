@@ -34,7 +34,7 @@ KAKAO_USER = {
     },
 }
 
-SAVED_USER = {"id": 7, "nickname": "길손"}
+SAVED_USER = {"id": 7, "nickname": "길손", "bio": None}
 
 
 def _response(status_code, json=None, *, text=None):

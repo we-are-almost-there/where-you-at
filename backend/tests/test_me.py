@@ -1,4 +1,4 @@
-"""GET /api/me, DELETE /api/me와 토큰 검증 의존성(get_current_user) 테스트 (unittest, DB와 카카오 없이 patch).
+"""GET /api/me, PATCH /api/me, DELETE /api/me와 토큰 검증 의존성(get_current_user) 테스트 (unittest, DB와 카카오 없이 patch).
 
 토큰이 없거나 만료, 위조, 내용 오류면 401이고, 인증에 실패한 요청은 DB에 연결하지 않는지 확인한다.
 
@@ -18,7 +18,7 @@ from app.main import app
 from app.services import auth_token
 
 SECRET = "s" * 32
-USER = {"id": 7, "nickname": "길손"}
+USER = {"id": 7, "nickname": "길손", "bio": "주말마다 한강을 걸어요"}
 
 
 def _bearer(token):
@@ -97,6 +97,112 @@ class TestReadMe(AuthTestCase):
 
 
 ADMIN_KEY = "admin-key"
+
+
+@patch("app.crud.user.update_profile")
+class TestUpdateMe(AuthTestCase):
+    def _patch(self, body, token=None):
+        headers = _bearer(token or auth_token.create_access_token(7))
+        return self.client.patch("/api/me", headers=headers, json=body)
+
+    def test_trims_and_saves_nickname(self, mock_update):
+        mock_update.return_value = {"id": 7, "nickname": "새 이름", "bio": None}
+
+        res = self._patch({"nickname": "  새 이름  "})
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json(), {"id": 7, "nickname": "새 이름", "bio": None})
+        # 보내지 않은 bio는 건드리지 않는다.
+        self.assertEqual(mock_update.call_args.args[1:], (7, {"nickname": "새 이름"}))
+
+    def test_invalid_nickname_returns_422_without_db(self, mock_update):
+        cases = {
+            "빈 값": "",
+            "공백만": "   ",
+            "21자": "가" * 21,
+            "줄바꿈": "길\n손",
+        }
+        for name, nickname in cases.items():
+            with self.subTest(name):
+                res = self._patch({"nickname": nickname})
+                self.assertEqual(res.status_code, 422)
+        mock_update.assert_not_called()
+        self.connect.assert_not_called()
+
+    def test_twenty_characters_is_allowed(self, mock_update):
+        mock_update.return_value = {"id": 7, "nickname": "가" * 20, "bio": None}
+
+        res = self._patch({"nickname": "가" * 20})
+
+        self.assertEqual(res.status_code, 200)
+
+    def test_trims_and_saves_bio_only(self, mock_update):
+        mock_update.return_value = {"id": 7, "nickname": "길손", "bio": "주말마다 한강을 걸어요"}
+
+        res = self._patch({"bio": "  주말마다 한강을 걸어요 "})
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(mock_update.call_args.args[1:], (7, {"bio": "주말마다 한강을 걸어요"}))
+
+    def test_collapses_repeated_spaces(self, mock_update):
+        # 화면은 연속 공백을 한 칸으로 그리므로 저장값도 한 칸으로 맞춘다. 41칸짜리 입력도 줄인 뒤 길이를 잰다.
+        mock_update.return_value = {"id": 7, "nickname": "길 손", "bio": "안녕하세요 러닝 좋아요"}
+
+        res = self._patch({"nickname": "길     손", "bio": "안녕하세요" + " " * 30 + "러닝 좋아요"})
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(mock_update.call_args.args[1:], (7, {"nickname": "길 손", "bio": "안녕하세요 러닝 좋아요"}))
+
+    def test_empty_bio_clears_it(self, mock_update):
+        mock_update.return_value = {"id": 7, "nickname": "길손", "bio": None}
+
+        for bio in ("", "   ", None):
+            with self.subTest(bio=bio):
+                res = self._patch({"bio": bio})
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(mock_update.call_args.args[1:], (7, {"bio": None}))
+
+    def test_saves_nickname_and_bio_together(self, mock_update):
+        mock_update.return_value = {"id": 7, "nickname": "새 이름", "bio": "안녕하세요"}
+
+        self._patch({"nickname": "새 이름", "bio": "안녕하세요"})
+
+        self.assertEqual(mock_update.call_args.args[1:], (7, {"nickname": "새 이름", "bio": "안녕하세요"}))
+
+    def test_invalid_bio_or_empty_body_returns_422_without_db(self, mock_update):
+        cases = {
+            "41자": {"bio": "가" * 41},
+            "줄바꿈": {"bio": "첫 줄\n둘째 줄"},
+            "닉네임 null": {"nickname": None},
+            "빈 본문": {},
+        }
+        for name, body in cases.items():
+            with self.subTest(name):
+                res = self._patch(body)
+                self.assertEqual(res.status_code, 422)
+        mock_update.assert_not_called()
+        self.connect.assert_not_called()
+
+    def test_forty_character_bio_is_allowed(self, mock_update):
+        mock_update.return_value = {"id": 7, "nickname": "길손", "bio": "가" * 40}
+
+        res = self._patch({"bio": "가" * 40})
+
+        self.assertEqual(res.status_code, 200)
+
+    def test_deleted_user_returns_401(self, mock_update):
+        mock_update.return_value = None
+
+        res = self._patch({"nickname": "길손"})
+
+        self.assertEqual(res.status_code, 401)
+
+    def test_without_token_returns_401_without_db(self, mock_update):
+        res = self.client.patch("/api/me", json={"nickname": "길손"})
+
+        self.assertEqual(res.status_code, 401)
+        mock_update.assert_not_called()
+        self.connect.assert_not_called()
 
 
 @patch("app.services.kakao_oauth.httpx.post")

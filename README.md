@@ -84,6 +84,10 @@ npm run dev --prefix frontend
 03_support_seed.sql       지원금 제도
 04_help_seed.sql          공지사항·자주 묻는 질문 (python -m scripts.seed_help)
 05_inquiry_retention.sql  1:1 문의 자동 파기 예약 작업 (Supabase SQL Editor에서 실행)
+06_bicycle_collector_role.sql  자전거 실시간 수집(GitHub Actions) 전용 역할 (SQL Editor, 실행 후 비밀번호 따로 설정)
+07_nearby_cache_role.sql  주변정보 캐시 갱신(GitHub Actions) 전용 역할 (SQL Editor, 실행 후 비밀번호 따로 설정)
+08_app_user.sql           회원 테이블. 01_schema.sql 이전에 만든 공용 DB용이라 새 DB에는 실행하지 않는다
+                          (SQL Editor, 다시 실행해도 된다. 회원 칸이 늘면 다시 실행)
 ```
 
 외부 API에서 데이터를 받아오는 스크립트는 `backend/scripts/`에 있습니다.

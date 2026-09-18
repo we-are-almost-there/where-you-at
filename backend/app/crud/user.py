@@ -6,16 +6,20 @@ inquiry.py와 같은 psycopg2 raw SQL + RealDictCursor 패턴.
 
 from psycopg2.extras import RealDictCursor
 
-_USER_COLUMNS = "id, nickname"
+_USER_COLUMNS = "id, nickname, bio"
 
 
 def upsert_kakao_user(conn, *, kakao_id: int, nickname: str | None) -> dict:
-    """카카오 회원번호로 회원을 찾아 닉네임을 갱신하고, 없으면 새로 만든다."""
+    """카카오 회원번호로 회원을 찾고, 없으면 새로 만든다.
+
+    닉네임은 처음 가입할 때만 카카오 값을 쓴다. 마이페이지에서 바꾼 닉네임을 다음 로그인이 덮어쓰지 않도록,
+    이미 있는 회원은 저장된 닉네임이 비어 있을 때만 카카오 값으로 채운다.
+    """
     query = f"""
         insert into app_user (kakao_id, nickname)
         values (%(kakao_id)s, %(nickname)s)
         on conflict (kakao_id) do update
-          set nickname = excluded.nickname
+          set nickname = coalesce(app_user.nickname, excluded.nickname)
         returning {_USER_COLUMNS}
     """
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -30,6 +34,32 @@ def get_user(conn, user_id: int) -> dict | None:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(query, {"id": user_id})
         return cur.fetchone()
+
+
+# 마이페이지에서 바꿀 수 있는 칸. 여기 없는 이름은 SQL에 넣지 않는다.
+_EDITABLE_COLUMNS = ("nickname", "bio")
+
+
+def update_profile(conn, user_id: int, fields: dict) -> dict | None:
+    """닉네임·한 줄 소개 중 넘어온 칸만 바꾼다. 회원이 없으면(탈퇴) None.
+
+    칸 이름은 _EDITABLE_COLUMNS에서만 골라 SQL에 넣고, 값은 매개변수로 넘긴다.
+    """
+    columns = [name for name in _EDITABLE_COLUMNS if name in fields]
+    if not columns:
+        raise ValueError("바꿀 칸이 없습니다.")
+    assignments = ", ".join(f"{name} = %({name})s" for name in columns)
+    query = f"""
+        update app_user set {assignments}
+        where id = %(id)s
+        returning {_USER_COLUMNS}
+    """
+    params = {name: fields[name] for name in columns}
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(query, {"id": user_id, **params})
+        row = cur.fetchone()
+    conn.commit()
+    return row
 
 
 def get_kakao_id(conn, user_id: int) -> int | None:
