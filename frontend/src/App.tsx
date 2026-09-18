@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Routes, Route, useLocation } from "react-router";
+import { Routes, Route, useLocation, useNavigationType } from "react-router";
 import { Home } from "./features/home";
 import { CourseExplore, CourseDetail } from "./features/map";
 import { Support } from "./features/support";
@@ -13,12 +13,15 @@ import { KAKAO_CALLBACK_PATH } from "./features/auth";
 
 function App() {
   const { pathname } = useLocation();
+  const navigationType = useNavigationType();
   const previousPathname = useRef(pathname);
   const pageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (previousPathname.current === pathname) return;
     previousPathname.current = pathname;
+    // 뒤로/앞으로 가기는 브라우저의 기본 복원에 맡긴다.
+    if (navigationType === "POP") return;
     const page = pageRef.current;
     if (!page) return;
     // 이전 사이드바의 inert 해제와 포커스 복귀가 끝난 뒤 실행한다.
@@ -28,7 +31,7 @@ function App() {
     if (!target) return;
     if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
     target.focus({ preventScroll: true });
-  }, [pathname]);
+  }, [pathname, navigationType]);
 
   return (
     <div ref={pageRef} className="contents">

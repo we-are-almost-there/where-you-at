@@ -1,20 +1,27 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { useState } from "react";
 import SidebarDrawer from "./components/layout/SidebarDrawer";
+import { Home } from "./features/home";
 
-// 이 테스트는 App의 라우트 선택만 확인한다. 각 화면의 동작은 해당 기능 테스트가 맡는다.
-vi.mock("./features/home", () => ({ Home: () => {
+vi.mock("./features/home/homeApi", () => ({
+  fetchFeaturedCourses: async () => [],
+  fetchNearbyCourses: async () => ({ items: [], isFallback: true }),
+  fetchUpcomingRaces: async () => [],
+}));
+
+// App의 라우트 선택과 화면 전환 시 포커스 관리를 확인한다.
+vi.mock("./features/home", () => ({ Home: vi.fn(() => {
   const [isOpen, setIsOpen] = useState(false);
   return <div>
     <button onClick={() => setIsOpen(true)}>메뉴 열기</button>
     <h1>홈 화면</h1>
     <SidebarDrawer isOpen={isOpen} onClose={() => setIsOpen(false)} />
   </div>;
-} }));
+}) }));
 vi.mock("./features/map", () => ({
   CourseExplore: () => <h1>코스 탐색 화면</h1>,
   CourseDetail: () => <h1>코스 상세 화면</h1>,
@@ -83,6 +90,42 @@ it.each([
   fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
   fireEvent.click(screen.getByRole("link", { name: link }));
   expect(document.activeElement).toBe(screen.getByText(text));
+});
+
+it("홈으로 링크 이동하면 실제 홈 제목에 포커스를 둔다", async () => {
+  const { default: ActualHome } = await vi.importActual<typeof import("./features/home/Home")>("./features/home/Home");
+  vi.mocked(Home).mockImplementationOnce(ActualHome);
+  renderAt("/unknown");
+  fireEvent.click(screen.getByRole("link", { name: "홈으로 가기" }));
+  const heading = await screen.findByRole("heading", { name: "어디까지 왔니 홈", level: 1 });
+  expect(document.activeElement).toBe(heading);
+});
+
+it("뒤로/앞으로 가기는 포커스를 강제로 이동하지 않는다", () => {
+  function HistoryControls() {
+    const navigate = useNavigate();
+    return <>
+      <button onClick={() => navigate(-1)}>뒤로</button>
+      <button onClick={() => navigate(1)}>앞으로</button>
+      <button onClick={() => navigate("/races")}>대회로 이동</button>
+    </>;
+  }
+  render(<MemoryRouter initialEntries={["/courses", "/support"]} initialIndex={1}>
+    <HistoryControls />
+    <App />
+  </MemoryRouter>);
+  const back = screen.getByRole("button", { name: "뒤로" });
+  back.focus();
+  fireEvent.click(back);
+  expect(screen.getByRole("heading", { name: "코스 탐색 화면" })).toBeTruthy();
+  expect(document.activeElement).toBe(back);
+  const forward = screen.getByRole("button", { name: "앞으로" });
+  forward.focus();
+  fireEvent.click(forward);
+  expect(screen.getByRole("main")).toBeTruthy();
+  expect(document.activeElement).toBe(forward);
+  fireEvent.click(screen.getByRole("button", { name: "대회로 이동" }));
+  expect(document.activeElement).toBe(screen.getByRole("heading", { name: "대회 행사 화면" }));
 });
 
 describe("App Not Found 라우트", () => {
