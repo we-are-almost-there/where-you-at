@@ -1,6 +1,9 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
+import { Link, useLocation } from "react-router";
+import { UserRound } from "lucide-react";
 import SidebarDrawer from "./SidebarDrawer";
+import { startKakaoLogin, useAuth } from "../../features/auth";
+import logoUrl from "../../assets/logo.svg";
 
 interface NavItem {
   label: string;
@@ -8,7 +11,6 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "홈", to: "/" },
   { label: "코스 탐색", to: "/courses" },
   { label: "대회 행사", to: "/races" },
   { label: "방문 혜택", to: "/support" },
@@ -37,10 +39,7 @@ export default function AppHeader({
   const setIsSidebarOpen = isControlled ? onSidebarOpenChange : setInternalOpen;
 
   const location = useLocation();
-  const navigate = useNavigate();
-  // /courses 및 그 하위 경로(예: /courses/:id)에서는 CTA를 숨긴다.
-  const normalizedPath = location.pathname.replace(/\/+$/, "");
-  const hideCourseCta = normalizedPath === "/courses" || normalizedPath.startsWith("/courses/");
+  const auth = useAuth();
   const headerRef = useRef<HTMLElement>(null);
   const alignmentRef = useRef<HTMLDivElement>(null);
 
@@ -92,11 +91,8 @@ export default function AppHeader({
               ☰
             </button>
 
-            <Link
-              to="/"
-              className="shrink-0 font-bold text-accent text-[24px] leading-8 tracking-tight md:text-[22px]"
-            >
-              어디까지왔니
+            <Link to="/" className="shrink-0">
+              <img src={logoUrl} alt="어디까지왔니" className="h-7 w-auto md:h-8" />
             </Link>
 
             <nav
@@ -131,17 +127,40 @@ export default function AppHeader({
               })}
             </nav>
 
-            {/* CTA 공간을 유지해 코스 탐색에서도 메뉴 위치가 달라지지 않게 한다. */}
-            <button
-              type="button"
-              onClick={() => navigate("/courses")}
-              disabled={hideCourseCta}
-              aria-hidden={hideCourseCta || undefined}
-              tabIndex={hideCourseCta ? -1 : undefined}
-              className={`ml-auto hidden shrink-0 cursor-pointer whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:bg-accent/90 md:block ${hideCourseCta ? "invisible" : ""}`}
-            >
-              코스 둘러보기
-            </button>
+            {/* 모바일에서는 로그인·마이페이지를 사이드바에서 제공하므로 헤더에서 숨긴다. */}
+            <div className="ml-auto hidden shrink-0 md:block">
+              {auth.status === "signedIn" ? (
+                <Link
+                  to="/mypage"
+                  className="flex items-center gap-2.5 rounded-lg py-1 pl-1 pr-2 hover:bg-control-hover"
+                >
+                  {/* 카카오 프로필 사진은 받지 않아 기본 아바타를 쓴다. */}
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-lavender">
+                    <UserRound className="size-6 text-accent" aria-hidden="true" />
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="max-w-[7rem] truncate text-[14px] font-bold leading-5 text-ink">
+                      {auth.user.nickname ?? "회원"}
+                    </span>
+                    <span className="text-[12px] leading-4 text-muted">마이페이지</span>
+                  </span>
+                </Link>
+              ) : (
+                // 토큰을 확인하는 동안(loading)에는 자리만 잡아 두어, 로그인 버튼이 보였다가
+                // 마이페이지로 바뀌는 깜빡임을 막는다.
+                <button
+                  type="button"
+                  onClick={() => startKakaoLogin(location.pathname + location.search)}
+                  disabled={auth.status === "loading"}
+                  aria-hidden={auth.status === "loading" || undefined}
+                  className={`cursor-pointer whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:bg-accent/90 ${
+                    auth.status === "loading" ? "invisible" : ""
+                  }`}
+                >
+                  로그인
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
