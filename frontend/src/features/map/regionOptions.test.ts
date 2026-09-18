@@ -69,7 +69,7 @@ describe("buildRegionOptions - 전남광주통합특별시", () => {
     expect(group.options.slice(1)).toEqual([
       { value: "12110", label: "목포" },
       { value: "12130", label: "여수" },
-      { value: "12210", label: "동" },
+      { value: "12210", label: "동구" }, // 떼면 한 글자라 원래 이름을 둔다
     ]);
   });
 });
@@ -99,6 +99,12 @@ describe("regionOptionLabel", () => {
     // 시도 그룹 밖에 홀로 서는 항목이라 시도를 남긴다 — '강화'만으로는 어디인지 모른다
     expect(regionOptionLabel("인천광역시 강화군")).toBe("인천 강화");
     expect(regionOptionLabel("서울특별시 강남구")).toBe("서울 강남");
+  });
+
+  it("접미사를 떼면 한 글자만 남는 이름은 그대로 둔다", () => {
+    // 중구·동구·서구·남구·북구가 '부산 동'이 되면 무엇인지 알아볼 수 없다
+    expect(regionOptionLabel("부산광역시 동구")).toBe("부산 동구");
+    expect(regionOptionLabel("대구광역시 중구")).toBe("대구 중구");
   });
 
   it("시도와 이름이 같은 세종은 한 덩어리로 줄인다", () => {

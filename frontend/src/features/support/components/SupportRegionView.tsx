@@ -280,15 +280,13 @@ export function SupportRegionView({ regionCode }: Props) {
       {/* ④ 코스 링크 */}
       {/* "/"는 홈이라 region을 읽지 않는다. 지역 필터를 받는 쪽은 /courses다. */}
       {hasCourse === false ? (
-        // accent 채움에 opacity만 걸어 비활성처럼 보이게 하면 흰 글자 대비가 2:1까지
-        // 떨어진다. 채움을 빼고, 라벨 자체가 못 누르는 이유가 되게 둔다.
-        <button
-          type="button"
-          disabled
-          className="cursor-not-allowed rounded-lg bg-white/60 py-3.5 text-center text-[14px] font-bold text-muted"
-        >
+        // 누를 것이 아니라 알리는 것이라 버튼이 아니라 문단으로 둔다. disabled 버튼은
+        // Tab 순서에서 빠져, 키보드로 패널을 훑는 사람은 이 문구를 만나지 못한다.
+        // 링크 자리를 그대로 차지해 없어진 게 아니라 '갈 곳이 없다'는 것으로 읽히게 하고,
+        // accent 채움은 빼 흰 글자 대비 문제(opacity를 걸면 2:1까지 떨어진다)를 피한다.
+        <p className="rounded-lg bg-white/60 py-3.5 text-center text-[14px] font-bold text-muted">
           이 지역에는 등록된 코스가 없어요
-        </button>
+        </p>
       ) : (
         <Link
           to={`/courses?region=${regionCode}`}

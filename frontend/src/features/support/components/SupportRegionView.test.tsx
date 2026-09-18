@@ -162,8 +162,11 @@ describe("SupportRegionView — 코스 링크", () => {
 
     renderFresh("48820");
 
-    const off = await screen.findByRole("button", { name: "이 지역에는 등록된 코스가 없어요" });
-    expect((off as HTMLButtonElement).disabled).toBe(true);
+    // 누를 것이 아니라 알리는 문구다. disabled 버튼이면 Tab 순서에서 빠져
+    // 키보드로 패널을 훑는 사람이 이 문구를 만나지 못한다.
+    const off = await screen.findByText("이 지역에는 등록된 코스가 없어요");
+    expect(off.tagName).toBe("P");
+    expect(screen.queryByRole("button", { name: /등록된 코스가 없어요/ })).toBeNull();
     expect(courseLink()).toBeNull();
   });
 

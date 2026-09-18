@@ -309,9 +309,9 @@ describe("SupportRegionMap — 활성 지역 조회", () => {
       await waitFor(() => expect(currentSearch()).toBe("?region=12800"));
     });
 
-    it("하위 시군구가 하나뿐인 시도는 드릴다운 없이 패널을 연다", async () => {
-      // 마도(14)에는 마군 하나뿐이다. 세종처럼 드릴다운해도 같은 땅이 한 번 더 나와,
-      // 그 한 단계는 사용자에게 아무것도 알려주지 않는다.
+    it("하위 시군구가 하나뿐인 시도는 한 번에 그 도로 들어가며 패널을 연다", async () => {
+      // 마도(14)에는 마군 하나뿐이다(세종). 드릴다운만 하면 같은 땅을 한 번 더 눌러야 하고,
+      // 패널만 열고 전국뷰에 남으면 머리말은 '지역을 선택하세요'인데 패널은 마군이다.
       mockedFetchActive.mockResolvedValue([]);
 
       renderMap();
@@ -320,7 +320,47 @@ describe("SupportRegionMap — 활성 지역 조회", () => {
       sido.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
       await waitFor(() => expect(currentSearch()).toBe("?region=12820"));
-      expect(screen.getByText("지역을 선택하세요")).toBeTruthy(); // 전국뷰 그대로
+      // 지도도 그 도로 들어가 머리말이 패널과 같은 곳을 가리킨다
+      expect(screen.getByText("마도")).toBeTruthy();
+      expect(screen.queryByText("지역을 선택하세요")).toBeNull();
+      // 다른 시도로 가는 길은 URL을 비우는 '← 전국으로'뿐이라 지도와 패널이 어긋날 수 없다
+      expect(screen.queryByRole("button", { name: /가도/ })).toBeNull();
+      screen
+        .getByRole("button", { name: "← 전국으로" })
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await waitFor(() => expect(currentSearch()).toBe(""));
+    });
+
+    it("전국뷰는 시도명을 줄여 적고, 보조기기에는 원래 이름까지 읽어 준다", async () => {
+      // 16곳 모두 이름을 달면 좁은 화면에서 배지가 옆 시도 땅으로 밀려난다.
+      // 줄인 이름은 코스 탐색 지역 필터와 같은 표(SIDO_ABBR)를 따른다.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: string) => {
+          const files: Record<string, unknown> = {
+            ...STATIC_FILES,
+            "/korea-sido.json": {
+              type: "FeatureCollection",
+              features: [
+                feature(square(126, 34, 128.5, 38), { sido_code: "12", sido_name: "경상남도" }),
+                feature(square(128.5, 34, 131, 38), { sido_code: "13", sido_name: "서울특별시" }),
+              ],
+            },
+          };
+          return Promise.resolve({ ok: true, json: () => Promise.resolve(files[url]) });
+        }),
+      );
+      mockedFetchActive.mockResolvedValue(["12780"]); // 경상남도만 색칠
+
+      renderMap();
+
+      await waitFor(() => expect(badgeNames()).toEqual(["경남", "서울"]));
+      // 이름표는 화면 글자로 시작한다 — 음성 조작은 보이는 글자('경남')로 버튼을 부른다
+      expect(screen.getByRole("button", { name: "경남, 경상남도" })).toBeTruthy();
+      // 원래 이름이 줄인 이름으로 시작하면 원래 이름만으로 충분하다
+      expect(
+        screen.getByRole("button", { name: "서울특별시 (진행 중인 제도 없음)" }),
+      ).toBeTruthy();
     });
 
     it("색칠된 지역은 폴백 목록 밖이어도 누를 수 있다", async () => {

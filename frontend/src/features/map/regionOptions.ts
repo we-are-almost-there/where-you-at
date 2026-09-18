@@ -1,4 +1,7 @@
 import type { Region } from "./types";
+import { SIDO_ABBR } from "../../lib/regionLabels";
+
+export { SIDO_ABBR } from "../../lib/regionLabels";
 
 // 지역 필터 드롭다운 항목: flat 단일 옵션(광역시) 또는 optgroup(도)
 export interface RegionFlat {
@@ -19,30 +22,14 @@ const sidoCode = (regionCode: string) => regionCode.slice(0, 2);
 const EXPAND_AS_PROVINCE = new Set(["전남광주통합특별시"]);
 
 // 필터 드롭다운은 좁으므로 정식 시도명을 축약해서 표시한다 (경상남도→경남, 부산광역시→부산).
-// bicycle/regionOptions.ts도 동일 매핑을 재사용한다 — 행정구역 개편 시 이 파일 하나만 고치면 된다.
-export const SIDO_ABBR: Record<string, string> = {
-  서울특별시: "서울",
-  부산광역시: "부산",
-  대구광역시: "대구",
-  인천광역시: "인천",
-  광주광역시: "광주",
-  대전광역시: "대전",
-  울산광역시: "울산",
-  세종특별자치시: "세종",
-  경기도: "경기",
-  강원특별자치도: "강원",
-  충청북도: "충북",
-  충청남도: "충남",
-  전북특별자치도: "전북",
-  전라남도: "전남",
-  전남광주통합특별시: "전남광주통합", // 행정구역 개편: 광주, 전남 통합
-  경상북도: "경북",
-  경상남도: "경남",
-  제주특별자치도: "제주",
-};
 const abbrevSido = (sido: string) => SIDO_ABBR[sido] ?? sido;
 // 시군구도 접미사(시/군/구)를 떼어 간결하게 (창원시→창원, 고성군→고성). 매핑 없으면 원본.
-const abbrevSigungu = (name: string) => name.replace(/(시|군|구)$/, "");
+// 떼고 한 글자만 남으면 원래 이름을 둔다 — 중구·동구·서구·남구·북구가 '중'·'동'으로 줄면
+// 무엇인지 알아볼 수 없다.
+const abbrevSigungu = (name: string) => {
+  const short = name.replace(/(시|군|구)$/, "");
+  return short.length > 1 ? short : name;
+};
 
 /** 드롭다운 항목 중에 이 값을 고를 수 있는지 (optgroup 안까지 본다) */
 export function hasRegionOption(items: RegionSelectItem[], value: string): boolean {

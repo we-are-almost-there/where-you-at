@@ -11,6 +11,9 @@ import { fetchActiveRegionCodes } from "../supportApi";
 import { toUserError, type UserError } from "../../../components/error/userError";
 import { fetchOrNetworkError } from "../../../lib/http";
 import { SupportErrorText } from "./SupportErrorText";
+// 코스 탐색·자전거 대여소와 같은 축약을 쓴다.
+// 같은 시도가 화면마다 다른 이름으로 불리지 않게 공용 표를 따른다.
+import { SIDO_ABBR } from "../../../lib/regionLabels";
 
 // viewBox는 고정하지 않고 그리는 대상의 비율에 맞춰 뷰마다 계산한다.
 // 고정하면 가로로 긴 도(강원 등)에서 위아래에 큰 죽은 여백이 생긴다.
@@ -91,10 +94,13 @@ const SIDO_COLOR: Record<string, string> = {
 // 배지의 화면상 글자 크기(CSS px). viewBox가 축소돼도 이 크기를 유지한다.
 const BADGE_FONT_PX = 12;
 // 충돌 간격 박스 높이 (글자 크기 배수 — 폰트만 바꾸면 같이 따라온다).
-// 전국뷰는 대구처럼 다른 도 안에 들어앉은 시가 모도(경북) 라벨과 붙지 않도록 넉넉히 잡는다.
-// 시도뷰는 라벨이 20개 넘게 들어와서 같은 값을 쓰면 세로로 3~4줄밖에 못 들어가 겹친다.
 // 알약 높이가 약 1.5em이므로 2.4em이면 서로 닿지 않으면서 촘촘히 앉을 수 있다.
-const BADGE_H_EM_NATION = 5.5;
+// 시도뷰는 라벨이 20개 넘게 들어와서 그 값을 쓴다 — 더 크면 세로로 3~4줄밖에 못 들어가 겹친다.
+// 전국뷰는 대구처럼 다른 도 안에 들어앉은 시가 모도(경북) 라벨과 붙지 않도록 조금 더 띄운다.
+// 예전에는 5.5em이었는데, 지원 대상이 없는 시도까지 16곳 모두 이름을 달자 이 간격이 수도권·
+// 충청권 배지를 옆 시도 땅으로 밀어냈다(지도 폭 327px인 375 화면에서 8곳). 3em에서 2곳
+// (서울·세종 — 도형 자체가 배지보다 작다)으로 줄고 겹침은 없다.
+const BADGE_H_EM_NATION = 3;
 const BADGE_H_EM_SIDO = 2.4;
 // 배지 폭은 이름 길이로 각자 계산한다. 전부 같은 폭으로 잡으면 '고성군' 같은 짧은 이름이
 // '전남광주통합특별시' 기준으로 밀려나 필요 이상으로 흩어진다.
@@ -104,16 +110,23 @@ const badgeWidthEm = (name: string, active: boolean) => name.length + (active ? 
 /**
  * 누르면 할 일.
  *   sido    그 도로 드릴다운한다 (전국뷰)
- *   region  지역 패널을 연다 (시도뷰의 시군구, 그리고 하위가 하나뿐인 세종)
+ *   region  지역 패널을 연다 (시도뷰의 시군구, 그리고 하위가 하나뿐인 세종).
+ *           sido가 있으면 지도도 그 도로 함께 들어간다 — 전국뷰에서 바로 패널을 여는 세종용.
  * null이면 누를 수 없다 — 대응하는 DB 지역이 없어 패널을 열 수 없는 도형뿐이다.
  */
-type MapGo = { kind: "sido"; code: string } | { kind: "region"; code: string } | null;
+type MapGo =
+  | { kind: "sido"; code: string }
+  | { kind: "region"; code: string; sido?: string }
+  | null;
 
 /** 지도에 그릴 한 조각. 전국뷰는 시도, 시도뷰는 시군구가 들어온다. */
 type MapItem = {
   key: string;
   geometry: Geometry;
+  /** 배지에 적는 이름. 전국뷰는 시도명을 줄여 쓴다('서울특별시' → '서울') */
   name: string;
+  /** 줄이기 전 이름. 보조기기에는 이 이름까지 읽어 준다. 줄이지 않았으면 name과 같다 */
+  fullName: string;
   /** 색칠 여부 — 지금 신청 가능한 제도가 있는가 */
   active: boolean;
   /**
@@ -343,13 +356,17 @@ export function SupportRegionMap() {
     if (selectedSido == null) {
       return (sido?.features ?? []).map((f) => {
         const code = String(f.properties?.sido_code);
+        const fullName = String(f.properties?.sido_name);
         const sub = subRegionsBySido.get(code) ?? [];
-        // 하위 도형이 하나뿐인 시도(세종)는 드릴다운해도 같은 땅이 한 번 더 나온다.
-        // 그 한 단계를 건너뛰고 바로 패널을 연다.
+        // 하위 도형이 하나뿐인 시도(세종)는 드릴다운만 하면 같은 땅 하나를 한 번 더 눌러야
+        // 한다. 한 번에 그 도로 들어가면서 패널까지 연다. 패널만 열고 지도를 전국뷰에 두면
+        // 머리말은 '지역을 선택하세요'인데 패널은 세종이고, 거기서 다른 시도를 누르면
+        // 지도와 패널이 서로 다른 지역을 가리킨다. 도로 들어가 두면 다른 곳으로 가는 길은
+        // URL을 비우는 '← 전국으로'뿐이라 둘이 어긋날 수 없다.
         const go: MapGo =
           sub.length === 1
             ? sub[0] != null
-              ? { kind: "region", code: sub[0] }
+              ? { kind: "region", code: sub[0], sido: code }
               : null
             : sub.length > 1
               ? { kind: "sido", code }
@@ -357,7 +374,10 @@ export function SupportRegionMap() {
         return {
           key: code,
           geometry: f.geometry,
-          name: String(f.properties?.sido_name),
+          // 16곳 모두 이름을 달면 좁은 화면에서 충돌 해소가 수도권·충청권 배지를 옆 시도
+          // 땅으로 밀어낸다(375px에서 8곳). 전국뷰에는 시도만 나오므로 줄여도 뜻이 흐려지지 않는다.
+          name: SIDO_ABBR[fullName] ?? fullName,
+          fullName,
           active: activeSidoCodes.has(code),
           go,
         };
@@ -369,6 +389,7 @@ export function SupportRegionMap() {
         key: `${selectedSido}-${r.feature.properties?.sgg_code ?? r.name}`,
         geometry: r.feature.geometry,
         name: r.name,
+        fullName: r.name,
         active: r.regionCode != null && supportCodes.has(r.regionCode),
         go: r.regionCode != null ? ({ kind: "region", code: r.regionCode } as const) : null,
       }));
@@ -440,7 +461,7 @@ export function SupportRegionMap() {
         sx += x; sy += y; n++;
       });
       return {
-        key: it.key, name: it.name, active: it.active, go: it.go,
+        key: it.key, name: it.name, fullName: it.fullName, active: it.active, go: it.go,
         cx: sx / n, cy: sy / n,
       };
     });
@@ -494,9 +515,18 @@ export function SupportRegionMap() {
   // 조각을 눌렀을 때와 배지를 눌렀을 때가 갈리면 같은 지역이 두 가지로 움직인다.
   const goTo = (go: MapGo) => {
     if (!go) return;
-    if (go.kind === "sido") setSelectedSido(go.code);
-    else setSearchParams({ region: go.code });
+    if (go.kind === "sido") return setSelectedSido(go.code);
+    if (go.sido) setSelectedSido(go.sido);
+    setSearchParams({ region: go.code });
   };
+
+  /**
+   * 배지를 읽어 줄 이름. 줄인 이름이면 원래 이름을 들려준다.
+   * 다만 화면 글자로 시작하게 둔다 — 음성으로 조작하는 사람은 보이는 글자('경남')로
+   * 부르는데, 이름표가 '경상남도'뿐이면 그 말로는 이 버튼을 찾지 못한다.
+   */
+  const spokenName = (b: { name: string; fullName: string }) =>
+    b.fullName.startsWith(b.name) ? b.fullName : `${b.name}, ${b.fullName}`;
 
   /**
    * 회색 배지가 왜 회색인지. 알약(활성)은 이름만으로 뜻이 통하므로 null이다.
@@ -660,7 +690,13 @@ export function SupportRegionMap() {
                 <button
                   type="button"
                   disabled={b.go == null}
-                  aria-label={note ? `${b.name} (${note})` : undefined}
+                  aria-label={
+                    note
+                      ? `${spokenName(b)} (${note})`
+                      : b.fullName !== b.name
+                        ? spokenName(b)
+                        : undefined
+                  }
                   onClick={() => goTo(b.go)}
                   onMouseEnter={() => b.go != null && setHovered(b.key)}
                   onMouseLeave={() => setHovered(null)}
