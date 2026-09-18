@@ -3,16 +3,25 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { useState } from "react";
+import SidebarDrawer from "./components/layout/SidebarDrawer";
 
 // 이 테스트는 App의 라우트 선택만 확인한다. 각 화면의 동작은 해당 기능 테스트가 맡는다.
-vi.mock("./features/home", () => ({ Home: () => <h1>홈 화면</h1> }));
+vi.mock("./features/home", () => ({ Home: () => {
+  const [isOpen, setIsOpen] = useState(false);
+  return <div>
+    <button onClick={() => setIsOpen(true)}>메뉴 열기</button>
+    <h1>홈 화면</h1>
+    <SidebarDrawer isOpen={isOpen} onClose={() => setIsOpen(false)} />
+  </div>;
+} }));
 vi.mock("./features/map", () => ({
   CourseExplore: () => <h1>코스 탐색 화면</h1>,
   CourseDetail: () => <h1>코스 상세 화면</h1>,
 }));
-vi.mock("./features/support", () => ({ Support: () => <h1>방문 혜택 화면</h1> }));
+vi.mock("./features/support", () => ({ Support: () => <main>방문 혜택 화면</main> }));
 vi.mock("./features/race", () => ({ Race: () => <h1>대회 행사 화면</h1> }));
-vi.mock("./features/bicycle", () => ({ BicycleExplore: () => <h1>자전거 대여 화면</h1> }));
+vi.mock("./features/bicycle", () => ({ BicycleExplore: () => <div>자전거 대여 화면</div> }));
 vi.mock("./features/help", () => ({
   HelpPage: () => <h1>고객지원 화면</h1>,
   NoticeList: () => <h1>공지사항 화면</h1>,
@@ -34,6 +43,47 @@ function renderAt(path: string) {
 }
 
 afterEach(cleanup);
+
+it("사이드바 링크로 이동하면 새 페이지 제목에 포커스를 둔다", () => {
+  const root = document.createElement("div");
+  root.id = "root";
+  document.body.append(root);
+  try {
+    render(<MemoryRouter><App /></MemoryRouter>, { container: root });
+    const opener = screen.getByRole("button", { name: "메뉴 열기" });
+    opener.focus();
+    fireEvent.click(opener);
+    expect(root.hasAttribute("inert")).toBe(true);
+    fireEvent.click(screen.getByRole("link", { name: /COURSE/ }));
+    const heading = screen.getByRole("heading", { name: "코스 탐색 화면" });
+    expect(document.activeElement).toBe(heading);
+    expect(heading.getAttribute("tabindex")).toBe("-1");
+    expect(root.hasAttribute("inert")).toBe(false);
+    expect(opener.isConnected).toBe(false);
+  } finally {
+    cleanup();
+    root.remove();
+  }
+});
+
+it("사이드바 닫기 버튼은 메뉴 버튼으로 포커스를 복귀한다", () => {
+  renderAt("/");
+  const opener = screen.getByRole("button", { name: "메뉴 열기" });
+  opener.focus();
+  fireEvent.click(opener);
+  fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+  expect(document.activeElement).toBe(opener);
+});
+
+it.each([
+  [/SUPPORT/, "방문 혜택 화면"],
+  [/RENTAL/, "자전거 대여 화면"],
+] as const)("제목이 없으면 본문 또는 페이지 컨테이너에 포커스를 둔다 (%s)", (link, text) => {
+  renderAt("/");
+  fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
+  fireEvent.click(screen.getByRole("link", { name: link }));
+  expect(document.activeElement).toBe(screen.getByText(text));
+});
 
 describe("App Not Found 라우트", () => {
   it.each(["/unknown", "/courses/1/unknown"])(
