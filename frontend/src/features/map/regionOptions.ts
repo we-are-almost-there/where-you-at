@@ -1,8 +1,6 @@
 import type { Region } from "./types";
 import { SIDO_ABBR } from "../../lib/regionLabels";
 
-export { SIDO_ABBR } from "../../lib/regionLabels";
-
 // 지역 필터 드롭다운 항목: flat 단일 옵션(광역시) 또는 optgroup(도)
 export interface RegionFlat {
   value: string;

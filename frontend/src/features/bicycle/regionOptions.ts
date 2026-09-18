@@ -5,7 +5,7 @@ import type { BicycleSubregionOption } from "./bicycleApi";
 
 const sidoCode = (regionCode: string) => regionCode.slice(0, 2);
 
-// SIDO_ABBR는 공용 지역명 표를 그대로 재사용한다(17개 항목 중복 정의 방지).
+// SIDO_ABBR는 공용 지역명 표를 그대로 재사용한다(18개 항목 중복 정의 방지).
 const abbrevSido = (sido: string) => SIDO_ABBR[sido] ?? sido;
 
 /**
