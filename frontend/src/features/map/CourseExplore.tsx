@@ -11,6 +11,9 @@ import { DifficultyFilter } from "./components/DifficultyFilter";
 import { CourseGroupPicker } from "./components/CourseGroupPicker";
 import { CourseList } from "./components/CourseList";
 import { CourseTabs } from "./components/CourseTabs";
+import { courseTabPanelProps } from "./components/courseTabItems";
+import { StatusMessage } from "../../components/common/a11y";
+import { smoothScrollBehavior } from "../../lib/motion";
 import { Pagination } from "./components/Pagination";
 import { ErrorNotice } from "../../components/error/ErrorNotice";
 import { toUserError, type UserError } from "../../components/error/userError";
@@ -21,6 +24,8 @@ import { buildRegionOptions, type RegionSelectItem } from "./regionOptions";
 import type { Course, CourseFilterState, CourseListResponse, LatLng, RouteType } from "./types";
 import { buildCourseSearchParams, parseCourseUrlState, type CourseUrlState } from "./courseUrlState";
 import AppHeader from "../../components/layout/AppHeader";
+import { MAIN_CONTENT_ID } from "../../components/layout/mainContent";
+import { useDocumentTitle } from "../../lib/useDocumentTitle";
 
 const EMPTY_RES: CourseListResponse = {
   total_count: 0,
@@ -39,6 +44,7 @@ function courseStart(course: Course, routeType: RouteType): LatLng | null {
 }
 
 export function CourseExplore() {
+  useDocumentTitle("코스 탐색");
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { routeType, filters, page } = useMemo(() => parseCourseUrlState(searchParams), [searchParams]);
@@ -241,7 +247,7 @@ export function CourseExplore() {
     const view = scroller.getBoundingClientRect();
     const box = card.getBoundingClientRect();
     if (box.top >= view.top && box.bottom <= view.bottom) return;
-    card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    card.scrollIntoView({ block: "nearest", behavior: smoothScrollBehavior() });
   };
 
   // 지도 → 목록 방향 매칭. 마커는 시작점이 포개진 코스를 한꺼번에(지도가 묶어서 넘겨준다),
@@ -314,7 +320,7 @@ export function CourseExplore() {
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-white">
       <AppHeader />
 
-      <main ref={layoutRef} className="relative flex min-h-0 flex-1">
+      <main ref={layoutRef} id={MAIN_CONTENT_ID} tabIndex={-1} className="relative flex min-h-0 flex-1 outline-none">
         {/* 지도: md+ 전용, 상단바 아래 영역을 채우는 배경 */}
         <aside className="hidden md:absolute md:inset-0 md:block">
           <KakaoMap
@@ -356,7 +362,7 @@ export function CourseExplore() {
           </div>
 
           {/* 필터 + 카드 목록 (상단 고정 아래 영역 내부 스크롤) */}
-          <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4 md:min-w-0">
+          <div ref={listScrollRef} {...courseTabPanelProps(routeType)} className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4 md:min-w-0">
             <CourseKeywordSearch value={filters} onChange={changeFilters} />
             <div className="mt-2.5 md:hidden">
               <CourseMobileFilters
@@ -367,7 +373,14 @@ export function CourseExplore() {
             </div>
             {/* 코스 수 + 데스크톱 정렬 / 모바일 난이도 */}
             <div className="mt-3 mb-3 flex items-center justify-between gap-3">
+              {/* 보이는 개수는 새 결과가 오기 전까지 이전 값이라, 화면낭독기에는 응답이 끝난 뒤의 값만 알린다.
+                검색어는 입력이 멈춘 뒤(250ms)에야 요청되므로 글자마다 읽지 않는다. */}
               <p className="text-[13px] text-caption">총 {res.total_count}개 코스</p>
+              <StatusMessage
+                message={
+                  error ? "" : loading || pageMismatch ? "코스를 불러오는 중" : `총 ${res.total_count}개 코스`
+                }
+              />
               <div className="hidden md:block">
                 <CourseSortFilter value={filters} onChange={changeFilters} />
               </div>

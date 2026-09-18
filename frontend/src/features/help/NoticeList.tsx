@@ -48,7 +48,7 @@ export default function NoticeList() {
 
   const renderBody = () => {
     if (!current) {
-      return <p className="py-16 text-center text-[14px] text-caption">공지사항을 불러오는 중…</p>;
+      return <p role="status" className="py-16 text-center text-[14px] text-caption">공지사항을 불러오는 중…</p>;
     }
     if (current.error || !current.data) {
       const error = current.error ?? toUserError(null, "공지사항을 불러오지 못했어요");
@@ -66,13 +66,13 @@ export default function NoticeList() {
       // 공지는 있는데 이 페이지가 비었다면 주소의 page가 범위를 벗어난 경우다.
       return total > 0 ? (
         <div className="py-16 text-center">
-          <p className="text-[14px] text-caption">이 페이지에는 공지사항이 없어요.</p>
+          <p role="status" className="text-[14px] text-caption">이 페이지에는 공지사항이 없어요.</p>
           <Link to="/notices" className="mt-3 inline-block text-[14px] text-accent underline underline-offset-4">
             첫 페이지로
           </Link>
         </div>
       ) : (
-        <p className="py-16 text-center text-[14px] text-caption">등록된 공지사항이 없어요.</p>
+        <p role="status" className="py-16 text-center text-[14px] text-caption">등록된 공지사항이 없어요.</p>
       );
     }
 

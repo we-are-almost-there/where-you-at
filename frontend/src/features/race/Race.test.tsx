@@ -18,12 +18,18 @@ vi.mock("./components/RaceList", () => ({ default: ({ races, selectedRaceId, onS
   <button key={race.event_id} id={`race-trigger-${race.event_id}`} onClick={() => onSelectRace(race)}>{race.race_title}</button>
 )}</div> }));
 vi.mock("./components/RaceCalendar", () => ({ default: ({ races, selectedRaceId, onSelectRace }: {
-  races: RaceType[]; selectedRaceId: number | null; onSelectRace: (race: RaceType) => void;
+  races: RaceType[]; selectedRaceId: number | null;
+  // 두 번째 인자: "+N개"로 펼친 목록에서 고른 경우의 초점 복귀 대상
+  onSelectRace: (race: RaceType, returnTarget?: HTMLElement | null) => void;
 }) => <div><output data-testid="selected">{selectedRaceId ?? "none"}</output>{races.map((race) =>
   <button key={race.event_id} onClick={() => onSelectRace(race)}>{race.race_title}</button>
-)}</div> }));
-vi.mock("./components/RaceDetailSheet", () => ({ default: ({ onClose }: { onClose: () => void }) =>
-  <button onClick={onClose}>상세 닫기</button>
+)}<button id="calendar-more">+N개</button>
+<button onClick={() => onSelectRace(races[0], document.getElementById("calendar-more"))}>펼친 목록의 첫 대회</button>
+</div> }));
+vi.mock("./components/RaceDetailSheet", () => ({ default: ({ onClose, getReturnTarget }: {
+  onClose: () => void; getReturnTarget?: () => HTMLElement | null | undefined;
+}) => <><button onClick={onClose}>상세 닫기</button>
+  <output data-testid="return-target">{getReturnTarget?.()?.id || getReturnTarget?.()?.textContent}</output></>
 }));
 
 const scroll = vi.fn();
@@ -212,6 +218,31 @@ it.each(["999", "invalid"])("잘못된 eventId %s 안내를 닫으면 URL에서�
   fireEvent.click(screen.getByRole("button", { name: "안내 닫기" }));
   expect(screen.queryByText(/선택한 대회를 찾을 수 없어요/)).toBeNull();
   await waitFor(() => expectSearchParams({ keep: "yes" }));
+});
+
+it("모바일 캘린더의 펼친 목록에서 연 상세는 닫힌 뒤 '+N개' 버튼으로 초점을 돌려준다", async () => {
+  await open("/race?keep=yes");
+  resizeToMobile();
+  fireEvent.click(screen.getByRole("button", { name: "캘린더" }));
+
+  // 펼친 목록의 버튼은 선택과 동시에 사라지므로, 누른 버튼이 아니라 넘겨받은 대상을 쓴다.
+  const picked = screen.getByRole("button", { name: "펼친 목록의 첫 대회" });
+  picked.focus();
+  fireEvent.click(picked);
+
+  await waitFor(() => expect(screen.getByTestId("return-target").textContent).toBe("calendar-more"));
+});
+
+it("모바일 캘린더에서 칸의 대회를 바로 누르면 그 버튼으로 초점을 돌려준다", async () => {
+  await open("/race?keep=yes");
+  resizeToMobile();
+  fireEvent.click(screen.getByRole("button", { name: "캘린더" }));
+
+  const button = screen.getByRole("button", { name: "대회 B" });
+  button.focus();
+  fireEvent.click(button);
+
+  await waitFor(() => expect(screen.getByTestId("return-target").textContent).toBe("대회 B"));
 });
 
 it("모바일 캘린더에서 필터에 안 걸리는 대회를 선택한 뒤 데스크톱으로 전환해도 상세가 보인다", async () => {

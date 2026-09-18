@@ -18,14 +18,18 @@ export function ErrorNotice({ title, description, onRetry, onBack }: Props) {
         className="size-10 text-caption"
         aria-hidden="true"
       />
-      {/* 제목: 굵고 짙은 색 */}
-      <h2 className="mt-5 text-[17px] font-bold text-ink">{title}</h2>
-      {/* 설명: 얇고 연한 회색 */}
-      {description && (
-        <p className="mt-2.5 max-w-[300px] whitespace-pre-line text-[14px] leading-relaxed text-caption">
-          {description}
-        </p>
-      )}
+      {/* 조회 실패는 목록 자리에 뒤늦게 나타나므로 화면낭독기에 바로 알린다(role="alert").
+        버튼까지 읽히지 않게 제목·설명만 감싼다. */}
+      <div role="alert" className="flex flex-col items-center">
+        {/* 제목: 굵고 짙은 색 */}
+        <h2 className="mt-5 text-[17px] font-bold text-ink">{title}</h2>
+        {/* 설명: 얇고 연한 회색 */}
+        {description && (
+          <p className="mt-2.5 max-w-[300px] whitespace-pre-line text-[14px] leading-relaxed text-caption">
+            {description}
+          </p>
+        )}
+      </div>
       {/* 버튼: 세로 스택 · 넓은 터치 영역(h-12, 폭 확장) */}
       {(onRetry || onBack) && (
         <div className="mt-8 flex w-full max-w-[320px] flex-col gap-2.5">

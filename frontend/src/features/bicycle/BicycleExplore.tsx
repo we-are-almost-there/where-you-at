@@ -3,6 +3,8 @@ import { RotateCw } from "lucide-react";
 import { useSearchParams } from "react-router";
 import { BicycleList } from "./components/BicycleList";
 import { BicycleTabs, type DataSourceTab } from "./components/BicycleTabs";
+import { bicycleTabPanelProps } from "./components/bicycleTabItems";
+import { StatusMessage } from "../../components/common/a11y";
 import { Pagination } from "../map/components/Pagination";
 import { ErrorNotice } from "../../components/error/ErrorNotice";
 import { toUserError, type UserError } from "../../components/error/userError";
@@ -16,6 +18,8 @@ import {
 } from "./bicycleApi";
 import type { BicycleFacility, BicycleFacilityListResponse } from "./types";
 import AppHeader from "../../components/layout/AppHeader";
+import { MAIN_CONTENT_ID } from "../../components/layout/mainContent";
+import { useDocumentTitle } from "../../lib/useDocumentTitle";
 import Footer from "../../components/layout/Footer";
 import { BicycleRegionSelect } from "./components/BicycleRegionSelect";
 import { buildBicycleRegionOptions, buildBicycleSubregionOptions } from "./regionOptions";
@@ -59,7 +63,7 @@ const FEE_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "유료", label: "유료" },
 ];
 
-const SELECT_CLASS = "rounded-lg border border-divider bg-white px-3 py-2 text-[14px] font-medium text-ink";
+const SELECT_CLASS = "rounded-lg border border-input-border bg-white px-3 py-2 text-[14px] font-medium text-ink";
 
 const TAB_TO_DATA_SOURCE: Record<DataSourceTab, string> = {
   "운영 정보": "standard",
@@ -71,6 +75,7 @@ const DATA_SOURCE_TO_TAB: Record<string, DataSourceTab> = {
 };
 
 export function BicycleExplore() {
+  useDocumentTitle("자전거 대여소");
   // 필터·탭에 따라 스크롤바가 나타나거나 사라져도 본문 너비를 유지한다.
   // AppHeader의 보정은 헤더 내부에만 적용되므로 본문 정렬을 위해 opt-in을 유지한다.
   useEffect(() => {
@@ -409,130 +414,141 @@ export function BicycleExplore() {
   return (
     <>
       <AppHeader />
-      <div className="px-[max(1rem,calc((100%-72rem)/2+1rem))] pt-4 pb-4">
+      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="px-[max(1rem,calc((100%-72rem)/2+1rem))] pt-4 pb-4 outline-none">
         <h1 className="mb-3 text-xl font-bold text-ink">자전거 대여소</h1>
 
         <div className="mb-3">
           <BicycleTabs value={activeTab} onChange={changeTab} />
         </div>
 
-        <div className="grid grid-cols-2 items-start gap-2 min-[632px]:flex min-[632px]:flex-wrap">
-          <BicycleRegionSelect
-            value={region}
-            onChange={changeRegion}
-            regions={regionOptions}
-            className={`${SELECT_CLASS} w-full min-[632px]:w-[140px]`}
-          />
-
-          <div className="relative w-full min-[632px]:w-[140px]">
+        {/* 탭이 바꾸는 영역(필터·목록·페이지)을 탭 패널로 묶는다 */}
+        <div {...bicycleTabPanelProps(activeTab)}>
+          <div className="grid grid-cols-2 items-start gap-2 min-[632px]:flex min-[632px]:flex-wrap">
             <BicycleRegionSelect
-              value={effectiveSubregionCode}
-              onChange={changeSubregion}
-              regions={subregionOptions}
-              placeholder={
-                !region
-                  ? "지역을 먼저 선택"
-                  : subregionsErrorForCurrent
-                    ? "불러오기 실패"
-                    : !effectiveSubregionsReady
-                      ? "불러오는 중"
-                      : subregionOptions.length === 0
-                        ? "세부 지역 없음"
-                        : "전체 세부 지역"
-              }
-              disabled={
-                !region ||
-                subregionsErrorForCurrent ||
-                !effectiveSubregionsReady ||
-                subregionOptions.length === 0
-              }
-              className={`${SELECT_CLASS} w-full disabled:cursor-not-allowed disabled:opacity-50 ${subregionsErrorForCurrent && !error ? "appearance-none pr-9" : ""}`}
+              value={region}
+              onChange={changeRegion}
+              label="시·도"
+              regions={regionOptions}
+              className={`${SELECT_CLASS} w-full min-[632px]:w-[140px]`}
             />
-            {/* 현재 지역/탭의 세부 지역만 실패하고 목록 오류가 없을 때 아이콘을 표시한다.
-                세부 지역 오류가 먼저 도착하면 아이콘이 보일 수 있으나, 목록 오류도
-                도착하면 숨기고 ErrorNotice의 재시도만 표시한다. 목록 재시도 후 늦게
-                세부 지역 실패가 확인된 경우에도 같은 조건을 적용한다.
-                두 재시도 UI는 동시에 표시하지 않으며, 함께 재요청할지는 retry()의
-                클릭 시점 상태로 결정한다. 목록과 세부 지역이 동시에 실패했을 때 두 버튼을 같이 보여주면,
-                아이콘을 먼저 눌러도 목록 오류는 그대로 남아 ErrorNotice 버튼을 한 번 더 눌러야 한다.
-                그 번거로움을 없애려고 아이콘은 숨기고 ErrorNotice 버튼 하나만 남긴다.*/}
-            {region && subregionsErrorForCurrent && !error && (
-              <button
-                type="button"
-                onClick={retrySubregions}
-                aria-label="세부 지역 다시 불러오기"
-                title="세부 지역 다시 불러오기"
-                className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-caption hover:bg-gray-100 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
-              >
-                <RotateCw size={16} aria-hidden="true" />
-              </button>
+
+            <div className="relative w-full min-[632px]:w-[140px]">
+              <BicycleRegionSelect
+                value={effectiveSubregionCode}
+                onChange={changeSubregion}
+                label="시·군·구"
+                regions={subregionOptions}
+                placeholder={
+                  !region
+                    ? "지역을 먼저 선택"
+                    : subregionsErrorForCurrent
+                      ? "불러오기 실패"
+                      : !effectiveSubregionsReady
+                        ? "불러오는 중"
+                        : subregionOptions.length === 0
+                          ? "세부 지역 없음"
+                          : "전체 세부 지역"
+                }
+                disabled={
+                  !region ||
+                  subregionsErrorForCurrent ||
+                  !effectiveSubregionsReady ||
+                  subregionOptions.length === 0
+                }
+                className={`${SELECT_CLASS} w-full disabled:cursor-not-allowed disabled:opacity-50 ${subregionsErrorForCurrent && !error ? "appearance-none pr-9" : ""}`}
+              />
+              {/* 현재 지역/탭의 세부 지역만 실패하고 목록 오류가 없을 때 아이콘을 표시한다.
+                  세부 지역 오류가 먼저 도착하면 아이콘이 보일 수 있으나, 목록 오류도
+                  도착하면 숨기고 ErrorNotice의 재시도만 표시한다. 목록 재시도 후 늦게
+                  세부 지역 실패가 확인된 경우에도 같은 조건을 적용한다.
+                  두 재시도 UI는 동시에 표시하지 않으며, 함께 재요청할지는 retry()의
+                  클릭 시점 상태로 결정한다. 목록과 세부 지역이 동시에 실패했을 때 두 버튼을 같이 보여주면,
+                  아이콘을 먼저 눌러도 목록 오류는 그대로 남아 ErrorNotice 버튼을 한 번 더 눌러야 한다.
+                  그 번거로움을 없애려고 아이콘은 숨기고 ErrorNotice 버튼 하나만 남긴다.*/}
+              {region && subregionsErrorForCurrent && !error && (
+                <button
+                  type="button"
+                  onClick={retrySubregions}
+                  aria-label="세부 지역 다시 불러오기"
+                  title="세부 지역 다시 불러오기"
+                  className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-caption hover:bg-gray-100 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
+                >
+                  <RotateCw size={16} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+
+            {dataSource === "standard" && (
+              <>
+                <select
+                  value={facilityType}
+                  onChange={(e) => changeFacilityType(e.target.value)}
+                  aria-label="시설 유형"
+                  className={`${SELECT_CLASS} w-full min-[632px]:w-[140px]`}
+                >
+                  <option value="">전체 유형</option>
+                  {FACILITY_TYPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={feeType}
+                  onChange={(e) => changeFeeType(e.target.value)}
+                  aria-label="요금"
+                  className={`${SELECT_CLASS} w-full min-[632px]:w-[140px]`}
+                >
+                  <option value="">전체 요금</option>
+                  {FEE_TYPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </>
             )}
           </div>
 
-          {dataSource === "standard" && (
-            <>
-              <select
-                value={facilityType}
-                onChange={(e) => changeFacilityType(e.target.value)}
-                className={`${SELECT_CLASS} w-full min-[632px]:w-[140px]`}
-              >
-                <option value="">전체 유형</option>
-                {FACILITY_TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+          <p className="mt-3 mb-3 text-[13px] text-caption">
+            총 {res.total_count}개 시설
+            {fetched.mode === "all" && userLoc && " · 가까운 순"}
+          </p>
+          {/* 재조회 중에는 이전 목록·개수를 그대로 보여 주므로, 화면낭독기에는 응답이 끝난 뒤의 개수만 알린다 */}
+          <StatusMessage
+            message={error ? "" : loading || pageMismatch ? "대여소를 불러오는 중" : `총 ${res.total_count}개 시설`}
+          />
 
-              <select
-                value={feeType}
-                onChange={(e) => changeFeeType(e.target.value)}
-                className={`${SELECT_CLASS} w-full min-[632px]:w-[140px]`}
-              >
-                <option value="">전체 요금</option>
-                {FEE_TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </>
+          {error ? (
+            <ErrorNotice title={error.title} description={error.description} onRetry={retry} />
+          ) : (loading && res.facilities.length === 0) || pageMismatch ? (
+            // 데이터가 아예 없을 때(최초 진입 등)와 받아 둔 목록이 지금 페이지가 아닐 때만 로딩 문구를 보여준다.
+            // 필터·탭이 바뀌어 재조회되는 중에는 이전 목록을 그대로 유지해
+            // "불러오는 중..."으로 화면이 깜빡이며 지워지는 것을 막는다.
+            // 다만 2페이지 이상에서 바꿔 1페이지로 돌아가면 받아 둔 목록이 1페이지가 아니라서 로딩으로 둔다.
+            <p className="py-10 text-center text-sm text-muted">불러오는 중...</p>
+          ) : (
+            <BicycleList facilities={res.facilities} variant={dataSource as "standard" | "realtime"} />
+          )}
+
+          {!error && res.facilities.length > 0 && (
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              onChange={(nextPage) => {
+                refreshIfStale();
+                const params: Record<string, string> = { page: String(nextPage), source: dataSource };
+                if (region) params.region = region;
+                if (subregionCode) params.gu = subregionCode;
+                if (facilityType) params.type = facilityType;
+                if (feeType) params.fee = feeType;
+                setSearchParams(params);
+              }}
+            />
           )}
         </div>
-
-        <p className="mt-3 mb-3 text-[13px] text-caption">
-          총 {res.total_count}개 시설
-          {fetched.mode === "all" && userLoc && " · 가까운 순"}
-        </p>
-
-        {error ? (
-          <ErrorNotice title={error.title} description={error.description} onRetry={retry} />
-        ) : (loading && res.facilities.length === 0) || pageMismatch ? (
-          // 데이터가 아예 없을 때(최초 진입 등)와 받아 둔 목록이 지금 페이지가 아닐 때만 로딩 문구를 보여준다.
-          // 필터·탭이 바뀌어 재조회되는 중에는 이전 목록을 그대로 유지해
-          // "불러오는 중..."으로 화면이 깜빡이며 지워지는 것을 막는다.
-          // 다만 2페이지 이상에서 바꿔 1페이지로 돌아가면 받아 둔 목록이 1페이지가 아니라서 로딩으로 둔다.
-          <p className="py-10 text-center text-sm text-muted">불러오는 중...</p>
-        ) : (
-          <BicycleList facilities={res.facilities} variant={dataSource as "standard" | "realtime"} />
-        )}
-
-        {!error && res.facilities.length > 0 && (
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            onChange={(nextPage) => {
-              refreshIfStale();
-              const params: Record<string, string> = { page: String(nextPage), source: dataSource };
-              if (region) params.region = region;
-              if (subregionCode) params.gu = subregionCode;
-              if (facilityType) params.type = facilityType;
-              if (feeType) params.fee = feeType;
-              setSearchParams(params);
-            }}
-          />
-        )}
-      </div>
+      </main>
       <Footer />
     </>
   );

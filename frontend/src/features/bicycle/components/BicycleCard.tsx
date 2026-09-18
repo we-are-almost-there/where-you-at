@@ -60,13 +60,14 @@ function StandardFacilityCard({ facility }: CardProps) {
     <div className={`${cardBase} pt-2 pr-4 pb-4 pl-4`}>
       <div className="flex h-[26px] items-start">
         {facility.repair_available && (
-          <span className="inline-block rounded-md bg-lavender px-2 py-0.5 text-[11px] font-semibold text-accent">
+          <span className="inline-block rounded-md bg-lavender px-2 py-0.5 text-[11px] font-semibold text-accent-strong">
             정비 가능
           </span>
         )}
       </div>
 
-      <h3 className="truncate font-bold text-ink text-[17px] @[280px]:text-[19px]">{title}</h3>
+      {/* 목록 화면에는 h1(자전거 대여소)과 카드 사이에 다른 제목이 없어 h2로 둔다. */}
+      <h2 className="truncate font-bold text-ink text-[17px] @[280px]:text-[19px]">{title}</h2>
       <p className="mt-1.5 line-clamp-2 min-h-[34px] text-[13px] text-caption">{facility.addr1}</p>
 
       <p className={`mt-2 font-bold text-[16px] ${availability.isRealtime ? "text-accent" : "text-caption"}`}>

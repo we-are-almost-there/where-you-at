@@ -35,16 +35,17 @@ vi.mock("./endpointAddress", () => ({
 vi.mock("../nearby/nearbyApi", () => ({
   getNearbySpots: async () => { throw new TypeError("Failed to fetch"); },
 }));
+const courseApi = vi.hoisted(() => ({ getCourseDetail: vi.fn() }));
 vi.mock("./coursesApi", () => ({
   getCourseGpx: vi.fn(async (): Promise<LatLng[]> => []),
-  getCourseDetail: async () => ({
-    id: 1, title: "테스트 코스", description: "", image_url: "", routes: [],
-  }),
+  getCourseDetail: (...args: unknown[]) => courseApi.getCourseDetail(...args),
 }));
+const COURSE = { id: 1, title: "테스트 코스", description: "", image_url: "", routes: [] };
 
 beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
+  courseApi.getCourseDetail.mockImplementation(async () => COURSE);
   tracking.currentLocation = null;
   vi.mocked(getCourseGpx).mockResolvedValue([]);
   vi.stubGlobal("matchMedia", () => ({
@@ -84,6 +85,35 @@ async function mount() {
   });
   return router;
 }
+
+describe("CourseDetail 페이지 제목", () => {
+  it("코스를 불러오면 코스명이 탭 제목이자 유일한 h1이다", async () => {
+    await mount();
+
+    await screen.findByRole("heading", { level: 1, name: "테스트 코스" });
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(document.title).toBe("테스트 코스 | 어디까지왔니");
+  });
+
+  it("조회에 실패해도 '코스 상세' 탭 제목과 h1을 둔다", async () => {
+    courseApi.getCourseDetail.mockImplementation(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    await mount();
+
+    await screen.findByRole("alert");
+    expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual(["코스 상세"]);
+    expect(document.title).toBe("코스 상세 | 어디까지왔니");
+  });
+
+  it("불러오는 동안에도 '코스 상세' h1과 로딩 상태 알림이 있다", async () => {
+    courseApi.getCourseDetail.mockImplementation(() => new Promise(() => {}));
+    await mount();
+
+    expect(screen.getByRole("heading", { level: 1, name: "코스 상세" })).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe("코스를 불러오는 중…");
+  });
+});
 
 describe("CourseDetail 기록이 있는 화면에서 이동", () => {
   it.each(["tracking", "paused"] as const)("%s 중 브라우저 이탈은 경고하며 세션은 유지한다", async (status) => {

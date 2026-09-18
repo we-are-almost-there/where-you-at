@@ -14,7 +14,8 @@ type Props = {
  */
 export function SupportErrorText({ error, className = "py-6" }: Props) {
   return (
-    <div className={`text-center ${className}`}>
+    // 조회 실패는 뒤늦게 나타나므로 ErrorNotice와 같이 바로 알린다.
+    <div role="alert" className={`text-center ${className}`}>
       <p className="text-[14px] font-bold text-ink">{error.title}</p>
       <p className="mt-1.5 whitespace-pre-line text-[13px] leading-relaxed text-caption">
         {error.description}

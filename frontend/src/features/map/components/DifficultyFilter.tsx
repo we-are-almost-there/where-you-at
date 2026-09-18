@@ -19,7 +19,7 @@ export function DifficultyFilter({ value, onChange }: Props) {
             type="button"
             onClick={() => onChange(active ? "" : o.value)}
             aria-pressed={active}
-            className={`cursor-pointer transition-colors ${
+            className={`-mx-1 min-h-8 cursor-pointer px-1 transition-colors ${
               active ? "font-bold text-accent" : "text-caption hover:text-ink"
             }`}
           >

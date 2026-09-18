@@ -5,12 +5,15 @@ import { SupportRegionView } from "./components/SupportRegionView";
 import { SupportDetail } from "./components/SupportDetail";
 import { SeaBackdrop } from "./components/SeaBackdrop";
 import AppHeader from "../../components/layout/AppHeader";
+import { MAIN_CONTENT_ID } from "../../components/layout/mainContent";
+import { useDocumentTitle } from "../../lib/useDocumentTitle";
 import Footer from "../../components/layout/Footer";
 
 export function Support() {
   const [searchParams] = useSearchParams();
   const region = searchParams.get("region");
   const supportId = searchParams.get("support"); // 제도 상세 ID
+  useDocumentTitle("방문 혜택");
 
   // 스크롤바 유무로 본문 폭이 흔들리지 않도록 opt-in으로 처리한다.
   // (index.css의 scrollbar-gutter-stable 참고)
@@ -36,7 +39,7 @@ export function Support() {
             Home.tsx의 BannerCarousel(banners.tsx)이 쓰는 max-w-6xl 기준을 그대로 따른 것.
             기준이 다르면 페이지를 옮길 때마다 헤더·본문 좌우 끝이 미묘하게 어긋나 보인다.
             z-10은 위의 고정 배경(-z-10) 위로 콘텐츠를 올리기 위한 것. */}
-        <div className="relative z-10 mx-auto w-full max-w-6xl px-4 py-4">
+        <main id={MAIN_CONTENT_ID} tabIndex={-1} className="relative z-10 mx-auto w-full max-w-6xl px-4 py-4 outline-none">
           {/* 모바일은 패널이 지도 아래로 쌓이므로 간격을 조금 더 준다 (md+는 좌우 배치라 그대로) */}
           <div className="flex flex-col gap-8 md:flex-row md:gap-4">
             {/* 지도 (제도 상세가 열리면 좁아짐) — 대회 탭의 목록/상세 분할과 동일한 비율 */}
@@ -69,7 +72,7 @@ export function Support() {
               </div>
             )}
           </div>
-        </div>
+        </main>
       </div>
       <Footer />
     </>

@@ -80,7 +80,9 @@ describe("CourseExplore 가까운 순", () => {
     const { container } = renderAt("/courses?sort=nearest");
 
     await waitFor(() => expect(shownIds(container)).toEqual([7, 6, 5, 4, 3, 2]));
-    expect(screen.getByText("총 7개 코스")).toBeTruthy();
+    // 보이는 개수와, 응답이 끝난 뒤 화면낭독기에 알리는 상태 문구가 함께 있다.
+    const counts = screen.getAllByText("총 7개 코스");
+    expect(counts.some((el) => el.getAttribute("role") === "status")).toBe(true);
 
     expect(getAllCourses).toHaveBeenCalledTimes(1);
     const query = vi.mocked(getAllCourses).mock.calls[0][0];

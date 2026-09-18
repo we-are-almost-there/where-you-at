@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { LoaderCircle } from "lucide-react";
 import AppHeader from "../../components/layout/AppHeader";
+import { MAIN_CONTENT_ID } from "../../components/layout/mainContent";
+import { useDocumentTitle } from "../../lib/useDocumentTitle";
 import { ErrorNotice } from "../../components/error/ErrorNotice";
 import { toUserError, type UserError } from "../../components/error/userError";
 import { HttpError } from "../../lib/http";
@@ -27,6 +29,7 @@ export default function KakaoCallback() {
   const [attempt] = useState(readLoginAttempt);
   const [error, setError] = useState<UserError | null>(null);
   const startedRef = useRef(false);
+  useDocumentTitle("카카오 로그인");
 
   const code = params.get("code");
   // 동의 화면에서 취소하면 code 대신 error=access_denied가 온다.
@@ -66,7 +69,13 @@ export default function KakaoCallback() {
     <div className="flex min-h-dvh flex-col bg-white">
       <AppHeader />
 
-      <main className="flex flex-1 flex-col items-center justify-center px-4 py-12">
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="flex flex-1 flex-col items-center justify-center px-4 py-12 outline-none"
+      >
+        {/* 화면에 큰 제목이 없어 화면낭독기용 페이지 제목만 둔다 */}
+        <h1 className="sr-only">카카오 로그인</h1>
         {shownError ? (
           <ErrorNotice
             title={shownError.title}
@@ -75,7 +84,7 @@ export default function KakaoCallback() {
           />
         ) : (
           <div role="status" className="flex flex-col items-center text-center">
-            <LoaderCircle className="size-8 animate-spin text-accent" aria-hidden="true" />
+            <LoaderCircle className="size-8 animate-spin text-accent motion-reduce:animate-none" aria-hidden="true" />
             <p className="mt-4 text-[17px] font-bold text-ink">로그인하는 중이에요</p>
             {/* 서버가 잠들어 있으면 첫 요청이 오래 걸릴 수 있어 기다려 달라고 안내한다. */}
             <p className="mt-2 text-[14px] text-muted">잠시만 기다려 주세요.</p>

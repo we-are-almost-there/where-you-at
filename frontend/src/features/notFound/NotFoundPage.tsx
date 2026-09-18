@@ -1,13 +1,16 @@
 import { MapPinOff } from "lucide-react";
 import { Link } from "react-router";
 import AppHeader from "../../components/layout/AppHeader";
+import { MAIN_CONTENT_ID } from "../../components/layout/mainContent";
+import { useDocumentTitle } from "../../lib/useDocumentTitle";
 
 export default function NotFoundPage() {
+  useDocumentTitle("페이지를 찾을 수 없음");
   return (
     <div className="flex min-h-dvh flex-col bg-white">
       <AppHeader />
 
-      <main className="flex flex-1 flex-col items-center justify-center px-4 py-12 text-center">
+      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-1 flex-col outline-none items-center justify-center px-4 py-12 text-center">
         <div className="flex size-16 items-center justify-center rounded-full bg-lavender">
           <MapPinOff className="size-8 text-accent" aria-hidden="true" />
         </div>
