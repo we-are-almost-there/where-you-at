@@ -20,17 +20,33 @@ function App() {
   useEffect(() => {
     if (previousPathname.current === pathname) return;
     previousPathname.current = pathname;
-    // 뒤로/앞으로 가기는 브라우저의 기본 복원에 맡긴다.
+    // 뒤로/앞으로 가기는 스크롤 복원과 함께 다뤄야 해서 이번 범위에서 제외한다.
+    // 단일 페이지 앱의 방문 기록 이동에는 브라우저의 포커스 복원이 없으므로,
+    // 기존 포커스 요소가 제거되면 문서 본문으로 포커스가 떨어질 수 있다.
     if (navigationType === "POP") return;
     const page = pageRef.current;
     if (!page) return;
-    // 이전 사이드바의 inert 해제와 포커스 복귀가 끝난 뒤 실행한다.
+    // 앱이 경로별 화면의 부모이므로 드로어의 레이아웃 효과 정리(비활성화 해제)와
+    // 일반 효과 정리(포커스 복귀)가 이 일반 효과보다 먼저 실행된다.
     const target = page.querySelector<HTMLElement>("h1")
       ?? page.querySelector<HTMLElement>("main")
       ?? (page.firstElementChild as HTMLElement | null);
     if (!target) return;
     if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
     target.focus({ preventScroll: true });
+    if (target.matches("h1")) return;
+
+    // 데이터 로드 뒤 나타나는 제목으로 이동하되 사용자가 옮긴 포커스는 유지한다.
+    const observer = new MutationObserver(() => {
+      const heading = page.querySelector<HTMLElement>("h1");
+      if (!heading) return;
+      observer.disconnect();
+      if (document.activeElement !== target) return;
+      if (!heading.hasAttribute("tabindex")) heading.setAttribute("tabindex", "-1");
+      heading.focus({ preventScroll: true });
+    });
+    observer.observe(page, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, [pathname, navigationType]);
 
   return (

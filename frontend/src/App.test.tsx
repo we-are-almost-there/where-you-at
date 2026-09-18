@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter, useNavigate } from "react-router";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Link, MemoryRouter, useNavigate } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { useState } from "react";
@@ -23,12 +23,18 @@ vi.mock("./features/home", () => ({ Home: vi.fn(() => {
   </div>;
 }) }));
 vi.mock("./features/map", () => ({
-  CourseExplore: () => <h1>코스 탐색 화면</h1>,
-  CourseDetail: () => <h1>코스 상세 화면</h1>,
+  CourseExplore: () => <><h1>코스 탐색 화면</h1><Link to="/courses/1">코스 카드</Link></>,
+  CourseDetail: () => {
+    const [loaded, setLoaded] = useState(false);
+    return <main>
+      {loaded ? <h1>코스 상세 화면</h1> : <p>코스를 불러오는 중…</p>}
+      <button onClick={() => setLoaded(true)}>로드 완료</button>
+    </main>;
+  },
 }));
-vi.mock("./features/support", () => ({ Support: () => <main>방문 혜택 화면</main> }));
+vi.mock("./features/support", () => ({ Support: () => <h1>방문 혜택 화면</h1> }));
 vi.mock("./features/race", () => ({ Race: () => <h1>대회 행사 화면</h1> }));
-vi.mock("./features/bicycle", () => ({ BicycleExplore: () => <div>자전거 대여 화면</div> }));
+vi.mock("./features/bicycle", () => ({ BicycleExplore: () => <h1>자전거 대여 화면</h1> }));
 vi.mock("./features/help", () => ({
   HelpPage: () => <h1>고객지원 화면</h1>,
   NoticeList: () => <h1>공지사항 화면</h1>,
@@ -85,11 +91,25 @@ it("사이드바 닫기 버튼은 메뉴 버튼으로 포커스를 복귀한다"
 it.each([
   [/SUPPORT/, "방문 혜택 화면"],
   [/RENTAL/, "자전거 대여 화면"],
-] as const)("제목이 없으면 본문 또는 페이지 컨테이너에 포커스를 둔다 (%s)", (link, text) => {
+] as const)("정적 제목에 포커스를 둔다 (%s)", (link, text) => {
   renderAt("/");
   fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
   fireEvent.click(screen.getByRole("link", { name: link }));
   expect(document.activeElement).toBe(screen.getByText(text));
+});
+
+it.each([false, true])("코스 카드 이동 후 제목 로드를 처리한다 (사용자 포커스 이동: %s)", async (moveFocus) => {
+  renderAt("/courses");
+  fireEvent.click(screen.getByRole("link", { name: "코스 카드" }));
+  const main = screen.getByRole("main");
+  expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+  expect(document.activeElement).toBe(main);
+  const load = screen.getByRole("button", { name: "로드 완료" });
+  if (moveFocus) load.focus();
+  fireEvent.click(load);
+  await waitFor(() => expect(document.activeElement).toBe(
+    moveFocus ? load : screen.getByRole("heading", { name: "코스 상세 화면" }),
+  ));
 });
 
 it("홈으로 링크 이동하면 실제 홈 제목에 포커스를 둔다", async () => {
@@ -103,7 +123,7 @@ it("홈으로 링크 이동하면 실제 홈 제목에 포커스를 둔다", asy
     homeMock.mockImplementation(ActualHome);
     renderAt("/unknown");
     fireEvent.click(screen.getByRole("link", { name: "홈으로 가기" }));
-    const heading = await screen.findByRole("heading", { name: "어디까지 왔니 홈", level: 1 });
+    const heading = await screen.findByRole("heading", { name: "어디까지왔니 홈", level: 1 });
     expect(document.activeElement).toBe(heading);
   } finally {
     cleanup();
@@ -135,7 +155,7 @@ it("뒤로/앞으로 가기는 포커스를 강제로 이동하지 않는다", (
   const forward = screen.getByRole("button", { name: "앞으로" });
   forward.focus();
   fireEvent.click(forward);
-  expect(screen.getByRole("main")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "방문 혜택 화면" })).toBeTruthy();
   expect(document.activeElement).toBe(forward);
   fireEvent.click(screen.getByRole("button", { name: "대회로 이동" }));
   expect(document.activeElement).toBe(screen.getByRole("heading", { name: "대회 행사 화면" }));

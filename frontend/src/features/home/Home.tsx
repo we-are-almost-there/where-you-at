@@ -547,7 +547,7 @@ export default function Home() {
         항상 정확히 일치한다. */}
       <AppHeader />
 
-      <h1 tabIndex={-1} className="sr-only">어디까지 왔니 홈</h1>
+      <h1 tabIndex={-1} className="sr-only">어디까지왔니 홈</h1>
 
       <section className="w-full pt-3">
         <BannerCarousel onOpenGallery={() => setIsGalleryOpen(true)} />
