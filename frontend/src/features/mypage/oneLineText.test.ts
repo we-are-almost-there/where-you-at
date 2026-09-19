@@ -28,4 +28,26 @@ describe("oneLineText", () => {
     // 연속 공백은 한 칸으로 센다.
     expect(inputLength("러닝   좋아요")).toBe(6);
   });
+
+  // 서버(schemas/user.py _one_line)와 같은 기준. 문자는 눈에 보이지 않아 이스케이프로 적는다.
+  it("결합 이모지에 쓰이는 ZWJ·태그 문자는 남긴다", () => {
+    const developer = "\u{1F468}‍\u{1F4BB}"; // 사람+ZWJ+노트북
+    const scotland = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}"; // 태그 문자 깃발
+
+    expect(toOneLine(`러닝 ${developer}`)).toBe(`러닝 ${developer}`);
+    expect(toOneLine(scotland)).toBe(scotland);
+    // 서버처럼 코드포인트 단위로 센다.
+    expect(charLength(developer)).toBe(3);
+  });
+
+  it("줄바꿈 없는 공백·전각 공백은 일반 공백으로 바꾼다", () => {
+    expect(toOneLine(" 길 　손　")).toBe("길 손");
+    expect(limitInput("러닝 ", 40)).toBe("러닝 ");
+  });
+
+  it("서버가 막는 보이지 않는 문자는 입력 단계에서 지운다", () => {
+    // 폭 없는 공백, 글자 방향 뒤집기, 줄 구분자, 사용자 정의 영역
+    expect(limitInput("길​‮ 손", 40)).toBe("길손");
+    expect(inputLength("길​손")).toBe(2);
+  });
 });

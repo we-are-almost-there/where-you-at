@@ -153,6 +153,45 @@ class TestUpdateMe(AuthTestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(mock_update.call_args.args[1:], (7, {"nickname": "길 손", "bio": "안녕하세요 러닝 좋아요"}))
 
+    def test_allows_joined_emoji(self, mock_update):
+        # 결합 이모지에는 isprintable()이 막는 서식 문자(ZWJ, 태그 문자)가 들어 있다. 이 문자들은 허용한다.
+        mock_update.return_value = {"id": 7, "nickname": "길손", "bio": None}
+        cases = {
+            "개발자(사람+ZWJ+노트북)": "\U0001F468‍\U0001F4BB",
+            "무지개 깃발(깃발+VS16+ZWJ+무지개)": "\U0001F3F3️‍\U0001F308",
+            "스코틀랜드 깃발(태그 문자)": "\U0001F3F4\U000E0067\U000E0062\U000E0073\U000E0063\U000E0074\U000E007F",
+            "하트+VS16": "❤️",
+            "스킨톤": "\U0001F44D\U0001F3FB",
+        }
+        for name, emoji in cases.items():
+            with self.subTest(name):
+                res = self._patch({"bio": f"러닝 {emoji}"})
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(mock_update.call_args.args[1:], (7, {"bio": f"러닝 {emoji}"}))
+
+    def test_normalizes_other_spaces(self, mock_update):
+        # 줄바꿈 없는 공백(U+00A0)·전각 공백(U+3000)은 웹에서 복사해 붙이면 흔히 섞인다. 일반 공백으로 바꿔 받는다.
+        mock_update.return_value = {"id": 7, "nickname": "길 손", "bio": None}
+
+        res = self._patch({"nickname": " 길 　손　"})
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(mock_update.call_args.args[1:], (7, {"nickname": "길 손"}))
+
+    def test_rejects_invisible_format_chars(self, mock_update):
+        # 결합 이모지에 쓰이지 않는 서식 문자는 이름을 보이지 않게 꾸미거나 뒤집는 데 쓰일 수 있어 계속 막는다.
+        cases = {
+            "폭 없는 공백": "길​손",
+            "글자 방향 뒤집기": "길‮손",
+            "줄 구분자": "길 손",
+            "사용자 정의 영역": "길손",
+        }
+        for name, nickname in cases.items():
+            with self.subTest(name):
+                res = self._patch({"nickname": nickname})
+                self.assertEqual(res.status_code, 422)
+        mock_update.assert_not_called()
+
     def test_empty_bio_clears_it(self, mock_update):
         mock_update.return_value = {"id": 7, "nickname": "길손", "bio": None}
 
