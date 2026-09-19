@@ -71,6 +71,33 @@ function editFont() {
   fireEvent.click(screen.getByRole("button", { name: "Do Hyeon" }));
 }
 
+it("편집·저장·재편집에 맞춰 페이지 이동 보호 상태를 전달한다", async () => {
+  const onProtectionChange = vi.fn();
+  render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} onProtectionChange={onProtectionChange} />);
+  expect(onProtectionChange).toHaveBeenLastCalledWith(false);
+  editFont();
+  expect(onProtectionChange).toHaveBeenLastCalledWith(true);
+  share.mockResolvedValue(undefined);
+  await save();
+  expect(onProtectionChange).toHaveBeenLastCalledWith(false);
+  fireEvent.click(screen.getByRole("button", { name: "Pretendard" }));
+  expect(onProtectionChange).toHaveBeenLastCalledWith(true);
+});
+
+it("페이지 이동 확인은 나가기 문구를 표시하고 카드 닫기 대신 이동 처리를 호출한다", () => {
+  const onClose = vi.fn();
+  const onConfirmNavigation = vi.fn();
+  render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={onClose} navigationBlocked
+    onConfirmNavigation={onConfirmNavigation} />);
+  expect(screen.getByRole("alertdialog", { name: "저장하지 않은 편집 내용이 있어요.",
+    description: "지금 나가면 편집한 내용이 사라져요." })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "저장하지 않고 나가기" }));
+  expect(onConfirmNavigation).toHaveBeenCalledOnce();
+  expect(onClose).not.toHaveBeenCalled();
+});
+
 it("초기 카드와 도구 전환·같은 값 선택은 StrictMode에서도 이탈을 막지 않는다", () => {
   render(<StrictMode><RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
     routeType="도보" routePoints={[]} onClose={() => {}} /></StrictMode>);

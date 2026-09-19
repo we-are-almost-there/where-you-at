@@ -249,11 +249,15 @@ function CourseDetailSession() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [sessionActive]);
   // 탭·필터 변경은 허용하고, 다른 화면으로 향하는 모든 라우트 이동을 보호한다.
+  const protectedCardEditsRef = useRef(false);
+  const updateCardProtection = useCallback((protectedEdits: boolean) => {
+    protectedCardEditsRef.current = protectedEdits;
+  }, []);
   const blocker = useBlocker(({ currentLocation, nextLocation }) =>
-    sessionActive && currentLocation.pathname !== nextLocation.pathname,
+    (sessionActive || protectedCardEditsRef.current) && currentLocation.pathname !== nextLocation.pathname,
   );
   useEffect(() => {
-    if (blocker.state !== "blocked") return;
+    if (blocker.state !== "blocked" || !sessionActive) return;
     if (window.confirm("이 화면을 나가면 지금까지의 따라가기 기록이 사라집니다. 이동할까요?")) {
       // 내부 기록부터 비워 언마운트가 늦어져도 주기적 저장이 세션을 되살리지 않게 한다.
       stopTracking();
@@ -261,7 +265,7 @@ function CourseDetailSession() {
     } else {
       blocker.reset();
     }
-  }, [blocker, stopTracking]);
+  }, [blocker, stopTracking, sessionActive]);
   const backToCourses = () => {
     navigate("/courses");
   };
@@ -1063,6 +1067,12 @@ function CourseDetailSession() {
       </main>
       {record && (
         <RecordCard
+          onProtectionChange={updateCardProtection}
+          navigationBlocked={!sessionActive && blocker.state === "blocked"}
+          onCancelNavigation={() => { if (blocker.state === "blocked") blocker.reset(); }}
+          onConfirmNavigation={() => {
+            if (blocker.state === "blocked") blocker.proceed();
+          }}
           record={record.summary}
           routeType={record.routeType}
           routePoints={record.routePoints}

@@ -109,12 +109,20 @@ export function RecordCard({
   routeType,
   routePoints,
   onClose,
+  onProtectionChange,
+  navigationBlocked = false,
+  onCancelNavigation,
+  onConfirmNavigation,
 }: {
   record: TrackingRecord;
   /** 따라간 종목. 페이스를 분/km로 쓸지 km/h로 쓸지 가른다. */
   routeType: RouteType;
   routePoints: LatLng[];
   onClose: () => void;
+  onProtectionChange?: (protectedEdits: boolean) => void;
+  navigationBlocked?: boolean;
+  onCancelNavigation?: () => void;
+  onConfirmNavigation?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -179,6 +187,7 @@ export function RecordCard({
     }
     previousEditRef.current = editSnapshot;
     editVersionRef.current += 1;
+    onProtectionChange?.(hasEditedRef.current && savedVersionRef.current !== editVersionRef.current);
     currentSnapshotRef.current = editSnapshot;
     // 글꼴 로딩이나 그리기를 기다리지 않고 편집 즉시 이전 이미지를 무효화한다.
     blobRef.current = null;
@@ -186,7 +195,9 @@ export function RecordCard({
     renderedVersionRef.current = null;
     if (blobTimerRef.current) clearTimeout(blobTimerRef.current);
   }, [editSnapshot, image, template, textColor, fontChoice, textScale, showRoute, routeScale,
-    canvasH, transform, routeOffset, statsOffset]);
+    canvasH, transform, routeOffset, statsOffset, onProtectionChange]);
+
+  useEffect(() => () => onProtectionChange?.(false), [onProtectionChange]);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -460,6 +471,7 @@ export function RecordCard({
       try {
         await navigator.share({ files: [file] });
         savedVersionRef.current = savingVersion;
+        onProtectionChange?.(hasEditedRef.current && savingVersion !== editVersionRef.current);
         return;
       } catch (e) {
         // 사용자가 공유 시트를 닫은 것뿐이면 조용히 끝낸다.
@@ -479,12 +491,13 @@ export function RecordCard({
       link.remove();
       // 다운로드의 실제 완료는 알 수 없으므로 브라우저에 전달한 시점을 기준으로 한다.
       savedVersionRef.current = savingVersion;
+      onProtectionChange?.(hasEditedRef.current && savingVersion !== editVersionRef.current);
       // 클릭 직후 동기적으로 해제하면 다운로드가 시작되기 전에 URL이 죽을 수 있다.
       setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
     } catch {
       setErrorMessage("이미지를 저장하지 못했어요. 화면을 캡처해 주세요.");
     }
-  }, []);
+  }, [onProtectionChange]);
 
   // 열리면 포커스를 카드 안으로 들인다. 뒤쪽은 CourseDetail이 inert로 잠그므로 여기서 시작하지 않으면
   // 키보드로는 카드에 닿을 수 없다. 컨테이너를 잡아 aria-label("기록 카드")이 먼저 읽히게 한다.
@@ -735,20 +748,23 @@ export function RecordCard({
           {imageReady ? "이미지 저장" : "이미지 준비 중…"}
         </button>
       </div>
-      {closeConfirmationOpen && (
+      {(navigationBlocked || closeConfirmationOpen) && (
         <CloseRecordConfirmation
+          leaving={navigationBlocked}
           onContinue={() => {
+            if (navigationBlocked) onCancelNavigation?.();
             setCloseConfirmationOpen(false);
             closeButtonRef.current?.focus();
           }}
-          onDiscard={onClose}
+          onDiscard={navigationBlocked ? () => onConfirmNavigation?.() : onClose}
         />
       )}
     </div>
   );
 }
 
-function CloseRecordConfirmation({ onContinue, onDiscard }: {
+function CloseRecordConfirmation({ onContinue, onDiscard, leaving = false }: {
+  leaving?: boolean;
   onContinue: () => void;
   onDiscard: () => void;
 }) {
@@ -786,13 +802,13 @@ function CloseRecordConfirmation({ onContinue, onDiscard }: {
       }}
       className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-sm rounded-[18px] bg-white px-5 py-6 text-center text-ink shadow-[0px_8px_24px_0px_rgba(0,0,0,0.2)] backdrop:bg-black/40"
     >
-      <h2 id={titleId} className="break-keep text-[17px] font-bold">저장하지 않은 기록 카드예요.</h2>
-      <p id={descriptionId} className="mt-2 break-keep text-[14px] leading-relaxed text-caption">지금 닫으면 이 기록 카드는 사라져요.</p>
+      <h2 id={titleId} className="break-keep text-[17px] font-bold">{leaving ? "저장하지 않은 편집 내용이 있어요." : "저장하지 않은 기록 카드예요."}</h2>
+      <p id={descriptionId} className="mt-2 break-keep text-[14px] leading-relaxed text-caption">{leaving ? "지금 나가면 편집한 내용이 사라져요." : "지금 닫으면 이 기록 카드는 사라져요."}</p>
       <div className="mt-5 flex gap-3">
         <button ref={continueRef} type="button" onClick={cancelClose}
           className="h-12 flex-1 cursor-pointer break-keep rounded-[14px] bg-lavender px-3 text-[15px] font-bold text-ink">계속 편집</button>
         <button type="button" onClick={onDiscard}
-          className="h-12 flex-1 cursor-pointer break-keep rounded-[14px] bg-accent px-3 text-[15px] font-bold text-white">저장하지 않고 닫기</button>
+          className="h-12 flex-1 cursor-pointer break-keep rounded-[14px] bg-accent px-3 text-[15px] font-bold text-white">{leaving ? "저장하지 않고 나가기" : "저장하지 않고 닫기"}</button>
       </div>
     </dialog>
   );
