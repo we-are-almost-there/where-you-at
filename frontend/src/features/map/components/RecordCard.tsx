@@ -144,6 +144,24 @@ export function RecordCard({
   const hasRoute = routePoints.length >= 2;
   const canvasH = RATIOS.find((r) => r.key === ratio)?.height ?? RATIOS[0].height;
 
+  const editVersionRef = useRef(0);
+  const savedVersionRef = useRef<number | null>(null);
+  // 저장 후 다시 편집하면 보호를 재개한다. 도구 탭이나 미리보기 크기 변경은 제외한다.
+  useLayoutEffect(() => {
+    editVersionRef.current += 1;
+  }, [record, routeType, routePoints, image, transform, template, textColor,
+    fontChoice, textScale, showRoute, routeOffset, routeScale, statsOffset, canvasH]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (savedVersionRef.current === editVersionRef.current) return;
+      event.preventDefault();
+      event.returnValue = true;
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
+
   // 미리보기는 남는 자리에 맞춰 줄이되 비율을 지켜야 한다. CSS만으로는 안 된다 —
   // 캔버스에 건 max-h-full은 백분율이라 높이가 정해지지 않은 래퍼를 기준으로 잡혀 무시되고,
   // 그 빈자리를 flex의 늘이기가 채워 세로만 눌린다(폭에 여유가 있는 넓은 화면에서 드러난다).
@@ -383,6 +401,7 @@ export function RecordCard({
 
   const save = useCallback(async () => {
     setErrorMessage(null);
+    const savingVersion = editVersionRef.current;
 
     // 인코딩은 디바운스로 미뤄 두므로, 방금 바꾼 내용이 아직 blob에 안 담겼을 수 있다.
     // 미리 만들어 둔 게 낡았으면 여기서 즉시 굽는다 — 안 그러면 변경 전 이미지가 저장된다.
@@ -404,6 +423,7 @@ export function RecordCard({
     if (navigator.canShare?.({ files: [file] })) {
       try {
         await navigator.share({ files: [file] });
+        savedVersionRef.current = savingVersion;
         return;
       } catch (e) {
         // 사용자가 공유 시트를 닫은 것뿐이면 조용히 끝낸다.
@@ -421,6 +441,8 @@ export function RecordCard({
       document.body.appendChild(link);
       link.click();
       link.remove();
+      // 다운로드의 실제 완료는 알 수 없으므로 브라우저에 전달한 시점을 기준으로 한다.
+      savedVersionRef.current = savingVersion;
       // 클릭 직후 동기적으로 해제하면 다운로드가 시작되기 전에 URL이 죽을 수 있다.
       setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
     } catch {
