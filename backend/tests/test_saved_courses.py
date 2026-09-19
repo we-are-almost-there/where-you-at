@@ -7,6 +7,7 @@
 """
 import unittest
 from unittest.mock import MagicMock, patch
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 
@@ -16,6 +17,8 @@ from app.main import app
 from app.services import auth_token
 
 SECRET = "s" * 32
+SESSION_ID = UUID("33333333-3333-4333-8333-333333333333")
+AUTH_USER = {"id": 7, "nickname": "길손", "bio": None, "kakao_id": 4321}
 
 SAVED_ROW = {
     "id": 12,
@@ -34,7 +37,7 @@ SAVED_ROW = {
 
 
 def _bearer(user_id=7):
-    return {"Authorization": f"Bearer {auth_token.create_access_token(user_id)}"}
+    return {"Authorization": f"Bearer {auth_token.create_access_token(user_id, SESSION_ID)}"}
 
 
 class SavedCoursesTestCase(unittest.TestCase):
@@ -49,6 +52,39 @@ class SavedCoursesTestCase(unittest.TestCase):
         connect_patcher = patch("app.deps.get_db_connection", return_value=MagicMock())
         self.connect = connect_patcher.start()
         self.addCleanup(connect_patcher.stop)
+        auth_patcher = patch("app.crud.user.get_authenticated_user", return_value=AUTH_USER)
+        self.auth_user = auth_patcher.start()
+        self.addCleanup(auth_patcher.stop)
+
+    def assert_deleted_user_token_returns_401_before_saved_course_crud(self):
+        self.auth_user.return_value = None
+        requests = (
+            ("get", "/api/me/saved-courses", None),
+            ("get", "/api/me/saved-courses/keys", None),
+            ("post", "/api/me/saved-courses", {"course_id": 12, "route_type": "trail"}),
+            ("delete", "/api/me/saved-courses/12?route_type=trail", None),
+        )
+
+        with (
+            patch("app.crud.saved_course.list_saved") as list_saved,
+            patch("app.crud.saved_course.list_keys") as list_keys,
+            patch("app.crud.saved_course.add") as add,
+            patch("app.crud.saved_course.remove") as remove,
+        ):
+            for method, path, body in requests:
+                with self.subTest(method=method, path=path):
+                    res = self.client.request(method, path, headers=_bearer(), json=body)
+                    self.assertEqual(res.status_code, 401)
+
+        list_saved.assert_not_called()
+        list_keys.assert_not_called()
+        add.assert_not_called()
+        remove.assert_not_called()
+
+
+class TestRevokedSavedCourses(SavedCoursesTestCase):
+    def test_deleted_user_token_returns_401_before_saved_course_crud(self):
+        self.assert_deleted_user_token_returns_401_before_saved_course_crud()
 
 
 class TestReadSavedCourses(SavedCoursesTestCase):
@@ -115,7 +151,8 @@ class TestAddSavedCourse(SavedCoursesTestCase):
 
         self.assertEqual(res.status_code, 401)
 
-    def test_invalid_body_returns_422_without_db(self):
+    @patch("app.crud.saved_course.add")
+    def test_invalid_body_returns_422_without_mutation(self, mock_add):
         cases = {
             "종목이 목록에 없음": {"course_id": 12, "route_type": "walking"},
             "종목 누락": {"course_id": 12},
@@ -126,7 +163,7 @@ class TestAddSavedCourse(SavedCoursesTestCase):
                 res = self.client.post("/api/me/saved-courses", json=body, headers=_bearer())
 
                 self.assertEqual(res.status_code, 422)
-        self.connect.assert_not_called()
+        mock_add.assert_not_called()
 
     def test_without_token_returns_401_without_db(self):
         res = self.client.post("/api/me/saved-courses", json={"course_id": 12, "route_type": "trail"})
@@ -150,13 +187,14 @@ class TestRemoveSavedCourse(SavedCoursesTestCase):
 
         self.assertEqual((first.status_code, second.status_code), (204, 204))
 
-    def test_invalid_route_type_returns_422_without_db(self):
+    @patch("app.crud.saved_course.remove")
+    def test_invalid_route_type_returns_422_without_mutation(self, mock_remove):
         for query in ("", "?route_type=walking"):
             with self.subTest(query=query):
                 res = self.client.delete(f"/api/me/saved-courses/12{query}", headers=_bearer())
 
                 self.assertEqual(res.status_code, 422)
-        self.connect.assert_not_called()
+        mock_remove.assert_not_called()
 
     def test_without_token_returns_401_without_db(self):
         res = self.client.delete("/api/me/saved-courses/12?route_type=trail")
