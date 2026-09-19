@@ -45,16 +45,16 @@ function splitRegionName(full: string): { sido: string | null; name: string } {
  * 지역명과 같은 이유로 한 번만 받아 재사용한다 — 지역을 옮길 때마다 다시 받을 값이 아니고,
  * 패널을 여닫을 때마다 요청이 새로 나가서도 안 된다.
  */
-let courseRegionsPromise: Promise<ReadonlySet<string>> | null = null;
-function loadCourseRegions(): Promise<ReadonlySet<string>> {
-  courseRegionsPromise ??= getRegions("도보")
+let trailCourseRegionsPromise: Promise<ReadonlySet<string>> | null = null;
+function loadTrailCourseRegions(): Promise<ReadonlySet<string>> {
+  trailCourseRegionsPromise ??= getRegions("도보")
     .then((rows) => new Set(rows.map((r) => r.region_code)))
     .catch((err) => {
       // 실패한 Promise를 캐시로 남기면 네트워크가 돌아와도 새로고침 전까지 재요청하지 않는다
-      courseRegionsPromise = null;
+      trailCourseRegionsPromise = null;
       throw err;
     });
-  return courseRegionsPromise;
+  return trailCourseRegionsPromise;
 }
 
 /** 목록을 어느 지역까지 받아왔는지. loading·error는 이 값에서 파생시킨다. */
@@ -107,23 +107,23 @@ export function SupportRegionView({ regionCode }: Props) {
     };
   }, [regionCode]);
 
-  // 코스가 없는 지역에도 링크를 열어 두면 '조건에 맞는 코스가 없어요'만 뜨는 목록으로
-  // 보낸다. 그 화면의 지역 필터는 코스 보유 지역만 담고 있어서 URL의 지역이 표시되지도
-  // 않는다 — 사용자는 '전체 지역'이라고 적힌 빈 목록을 보고 왜 비었는지 알 수 없다.
-  // 그래서 링크를 먼저 막고 이유를 그 자리에 적는다.
+  // 도보 코스가 없는 지역에도 링크를 열어 두면 '조건에 맞는 코스가 없어요'만 뜨는 목록으로
+  // 보낸다(링크는 도보 탭으로 간다). 그 화면의 지역 필터는 코스 보유 지역만 담고 있어서
+  // URL의 지역이 표시되지도 않는다 — 사용자는 '전체 지역'이라고 적힌 빈 목록을 보고
+  // 왜 비었는지 알 수 없다. 그래서 링크를 먼저 막고 이유를 그 자리에 적는다.
   //
   // null은 '아직 모른다'는 뜻이다. 조회 전이거나 실패했으면 막지 않는다 — 지도 배지와
   // 같은 규칙으로, 모르는 것을 없다고 단정하지 않는다.
-  const [courseRegions, setCourseRegions] = useState<ReadonlySet<string> | null>(null);
-  const hasCourse = courseRegions ? courseRegions.has(regionCode) : null;
+  const [trailCourseRegions, setTrailCourseRegions] = useState<ReadonlySet<string> | null>(null);
+  const hasTrailCourse = trailCourseRegions ? trailCourseRegions.has(regionCode) : null;
 
   useEffect(() => {
     let cancelled = false;
-    loadCourseRegions()
+    loadTrailCourseRegions()
       .then((codes) => {
-        if (!cancelled) setCourseRegions(codes);
+        if (!cancelled) setTrailCourseRegions(codes);
       })
-      // 못 받으면 링크를 그대로 둔다. 목록이 비어 있을 수는 있어도, 코스가 있는 지역의
+      // 못 받으면 링크를 그대로 둔다. 목록이 비어 있을 수는 있어도, 도보 코스가 있는 지역의
       // 링크를 조회 실패 때문에 막아 버리는 쪽이 더 나쁘다.
       .catch(() => {});
     return () => {
@@ -279,7 +279,7 @@ export function SupportRegionView({ regionCode }: Props) {
 
       {/* ④ 코스 링크 */}
       {/* "/"는 홈이라 region을 읽지 않는다. 지역 필터를 받는 쪽은 /courses다. */}
-      {hasCourse === false ? (
+      {hasTrailCourse === false ? (
         // 누를 것이 아니라 알리는 것이라 버튼이 아니라 문단으로 둔다. disabled 버튼은
         // Tab 순서에서 빠져, 키보드로 패널을 훑는 사람은 이 문구를 만나지 못한다.
         // 링크 자리를 그대로 차지해 없어진 게 아니라 '갈 곳이 없다'는 것으로 읽히게 하고,
