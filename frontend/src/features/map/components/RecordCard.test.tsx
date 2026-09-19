@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RecordCard } from "./RecordCard";
+import { StrictMode } from "react";
 import { draw } from "../recordCardCanvas";
 
 vi.mock("@fontsource/do-hyeon", () => ({}));
@@ -65,8 +66,25 @@ async function save() {
   await act(async () => { fireEvent.click(button); });
 }
 
+function editFont() {
+  fireEvent.click(screen.getByRole("button", { name: "글꼴" }));
+  fireEvent.click(screen.getByRole("button", { name: "Do Hyeon" }));
+}
+
+it("초기 카드와 도구 전환·같은 값 선택은 StrictMode에서도 이탈을 막지 않는다", () => {
+  render(<StrictMode><RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} /></StrictMode>);
+  expect(unloadAllowed()).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "글꼴" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pretendard" }));
+  expect(unloadAllowed()).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: /^닫기$/ }));
+  expect(screen.getByRole("alertdialog")).toBeTruthy();
+});
+
 it("저장 전 이탈을 보호하고 공유 성공 후 해제한다", async () => {
   mount();
+  editFont();
   expect(unloadAllowed()).toBe(false);
   share.mockResolvedValue(undefined);
   await save();
@@ -75,6 +93,7 @@ it("저장 전 이탈을 보호하고 공유 성공 후 해제한다", async () 
 
 it("공유를 취소하면 보호를 유지하고 언마운트 시 리스너를 정리한다", async () => {
   const view = mount();
+  editFont();
   share.mockRejectedValue(new DOMException("cancel", "AbortError"));
   await save();
   expect(unloadAllowed()).toBe(false);
@@ -84,6 +103,7 @@ it("공유를 취소하면 보호를 유지하고 언마운트 시 리스너를 
 
 it("다운로드를 전달하면 보호를 해제한다", async () => {
   mount();
+  editFont();
   share.mockRejectedValue(new Error("unsupported"));
   vi.stubGlobal("URL", { createObjectURL: () => "blob:test", revokeObjectURL: vi.fn() });
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
@@ -93,6 +113,7 @@ it("다운로드를 전달하면 보호를 해제한다", async () => {
 
 it("다운로드에 실패하면 보호를 유지한다", async () => {
   mount();
+  editFont();
   share.mockRejectedValue(new Error("unsupported"));
   vi.stubGlobal("URL", { createObjectURL: () => { throw new Error("failed"); } });
   await save();
@@ -100,22 +121,20 @@ it("다운로드에 실패하면 보호를 유지한다", async () => {
 });
 
 it("저장 후 내용을 편집하면 다시 보호한다", async () => {
-  const view = mount();
+  mount();
   share.mockResolvedValue(undefined);
   await save();
   expect(unloadAllowed()).toBe(true);
-  view.rerender(<RecordCard record={{ distanceKm: 4, durationMs: 60000, paceSecPerKm: 15 }}
-    routeType="도보" routePoints={[]} onClose={() => {}} />);
+  editFont();
   expect(unloadAllowed()).toBe(false);
 });
 
 it("공유 중 내용이 바뀌면 이전 내용 저장이 끝나도 보호한다", async () => {
   let complete!: () => void;
   share.mockImplementation(() => new Promise<void>((resolve) => { complete = resolve; }));
-  const view = mount();
+  mount();
   await save();
-  view.rerender(<RecordCard record={{ distanceKm: 4, durationMs: 60000, paceSecPerKm: 15 }}
-    routeType="도보" routePoints={[]} onClose={() => {}} />);
+  editFont();
   await act(async () => { complete(); });
   expect(unloadAllowed()).toBe(false);
 });
@@ -123,6 +142,7 @@ it("공유 중 내용이 바뀌면 이전 내용 저장이 끝나도 보호한�
 it("미저장 카드 닫기를 취소하면 편집과 이탈 보호를 유지한다", () => {
   const onClose = vi.fn();
   mount(onClose);
+  editFont();
   fireEvent.click(screen.getByRole("button", { name: /^닫기$/ }));
   expect(screen.getByRole("alertdialog", {
     name: "저장하지 않은 기록 카드예요.",
@@ -157,6 +177,7 @@ it("저장한 카드는 확인 없이 닫는다", async () => {
 it.each(["계속 편집", "Escape", "cancel"])("%s로 취소하면 모달을 닫은 뒤 카드 버튼으로 초점을 돌린다", (method) => {
   const onClose = vi.fn();
   mount(onClose);
+  editFont();
   fireEvent.click(screen.getByRole("button", { name: /^닫기$/ }));
   const dialog = screen.getByRole("alertdialog") as HTMLDialogElement;
   const closeButton = screen.getByRole("button", { name: /^닫기$/ });

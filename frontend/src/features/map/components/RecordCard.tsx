@@ -155,6 +155,8 @@ export function RecordCard({
 
   const editVersionRef = useRef(0);
   const savedVersionRef = useRef<number | null>(null);
+  const hasEditedRef = useRef(false);
+  const previousEditRef = useRef(editSnapshot);
   const [closeConfirmationOpen, setCloseConfirmationOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const requestClose = () => {
@@ -163,6 +165,19 @@ export function RecordCard({
   };
   // 저장 후 다시 편집하면 보호를 재개한다. 도구 탭이나 미리보기 크기 변경은 제외한다.
   useLayoutEffect(() => {
+    const previous = previousEditRef.current;
+    // 사용자 편집 값만 비교한다. 초기 실행·효과 재실행·부모의 기록 갱신은 편집이 아니다.
+    if (previous.image !== image || previous.template !== template || previous.textColor !== textColor
+      || previous.fontChoice !== fontChoice || previous.textScale !== textScale
+      || previous.showRoute !== showRoute || previous.routeScale !== routeScale
+      || previous.canvasH !== canvasH
+      || previous.transform.scale !== transform.scale
+      || previous.transform.offsetX !== transform.offsetX || previous.transform.offsetY !== transform.offsetY
+      || previous.routeOffset.x !== routeOffset.x || previous.routeOffset.y !== routeOffset.y
+      || previous.statsOffset.x !== statsOffset.x || previous.statsOffset.y !== statsOffset.y) {
+      hasEditedRef.current = true;
+    }
+    previousEditRef.current = editSnapshot;
     editVersionRef.current += 1;
     currentSnapshotRef.current = editSnapshot;
     // 글꼴 로딩이나 그리기를 기다리지 않고 편집 즉시 이전 이미지를 무효화한다.
@@ -170,10 +185,12 @@ export function RecordCard({
     blobVersionRef.current = null;
     renderedVersionRef.current = null;
     if (blobTimerRef.current) clearTimeout(blobTimerRef.current);
-  }, [editSnapshot]);
+  }, [editSnapshot, image, template, textColor, fontChoice, textScale, showRoute, routeScale,
+    canvasH, transform, routeOffset, statsOffset]);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasEditedRef.current) return;
       if (savedVersionRef.current === editVersionRef.current) return;
       event.preventDefault();
       event.returnValue = true;
