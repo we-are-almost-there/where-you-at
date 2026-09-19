@@ -13,7 +13,8 @@ import { EFFECTIVE_DATE, OPERATOR, PREVIOUS_VERSIONS, SERVICE } from "./legalInf
  *
  * 방침은 실제 처리 현황과 일치해야 한다. 아래가 바뀌면 이 문서도 함께 고친다.
  * - 1:1 문의 항목·보유 기간: ContactPage 동의 안내, backend/app/schemas/inquiry.py, sql/01_schema.sql inquiry
- * - 접속 IP 주소(요청 제한): backend/app/api/routers/inquiries.py, backend/app/services/rate_limit.py
+ * - 접속 IP 주소(요청 제한): backend/app/api/routers/inquiries.py, backend/app/api/routers/auth.py,
+ *   backend/app/services/rate_limit.py
  * - 새 문의 Slack 알림: 문의 유형·이메일·내용을 보낸다(backend/app/services/inquiry_notify.py). 항목·업체·보존 설정이
  *   바뀌면 7·8번과 README "새 문의 알림"을 함께 고친다.
  * - 운영팀 서버로 보내지 않고 기기 안에서 처리하는 곳(2번 ④): 가까운 순 정렬(홈, 코스 탐색, 자전거 대여), features/map/useCourseTracking.ts,
@@ -30,6 +31,7 @@ import { EFFECTIVE_DATE, OPERATOR, PREVIOUS_VERSIONS, SERVICE } from "./legalInf
  *   탈퇴(DELETE /api/me)는 카카오 연결 해제 후 회원 행을 지운다(5번). 카카오 동의 항목·저장 칸이 바뀌면 2·4·7·8번을 고친다.
  * - 법적 근거: 회원 정보는 제15조제1항제4호(계약 이행)로 정했다. 로그인해서 마이페이지를 쓰는 것이 이용 계약이고,
  *   한 줄 소개는 이용자가 직접 적고 언제든 지우는 선택 항목이라 별도 동의 화면을 두지 않았다.
+ *   로그인 요청 제한은 가입 전 요청에도 적용되므로 계약 이행이 아니라 제15조제1항제6호(정당한 이익)로 정했다.
  *
  * 현재 위치: 가까운 순 정렬은 서버로 좌표를 보내지 않고 브라우저에서 계산한다(위치기반서비스사업 신고 대상에서
  * 벗어나기 위한 결정, #97). 보장하는 범위는 "원본 좌표를 운영팀 서버로 보내지 않는다"까지다.
@@ -89,7 +91,8 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             <strong>1:1 문의 접수 및 답변</strong>: 문의 내용 확인, 입력한 이메일로 답변 회신, 문의 처리 상태 관리
           </li>
           <li>
-            <strong>1:1 문의 부정 이용 방지</strong>: 같은 곳에서 짧은 시간에 반복해서 보내는 문의 제한
+            <strong>로그인·1:1 문의 부정 이용 방지</strong>: 같은 곳에서 짧은 시간에 반복해서 보내는 로그인 요청과
+            문의 제한
           </li>
           <li>
             <strong>서비스 운영 기록 관리</strong>: 서버 오류 확인과 비정상적인 접근 대응
@@ -143,7 +146,11 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         <Table
           head={["구분", "처리하는 항목", "법적 근거"]}
           rows={[
-            ["1:1 문의 부정 이용 방지", "접속 IP 주소", "「개인정보 보호법」 제15조제1항제6호(정당한 이익)"],
+            [
+              "로그인·1:1 문의 부정 이용 방지",
+              "접속 IP 주소",
+              "「개인정보 보호법」 제15조제1항제6호(정당한 이익)",
+            ],
             [
               "서비스 운영 기록 관리",
               "서버 접속 기록(접속 IP 주소, 요청 일시, 요청 주소)",
