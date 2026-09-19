@@ -75,6 +75,41 @@ function insetRings(geom: Geometry): Position[][] {
   return rings;
 }
 
+/**
+ * 화면에 투영된 링의 면적 중심. 좌표를 단순 평균하면 꼭짓점이 촘촘한 해안·경계 쪽으로
+ * 이름표가 끌려가므로, 각 선분이 둘러싼 실제 면적을 가중치로 쓴다.
+ */
+function projectedRingCenter(
+  ring: Position[],
+  project: (p: Position) => [number, number],
+): { x: number; y: number; area: number } {
+  const points = ring.map(project);
+  let twiceArea = 0;
+  let weightedX = 0;
+  let weightedY = 0;
+  for (let i = 0; i < points.length; i++) {
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[(i + 1) % points.length];
+    const cross = x1 * y2 - x2 * y1;
+    twiceArea += cross;
+    weightedX += (x1 + x2) * cross;
+    weightedY += (y1 + y2) * cross;
+  }
+  if (Math.abs(twiceArea) > 1e-6) {
+    return {
+      x: weightedX / (3 * twiceArea),
+      y: weightedY / (3 * twiceArea),
+      area: Math.abs(twiceArea) / 2,
+    };
+  }
+  // 잘못 닫혔거나 일직선인 도형도 지도 전체를 깨뜨리지 않게 기존 평균을 폴백으로 둔다.
+  const [sumX, sumY] = points.reduce(
+    ([sx, sy], [x, y]) => [sx + x, sy + y],
+    [0, 0],
+  );
+  return { x: sumX / points.length, y: sumY / points.length, area: 0 };
+}
+
 // 시도별 색상 (활성 시도만)
 const SIDO_COLOR: Record<string, string> = {
   "41": "#A9C7F5", // 경기 - 파랑
@@ -102,6 +137,15 @@ const BADGE_FONT_PX = 12;
 // (서울·세종 — 도형 자체가 배지보다 작다)으로 줄고 겹침은 없다.
 const BADGE_H_EM_NATION = 3;
 const BADGE_H_EM_SIDO = 2.4;
+// 전국뷰에서 도형 중심만으로는 수도권·광역시 이름이 경계에 바짝 붙어 보이는 곳의 미세 보정.
+// 화면 글자 크기(em)를 기준으로 잡아 지도 크기가 달라도 이동량은 같은 CSS px로 보인다.
+const NATION_BADGE_NUDGE_EM: Partial<Record<string, { x: number; y: number }>> = {
+  "28": { x: -2.0, y: 0 }, // 인천
+  "41": { x: 2.86, y: 0 }, // 경기
+  "27": { x: 0.8, y: 0 }, // 대구
+  "43": { x: -1.5, y: 0 }, // 충북
+  "47": { x: 0.8, y: -1.8 }, // 경북
+};
 // 배지 폭은 이름 길이로 각자 계산한다. 전부 같은 폭으로 잡으면 '고성군' 같은 짧은 이름이
 // '전남광주통합특별시' 기준으로 밀려나 필요 이상으로 흩어진다.
 // 미해당 지역은 알약 없이 글자만 그리므로 좌우 패딩(약 1.3em)만큼 폭이 준다.
@@ -477,17 +521,15 @@ export function SupportRegionMap() {
     if (!project) return [];
     return viewItems.map((it) => {
       const rings = insetRings(it.geometry);
-      // 가장 큰 링의 중심 (작은 섬 말고 본체에 배지)
-      let best = rings[0];
-      for (const ring of rings) if (ring.length > best.length) best = ring;
-      let sx = 0, sy = 0, n = 0;
-      best.forEach((pt) => {
-        const [x, y] = project(pt);
-        sx += x; sy += y; n++;
-      });
+      // 좌표 개수가 아니라 실제 면적이 가장 큰 링을 본체로 고른다. 해안선이 복잡한 작은 섬이
+      // 꼭짓점 수만 많다는 이유로 라벨을 가져가는 일을 막는다.
+      const centers = rings.map((ring) => projectedRingCenter(ring, project));
+      const best = centers.reduce((largest, center) =>
+        center.area > largest.area ? center : largest,
+      );
       return {
         key: it.key, name: it.name, fullName: it.fullName, active: it.active, go: it.go,
-        cx: sx / n, cy: sy / n,
+        cx: best.x, cy: best.y,
       };
     });
   }, [viewItems, project]);
@@ -498,14 +540,30 @@ export function SupportRegionMap() {
     if (!badges.length) return [];
     const BADGE_H =
       (selectedSido == null ? BADGE_H_EM_NATION : BADGE_H_EM_SIDO) * badgeFont;
-    const nodes = badges.map((b) => ({
-      ...b,
-      x: b.cx, y: b.cy, ox: b.cx, oy: b.cy,
-      halfW: (badgeWidthEm(b.name, b.active) * badgeFont) / 2,
-    }));
+    const nodes = badges.map((b) => {
+      const nudge = selectedSido == null ? NATION_BADGE_NUDGE_EM[b.key] : null;
+      const anchorX = b.cx + (nudge?.x ?? 0) * badgeFont;
+      const anchorY = b.cy + (nudge?.y ?? 0) * badgeFont;
+      return {
+        ...b,
+        x: anchorX, y: anchorY, ox: anchorX, oy: anchorY,
+        halfW: (badgeWidthEm(b.name, b.active) * badgeFont) / 2,
+      };
+    });
 
     for (let iter = 0; iter < 300; iter++) {
       let moved = false;
+      // 앞선 충돌에서 밀린 라벨을 원래 지역 중심 쪽으로 조금씩 되돌린다. 이 힘이 없으면
+      // 수도권처럼 빽빽한 곳에서 먼저 처리된 충돌이 누적돼 알약이 실제 지역과 멀어진다.
+      // 앞 절반은 원래 지역 중심으로 되돌리되, 뒤 절반은 충돌 분리에만 쓴다.
+      // 복원력을 끝까지 적용하면 좁은 화면의 밀집 지역에서 반복 상한에 도달해도
+      // 라벨이 완전히 분리되지 않은 채 남을 수 있다.
+      if (iter > 0 && iter < 150) {
+        for (const n of nodes) {
+          n.x += (n.ox - n.x) * 0.08;
+          n.y += (n.oy - n.y) * 0.08;
+        }
+      }
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
           const a = nodes[i], b = nodes[j];
@@ -646,7 +704,7 @@ export function SupportRegionMap() {
       )}
 
       {/* 배경은 페이지 전체에 깔린 SeaBackdrop이 담당하므로 지도 자체는 투명하다 */}
-      <div className="mx-auto w-full max-w-3xl px-2">
+      <div className="relative mx-auto w-full max-w-3xl px-2 md:-top-6">
       <svg
         ref={svgRef}
         viewBox={`0 0 ${viewW.toFixed(1)} ${viewH.toFixed(1)}`}
