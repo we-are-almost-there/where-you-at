@@ -7,7 +7,7 @@
 //   - 구독자가 여럿이어도 /api/me는 한 번만 부른다
 //   - 401이면 토큰을 지우고, 연결 실패나 서버 오류면 토큰을 남겨 다음 구독 때 다시 확인한다
 //   - 로그인 뒤 늦게 온 /api/me 응답이 상태를 덮어쓰지 않는다
-//   - 탈퇴는 204일 때만 완료다. 401이면 로그아웃하되 오류를 던지고, 그 밖의 실패는 로그인 상태를 유지한다
+//   - 로그아웃은 서버 세션 삭제가 확인된 뒤 토큰을 지우고, 탈퇴 성공은 로그아웃 API를 중복 호출하지 않는다
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -125,17 +125,52 @@ describe("useAuth", () => {
     expect(localStorage.getItem(TOKEN_KEY)).toBe("new-token");
   });
 
-  it("로그아웃하면 토큰을 지운다", async () => {
-    vi.stubGlobal("fetch", vi.fn());
+  it("로그아웃에 성공하면 현재 토큰으로 서버 세션을 지운 뒤 로컬 토큰을 지운다", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(204));
+    vi.stubGlobal("fetch", fetchMock);
     const { useAuth, signIn, signOut } = await loadAuth();
     const { result } = renderHook(() => useAuth());
 
     act(() => signIn("our-token", USER));
     expect(result.current.status).toBe("signedIn");
-    act(() => signOut());
+    await act(() => signOut());
 
     expect(result.current.status).toBe("signedOut");
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(new URL(String(url)).pathname).toBe("/api/auth/logout");
+    expect(init).toEqual({ method: "POST", headers: { Authorization: "Bearer our-token" } });
+  });
+
+  it("로그아웃 응답이 401이면 이미 무효한 토큰을 로컬에서도 지운다", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(401)));
+    const { useAuth, signIn, signOut } = await loadAuth();
+    const { result } = renderHook(() => useAuth());
+    act(() => signIn("expired-token", USER));
+
+    await act(() => signOut());
+
+    expect(result.current.status).toBe("signedOut");
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+  });
+
+  it("로그아웃 연결 실패나 서버 오류면 토큰과 로그인 상태를 유지한다", async () => {
+    for (const failure of [
+      () => Promise.reject(new TypeError("Failed to fetch")),
+      () => Promise.resolve(jsonResponse(500)),
+    ]) {
+      const fetchMock = vi.fn().mockImplementationOnce(failure);
+      vi.stubGlobal("fetch", fetchMock);
+      const { useAuth, signIn, signOut } = await loadAuth();
+      const { result } = renderHook(() => useAuth());
+      act(() => signIn("our-token", USER));
+
+      await expect(signOut()).rejects.toBeInstanceOf(Error);
+
+      expect(result.current.status).toBe("signedIn");
+      expect(localStorage.getItem(TOKEN_KEY)).toBe("our-token");
+      cleanup();
+    }
   });
 });
 
@@ -151,12 +186,13 @@ describe("withdraw", () => {
 
     expect(result.current.status).toBe("signedOut");
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
     expect(new URL(String(url)).pathname).toBe("/api/me");
     expect(init).toEqual({ method: "DELETE", headers: { Authorization: "Bearer our-token" } });
   });
 
-  it("토큰이 만료돼 401이면 탈퇴 완료로 처리하지 않고, 로그아웃한 뒤 오류를 던진다", async () => {
+  it("탈퇴 요청이 401이면 이미 처리됐거나 무효한 토큰이므로 로컬 상태를 지우고 오류를 던진다", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(401)));
     const { useAuth, signIn, withdraw } = await loadAuth();
     const { result } = renderHook(() => useAuth());
