@@ -64,7 +64,8 @@ describe("SavedCoursesPage", () => {
     vi.mocked(fetchSavedCourses).mockResolvedValue([course(3, "자전거")]);
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: /코스 3/ }));
+    // 카드에는 찜(하트) 버튼도 있어 코스 이름만으로는 둘이 잡힌다. 카드 버튼은 이름에 주소가 이어진다.
+    fireEvent.click(await screen.findByRole("button", { name: /코스 3 강원 춘천시/ }));
 
     expect(screen.getByText("코스 상세")).toBeTruthy();
   });
