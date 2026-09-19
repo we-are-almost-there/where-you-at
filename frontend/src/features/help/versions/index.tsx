@@ -1,20 +1,24 @@
 import ArchivedLegalPage from "./ArchivedLegalPage";
 import PrivacyPolicy20260917 from "./PrivacyPolicy20260917";
 import Terms20260917 from "./Terms20260917";
+import { findPreviousVersion } from "../legalInfo";
 
-const PERIOD_20260917 = "2026년 9월 17일 ~ 2026년 9월 18일";
+// 적용 기간은 legalInfo.ts의 PREVIOUS_VERSIONS에만 적는다. 경로로 찾아 방침·약관의 이전 버전 링크와 같은 기간을 보여 준다.
+// 경로는 App.tsx의 라우트와 같아야 한다.
 
 export function PrivacyPolicy20260917Page() {
+  const { period } = findPreviousVersion("/privacy/2026-09-17");
   return (
-    <ArchivedLegalPage title="개인정보처리방침" period={PERIOD_20260917} currentPath="/privacy">
+    <ArchivedLegalPage title="개인정보처리방침" period={period} currentPath="/privacy">
       <PrivacyPolicy20260917 />
     </ArchivedLegalPage>
   );
 }
 
 export function Terms20260917Page() {
+  const { period } = findPreviousVersion("/terms/2026-09-17");
   return (
-    <ArchivedLegalPage title="이용약관" period={PERIOD_20260917} currentPath="/terms">
+    <ArchivedLegalPage title="이용약관" period={period} currentPath="/terms">
       <Terms20260917 />
     </ArchivedLegalPage>
   );

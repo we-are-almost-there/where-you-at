@@ -59,6 +59,14 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
   const [dialog, setDialog] = useState<"edit" | "withdraw" | "stampMap" | null>(null);
   const [status, setStatus] = useState("");
 
+  // 프로필 수정을 열 때 알림 문구를 비운다. 저장할 때마다 "" → "프로필을 저장했어요."로 바뀌어야 화면낭독기가
+  // 다시 읽는다. 같은 문구로 한 번 더 setStatus하면 React가 갱신을 건너뛰어 두 번째 저장부터 알림이 없다.
+  // 여는 곳이 두 군데(프로필 수정 버튼, 한 줄 소개 안내)라 이 함수로만 연다.
+  const openProfileEdit = () => {
+    setStatus("");
+    setDialog("edit");
+  };
+
   return (
     <>
       <div className="grid gap-5 md:grid-cols-[280px_minmax(0,1fr)] lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-6">
@@ -89,7 +97,7 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
                   // 비어 있으면 적을 수 있다는 걸 알려 주고, 누르면 바로 프로필 수정을 연다.
                   <button
                     type="button"
-                    onClick={() => setDialog("edit")}
+                    onClick={openProfileEdit}
                     className="mt-2 cursor-pointer text-[14px] leading-5 text-caption underline-offset-2 hover:text-ink hover:underline"
                   >
                     한 줄 소개를 적어 보세요
@@ -101,7 +109,7 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
             <div className="mt-5 flex gap-2">
               <button
                 type="button"
-                onClick={() => setDialog("edit")}
+                onClick={openProfileEdit}
                 className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-lavender text-[14px] font-bold text-accent-strong hover:bg-control-hover"
               >
                 <Pencil size={15} aria-hidden="true" />

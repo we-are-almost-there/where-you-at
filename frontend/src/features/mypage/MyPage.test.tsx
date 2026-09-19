@@ -204,6 +204,16 @@ describe("프로필 수정", () => {
     expect(screen.getByText("20/20")).toBeTruthy();
   });
 
+  it("끝에 공백이 있어 다음 글자가 막히면 카운터도 최대(20/20)를 보여 준다", () => {
+    openDialog();
+    const input = screen.getByLabelText("닉네임") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "가".repeat(19) + " " } });
+    expect(screen.getByText("20/20")).toBeTruthy();
+
+    fireEvent.change(input, { target: { value: "가".repeat(19) + " 나" } });
+    expect(input.value).toBe("가".repeat(19) + " ");
+  });
+
   it("한글을 조합하는 동안에는 자르지 않고, 조합이 끝나면 자른다", () => {
     openDialog();
     const input = screen.getByLabelText(/한 줄 소개/) as HTMLInputElement;
@@ -254,6 +264,24 @@ describe("프로필 수정", () => {
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
     await waitFor(() => expect(updateProfile).toHaveBeenCalledWith({ bio: "" }));
+  });
+
+  it("두 번째 저장도 화면낭독기 알림이 다시 읽히도록, 열 때 알림을 비웠다가 저장하면 채운다", async () => {
+    vi.mocked(updateProfile).mockResolvedValue();
+    renderPage();
+    // 늘 DOM에 있는 알림 영역(StatusMessage). 글자가 바뀌어야 읽힌다.
+    const liveRegion = () => document.querySelector('p[role="status"].sr-only');
+
+    for (const nickname of ["첫 이름", "두 번째 이름"]) {
+      fireEvent.click(screen.getByRole("button", { name: "프로필 수정" }));
+      expect(liveRegion()?.textContent).toBe("");
+
+      fireEvent.change(screen.getByLabelText("닉네임"), { target: { value: nickname } });
+      fireEvent.click(screen.getByRole("button", { name: "저장" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(liveRegion()?.textContent).toBe("프로필을 저장했어요.");
+    }
+    expect(updateProfile).toHaveBeenCalledTimes(2);
   });
 
   it("바꾸지 않고 저장하면 요청 없이 닫는다", () => {

@@ -3,7 +3,7 @@ import { updateProfile, type ProfileChanges, type User } from "../../auth";
 import { HttpError, NetworkError } from "../../../lib/http";
 import ProfileAvatar from "./ProfileAvatar";
 import ModalDialog from "../../../components/common/ModalDialog";
-import { charLength, limitInput, toOneLine } from "../oneLineText";
+import { charLength, inputLength, limitInput, toOneLine } from "../oneLineText";
 
 // 서버(backend/app/schemas/user.py NICKNAME_MAX_LENGTH·BIO_MAX_LENGTH)와 같은 값. 바꾸면 두 곳을 함께 고친다.
 export const NICKNAME_MAX_LENGTH = 20;
@@ -176,7 +176,8 @@ function TextField({ id, inputRef, label, optional, value, max, placeholder, aut
   const counterId = `${id}-counter`;
   const hintId = `${id}-hint`;
   const composingRef = useRef(false);
-  const length = charLength(toOneLine(value));
+  // 입력 제한(limitInput)과 같은 기준으로 센다. 끝 공백도 세야 막히는 순간 정확히 max/max가 된다(oneLineText.ts).
+  const length = inputLength(value);
   const describedBy = [errorId, hint && hintId, counterId].filter(Boolean).join(" ");
   return (
     <>

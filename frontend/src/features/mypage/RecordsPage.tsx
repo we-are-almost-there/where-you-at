@@ -42,6 +42,8 @@ function Records() {
   const [cards] = useState(getRecordCards);
 
   // 탭을 바꾸면 페이지는 1로 돌아간다. 두 목록의 페이지 수가 달라 이어 쓰면 빈 페이지가 나올 수 있다.
+  // replace로 바꾸는 것은 의도다. 탭은 다른 화면으로 이동하는 것이 아니라 같은 목록의 보기를 바꾸는 것이라
+  // 뒤로가기에 탭 전환을 쌓지 않는다. 페이지 이동(usePageParam)은 탐색 기록으로 남긴다.
   const changeTab = (next: Tab) => setSearchParams(next === "records" ? {} : { tab: next }, { replace: true });
 
   const counts: Record<Tab, number> = { records: records.length, cards: cards.length };
