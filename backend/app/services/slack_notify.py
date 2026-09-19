@@ -31,7 +31,7 @@ def notify_unlink_failure() -> bool:
     return post(
         settings.inquiry_webhook_url,
         {"text": UNLINK_FAILURE_MESSAGE},
-        failure_log="연결 끊기 웹훅 삭제 실패 알림 전송 실패",
+        failure_log="연결 끊기 웹훅 처리 실패 알림 전송 실패",
     )
 
 

@@ -18,7 +18,7 @@ SLACK = "https://hooks.slack.com/services/T000/B000/secret-token"
 
 
 @patch("app.services.slack_notify.urlopen")
-class TestNotifyUnlinkDeleteFailure(unittest.TestCase):
+class TestNotifyUnlinkFailure(unittest.TestCase):
     def setUp(self):
         url_patcher = patch.object(settings, "inquiry_webhook_url", SLACK)
         url_patcher.start()
