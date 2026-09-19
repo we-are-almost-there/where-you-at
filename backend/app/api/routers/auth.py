@@ -1,19 +1,41 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from ...crud import user as user_crud
 from ...deps import db_connection
 from ...schemas.user import KakaoLoginRequest, LoginResponse, UserOut
 from ...services import auth_token, kakao_oauth
+from ...services.rate_limit import SlidingWindowLimiter, client_key
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+# 같은 IP에서 10분에 20회까지. 한 번의 로그인은 한 번 호출하므로 공용 IP(학교, 회사, 모바일 캐리어 NAT)
+# 뒤에 여러 사람이 있어도 걸리지 않고, 단일 IP가 한 번에 몰아 보낼 수 있는 양을 동기 라우터가 함께 쓰는
+# 스레드풀(기본 40)보다 작게 둔다. 동시 실행 수 자체는 제한하지 않는다(#150 후속).
+# 메모리 기반이라 서버 재시작 시 초기화된다 (services/rate_limit.py 참고).
+login_limiter = SlidingWindowLimiter(max_requests=20, window_seconds=600)
+
+# 요청을 막는 용도가 아니라 아래 로그를 10분에 한 번만 남기는 용도다. 헤더 설정이나 프록시 경로가
+# 깨지면 로그인 요청마다 같은 줄이 쌓여 다른 로그를 덮는다.
+unverified_log_limiter = SlidingWindowLimiter(max_requests=1, window_seconds=600)
+
 
 @router.post("/kakao", response_model=LoginResponse)
-def login_with_kakao(body: KakaoLoginRequest):
+def login_with_kakao(body: KakaoLoginRequest, request: Request):
     """카카오 인가 코드로 로그인한다. 처음 로그인하면 회원을 만든다."""
     if not (kakao_oauth.is_configured() and auth_token.is_configured()):
         print("[ERROR] 카카오 로그인 설정이 비어 있거나 JWT_SECRET이 32바이트보다 짧습니다.")
         raise HTTPException(status_code=503, detail="지금은 로그인할 수 없습니다. 잠시 후 다시 시도해 주세요.")
+
+    # 카카오 토큰 교환 전에 한도를 확인해, 한도를 넘은 반복 요청이 외부 호출로 이어지지 않게 한다.
+    key = client_key(request)
+    if key is None:
+        # 이용자 IP를 확인하지 못한 요청은 제한하지 않는다(fail open). 문의와 달리 한 키로 묶으면
+        # 헤더 검증이 깨진 동안 전체 이용자가 로그인하지 못한다. 설정이 깨진 신호이므로 로그를 남긴다.
+        # 요청마다 같은 줄이 쌓이지 않게 10분에 한 번만 남긴다.
+        if unverified_log_limiter.allow("login-unverified-client"):
+            print("[ERROR] 로그인 요청 제한을 건너뜁니다: 이용자 IP를 확인하지 못했습니다(CF-Connecting-IP 확인 필요).")
+    elif not login_limiter.allow(key):
+        raise HTTPException(status_code=429, detail="로그인을 너무 자주 시도했어요. 잠시 후 다시 시도해 주세요.")
 
     try:
         kakao_token = kakao_oauth.exchange_code(body.code)
