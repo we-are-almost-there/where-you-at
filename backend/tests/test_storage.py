@@ -14,6 +14,7 @@ from botocore.stub import Stubber
 from app.core.config import settings
 from app.services import storage
 from app.services.storage import Folder
+from scripts import check_r2
 
 R2_SETTINGS = {
     "r2_account_id": "acc123",
@@ -62,16 +63,32 @@ class NewKeyTest(unittest.TestCase):
                 storage.new_key(Folder.AVATAR, 7, content_type)
 
 
+class CheckR2Test(unittest.TestCase):
+    def test_only_explicit_access_denials_count_as_blocked_public_access(self):
+        for status in (400, 401, 403, 404):
+            self.assertIn(status, check_r2._BLOCKED_PUBLIC_STATUSES)
+
+        # 리다이렉트, rate limit, 서버 오류는 비공개라는 증거가 아니다.
+        for status in (200, 301, 302, 429, 500, 503):
+            self.assertNotIn(status, check_r2._BLOCKED_PUBLIC_STATUSES)
+
+
 class PresignTest(StorageTestCase):
     def test_upload_url_signs_content_type_and_expires_quickly(self):
-        url = urlparse(storage.presign_upload("avatars/7/a.webp", "image/webp"))
+        url = urlparse(storage.presign_upload("uploads/7/a.webp", "image/webp"))
         query = parse_qs(url.query)
 
         self.assertEqual(url.netloc, "acc123.r2.cloudflarestorage.com")
-        self.assertEqual(url.path, "/test-uploads/avatars/7/a.webp")
+        self.assertEqual(url.path, "/test-uploads/uploads/7/a.webp")
         self.assertEqual(query["X-Amz-Expires"], [str(storage.UPLOAD_URL_EXPIRES_SECONDS)])
         # 서명에 Content-Type이 들어가야 다른 형식으로 바꿔 올릴 수 없다.
         self.assertIn("content-type", query["X-Amz-SignedHeaders"][0])
+
+    def test_upload_url_only_for_temporary_keys(self):
+        # 최종 키에 업로드 URL을 주면 검증한 뒤에도 덮어쓸 수 있다.
+        for key in ("avatars/7/a.webp", "record-cards/7/b.jpg", "uploadsx/7/a.webp"):
+            with self.assertRaises(ValueError, msg=key):
+                storage.presign_upload(key, "image/webp")
 
     def test_download_url(self):
         url = urlparse(storage.presign_download("record-cards/7/b.jpg"))
@@ -89,12 +106,12 @@ class HeadTest(StorageTestCase):
     def test_returns_size_and_type(self):
         self.stubber.add_response(
             "head_object",
-            {"ContentLength": 1234, "ContentType": "image/webp"},
+            {"ContentLength": 1234, "ContentType": "image/webp", "ETag": '"abc"'},
             {"Bucket": "test-uploads", "Key": "avatars/7/a.webp"},
         )
         self.assertEqual(
             storage.head("avatars/7/a.webp"),
-            storage.ObjectInfo(size=1234, content_type="image/webp"),
+            storage.ObjectInfo(size=1234, content_type="image/webp", etag='"abc"'),
         )
 
     def test_missing_object_is_none(self):
@@ -105,6 +122,47 @@ class HeadTest(StorageTestCase):
         self.stubber.add_client_error("head_object", service_error_code="403", http_status_code=403)
         with self.assertRaises(storage.StorageError):
             storage.head("avatars/7/a.webp")
+
+
+class PromoteTest(StorageTestCase):
+    INFO = storage.ObjectInfo(size=1234, content_type="image/webp", etag='"abc"')
+
+    def test_copies_only_verified_file_and_removes_temporary(self):
+        self.stubber.add_response(
+            "copy_object",
+            {},
+            {
+                "Bucket": "test-uploads",
+                "Key": "avatars/7/a.webp",
+                "CopySource": {"Bucket": "test-uploads", "Key": "uploads/7/a.webp"},
+                # 검증한 파일과 ETag가 같을 때만 복사한다.
+                "CopySourceIfMatch": '"abc"',
+            },
+        )
+        self.stubber.add_response("delete_object", {}, {"Bucket": "test-uploads", "Key": "uploads/7/a.webp"})
+
+        self.assertEqual(storage.promote("uploads/7/a.webp", Folder.AVATAR, self.INFO), "avatars/7/a.webp")
+        self.stubber.assert_no_pending_responses()
+
+    def test_changed_or_missing_upload_is_not_promoted(self):
+        for code, status in (("PreconditionFailed", 412), ("NoSuchKey", 404)):
+            self.stubber.add_client_error("copy_object", service_error_code=code, http_status_code=status)
+            with self.assertRaises(storage.UploadChangedError, msg=code):
+                storage.promote("uploads/7/a.webp", Folder.AVATAR, self.INFO)
+        # 복사하지 않았으면 임시 파일도 지우지 않는다(수명 주기 규칙이 치운다).
+        self.stubber.assert_no_pending_responses()
+
+    def test_other_errors_raise_storage_error(self):
+        self.stubber.add_client_error("copy_object", service_error_code="AccessDenied", http_status_code=403)
+        with self.assertRaises(storage.StorageError) as ctx:
+            storage.promote("uploads/7/a.webp", Folder.AVATAR, self.INFO)
+        self.assertNotIsInstance(ctx.exception, storage.UploadChangedError)
+
+    def test_rejects_non_temporary_source_or_target(self):
+        with self.assertRaises(ValueError):
+            storage.promote("avatars/7/a.webp", Folder.RECORD_CARD, self.INFO)
+        with self.assertRaises(ValueError):
+            storage.promote("uploads/7/a.webp", Folder.UPLOAD, self.INFO)
 
 
 class DeleteTest(StorageTestCase):
@@ -119,6 +177,10 @@ class DeleteTest(StorageTestCase):
             storage.delete("avatars/7/a.webp")
 
     def test_delete_user_objects_clears_every_folder_by_prefix(self):
+        # 임시 폴더도 지운다.
+        self.stubber.add_response(
+            "list_objects_v2", {"IsTruncated": False}, {"Bucket": "test-uploads", "Prefix": "uploads/7/"}
+        )
         self.stubber.add_response(
             "list_objects_v2",
             {"Contents": [{"Key": "avatars/7/a.webp"}], "IsTruncated": False},
@@ -138,6 +200,7 @@ class DeleteTest(StorageTestCase):
         self.stubber.assert_no_pending_responses()
 
     def test_delete_user_objects_reports_partial_failure(self):
+        self.stubber.add_response("list_objects_v2", {"IsTruncated": False})
         self.stubber.add_response(
             "list_objects_v2", {"Contents": [{"Key": "avatars/7/a.webp"}], "IsTruncated": False}
         )
