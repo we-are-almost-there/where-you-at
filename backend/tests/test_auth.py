@@ -10,7 +10,9 @@
 실행 (backend/ 에서):
     python -m unittest tests.test_auth
 """
+import io
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -63,6 +65,7 @@ class TestKakaoLogin(unittest.TestCase):
     def setUp(self):
         # 제한 기록은 모듈 전역이라 테스트끼리 섞이지 않게 매번 비운다.
         auth_router.login_limiter.reset()
+        auth_router.unverified_log_limiter.reset()
         settings_patcher = patch.multiple(settings, **SETTINGS)
         settings_patcher.start()
         self.addCleanup(settings_patcher.stop)
@@ -244,6 +247,18 @@ class TestKakaoLogin(unittest.TestCase):
             }
 
         self.assertEqual(statuses, {200})
+
+    def test_unverified_client_is_logged_once(self, mock_post, mock_get, mock_upsert):
+        # 헤더 설정이 깨지면 요청마다 같은 줄이 쌓여 다른 로그를 덮으므로 10분에 한 번만 남긴다.
+        mock_post.return_value = _token_ok()
+        mock_get.return_value = _response(200, KAKAO_USER)
+        output = io.StringIO()
+
+        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True), redirect_stdout(output):
+            for _ in range(3):
+                self.client.post("/api/auth/kakao", json={"code": "auth-code"})
+
+        self.assertEqual(output.getvalue().count("로그인 요청 제한을 건너뜁니다"), 1)
 
 
 if __name__ == "__main__":

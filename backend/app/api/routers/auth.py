@@ -14,6 +14,10 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # 메모리 기반이라 서버 재시작 시 초기화된다 (services/rate_limit.py 참고).
 login_limiter = SlidingWindowLimiter(max_requests=20, window_seconds=600)
 
+# 요청을 막는 용도가 아니라 아래 로그를 10분에 한 번만 남기는 용도다. 헤더 설정이나 프록시 경로가
+# 깨지면 로그인 요청마다 같은 줄이 쌓여 다른 로그를 덮는다.
+unverified_log_limiter = SlidingWindowLimiter(max_requests=1, window_seconds=600)
+
 
 @router.post("/kakao", response_model=LoginResponse)
 def login_with_kakao(body: KakaoLoginRequest, request: Request):
@@ -27,7 +31,9 @@ def login_with_kakao(body: KakaoLoginRequest, request: Request):
     if key is None:
         # 이용자 IP를 확인하지 못한 요청은 제한하지 않는다(fail open). 문의와 달리 한 키로 묶으면
         # 헤더 검증이 깨진 동안 전체 이용자가 로그인하지 못한다. 설정이 깨진 신호이므로 로그를 남긴다.
-        print("[ERROR] 로그인 요청 제한을 건너뜁니다: 이용자 IP를 확인하지 못했습니다(CF-Connecting-IP 확인 필요).")
+        # 요청마다 같은 줄이 쌓이지 않게 10분에 한 번만 남긴다.
+        if unverified_log_limiter.allow("login-unverified-client"):
+            print("[ERROR] 로그인 요청 제한을 건너뜁니다: 이용자 IP를 확인하지 못했습니다(CF-Connecting-IP 확인 필요).")
     elif not login_limiter.allow(key):
         raise HTTPException(status_code=429, detail="로그인을 너무 자주 시도했어요. 잠시 후 다시 시도해 주세요.")
 
