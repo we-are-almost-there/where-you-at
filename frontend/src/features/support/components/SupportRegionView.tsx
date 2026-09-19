@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import type { RegionIndex } from "../regionMatch";
 import { BADGE_CLASS, BADGE_LABEL, type SupportListItem } from "../support.types";
 import { fetchSupportList } from "../supportApi";
+// 코스 탐색의 지역 필터가 쓰는 것과 같은 목록이다. 엔드포인트를 여기 한 번 더 적으면
+// 한쪽만 바뀌어 조용히 어긋나므로, 이미 있는 함수를 가져다 쓴다.
+import { getRegions } from "../../map/coursesApi";
+import { loadRegionNames } from "../../../lib/regionNames";
 import { toUserError, type UserError } from "../../../components/error/userError";
 import { SupportCalculator } from "./SupportCalculator";
 import { SupportErrorText } from "./SupportErrorText";
@@ -14,30 +17,6 @@ type Props = {
 function formatAmount(amount: number | null): string {
   if (amount == null) return "금액 상이";
   return `최대 ${amount.toLocaleString()}원`;
-}
-
-// 지역코드 → 지역명. 지역을 바꿀 때마다 다시 받으면 이름이 늦게 채워지며
-// 헤더가 코드→이름으로 깜빡인다. 한 번만 받아 재사용한다.
-//
-// 예전에는 support-regions-geo.json(762KB)에서 이름을 꺼냈는데, 그 파일은 지원지역
-// 88곳만 담고 있어 거기 없는 지역은 헤더에 코드가 그대로 노출됐다(옹진군 등).
-// region-index.json은 DB의 지역 전체를 담고 크기도 10KB다.
-let regionNamesPromise: Promise<Map<string, string>> | null = null;
-function loadRegionNames(): Promise<Map<string, string>> {
-  regionNamesPromise ??= fetch("/region-index.json")
-    .then((r) => r.json())
-    .then(
-      (index: RegionIndex) =>
-        new Map<string, string>(Object.entries(index.names)),
-    )
-    .catch((err) => {
-      // 실패한 Promise를 그대로 두면 ??=가 "이미 값이 있다"고 보고 재요청하지 않는다.
-      // 네트워크가 돌아와도 새로고침 전까지 지역명이 계속 코드로만 보였다.
-      // 성공한 결과만 캐시로 남긴다.
-      regionNamesPromise = null;
-      throw err;
-    });
-  return regionNamesPromise;
 }
 
 /**
@@ -57,6 +36,25 @@ function splitRegionName(full: string): { sido: string | null; name: string } {
   const at = full.lastIndexOf(" ");
   if (at < 0) return { sido: null, name: full };
   return { sido: full.slice(0, at), name: full.slice(at + 1) };
+}
+
+/**
+ * 기본 코스 탐색 화면(도보)에 코스가 있는 지역 코드. GET /api/regions?type=trail은
+ * 도보 경로가 하나도 없는 시군구를 응답에서 제외한다.
+ *
+ * 지역명과 같은 이유로 한 번만 받아 재사용한다 — 지역을 옮길 때마다 다시 받을 값이 아니고,
+ * 패널을 여닫을 때마다 요청이 새로 나가서도 안 된다.
+ */
+let trailCourseRegionsPromise: Promise<ReadonlySet<string>> | null = null;
+function loadTrailCourseRegions(): Promise<ReadonlySet<string>> {
+  trailCourseRegionsPromise ??= getRegions("도보")
+    .then((rows) => new Set(rows.map((r) => r.region_code)))
+    .catch((err) => {
+      // 실패한 Promise를 캐시로 남기면 네트워크가 돌아와도 새로고침 전까지 재요청하지 않는다
+      trailCourseRegionsPromise = null;
+      throw err;
+    });
+  return trailCourseRegionsPromise;
 }
 
 /** 목록을 어느 지역까지 받아왔는지. loading·error는 이 값에서 파생시킨다. */
@@ -108,6 +106,30 @@ export function SupportRegionView({ regionCode }: Props) {
       cancelled = true;
     };
   }, [regionCode]);
+
+  // 도보 코스가 없는 지역에도 링크를 열어 두면 '조건에 맞는 코스가 없어요'만 뜨는 목록으로
+  // 보낸다(링크는 도보 탭으로 간다). 그 화면의 지역 필터는 코스 보유 지역만 담고 있어서
+  // URL의 지역이 표시되지도 않는다 — 사용자는 '전체 지역'이라고 적힌 빈 목록을 보고
+  // 왜 비었는지 알 수 없다. 그래서 링크를 먼저 막고 이유를 그 자리에 적는다.
+  //
+  // null은 '아직 모른다'는 뜻이다. 조회 전이거나 실패했으면 막지 않는다 — 지도 배지와
+  // 같은 규칙으로, 모르는 것을 없다고 단정하지 않는다.
+  const [trailCourseRegions, setTrailCourseRegions] = useState<ReadonlySet<string> | null>(null);
+  const hasTrailCourse = trailCourseRegions ? trailCourseRegions.has(regionCode) : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    loadTrailCourseRegions()
+      .then((codes) => {
+        if (!cancelled) setTrailCourseRegions(codes);
+      })
+      // 못 받으면 링크를 그대로 둔다. 목록이 비어 있을 수는 있어도, 도보 코스가 있는 지역의
+      // 링크를 조회 실패 때문에 막아 버리는 쪽이 더 나쁘다.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -259,12 +281,22 @@ export function SupportRegionView({ regionCode }: Props) {
 
       {/* ④ 코스 링크 */}
       {/* "/"는 홈이라 region을 읽지 않는다. 지역 필터를 받는 쪽은 /courses다. */}
-      <Link
-        to={`/courses?region=${regionCode}`}
-        className="rounded-lg bg-accent py-3.5 text-center text-[14px] font-bold text-white transition-opacity hover:opacity-90"
-      >
-        이 지역 코스 보러가기 →
-      </Link>
+      {hasTrailCourse === false ? (
+        // 누를 것이 아니라 알리는 것이라 버튼이 아니라 문단으로 둔다. disabled 버튼은
+        // Tab 순서에서 빠져, 키보드로 패널을 훑는 사람은 이 문구를 만나지 못한다.
+        // 링크 자리를 그대로 차지해 없어진 게 아니라 '갈 곳이 없다'는 것으로 읽히게 하고,
+        // accent 채움은 빼 흰 글자 대비 문제(opacity를 걸면 2:1까지 떨어진다)를 피한다.
+        <p className="rounded-lg bg-white/60 py-3.5 text-center text-[14px] font-bold text-muted">
+          이 지역에는 등록된 도보 코스가 없어요
+        </p>
+      ) : (
+        <Link
+          to={`/courses?region=${regionCode}`}
+          className="rounded-lg bg-accent py-3.5 text-center text-[14px] font-bold text-white transition-opacity hover:opacity-90"
+        >
+          이 지역 코스 보러가기 →
+        </Link>
+      )}
     </div>
   );
 }

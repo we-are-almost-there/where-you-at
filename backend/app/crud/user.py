@@ -70,6 +70,14 @@ def get_kakao_id(conn, user_id: int) -> int | None:
     return row[0] if row else None
 
 
+def get_user_id_by_kakao_id(conn, kakao_id: int) -> int | None:
+    """카카오 회원번호로 회원 id를 찾는다. 연결 끊기 웹훅에서 쓴다. 회원이 없으면 None."""
+    with conn.cursor() as cur:
+        cur.execute("select id from app_user where kakao_id = %(kakao_id)s", {"kakao_id": kakao_id})
+        row = cur.fetchone()
+    return row[0] if row else None
+
+
 def delete_user(conn, user_id: int) -> None:
     """회원을 삭제한다. app_user를 참조하는 테이블의 행은 on delete cascade로 함께 지워진다.
 

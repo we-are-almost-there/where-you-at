@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TrackingRecord } from "./trackingRecord";
+import { summarize, type TrackingRecord, type RecordPoint } from "./trackingRecord";
 import {
   getGeolocationErrorMessage,
   isTerminalGeolocationError,
   useCourseTracking,
+  MAX_TRACKING_POINTS,
 } from "./useCourseTracking";
 
 describe("getGeolocationErrorMessage", () => {
@@ -85,7 +86,136 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("빈 초기 세션 삭제가 차단되어도 저장 실패로 표시하지 않는다", () => {
+  const remove = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+    throw new DOMException("Storage blocked", "SecurityError");
+  });
+  const hook = renderHook(() => useCourseTracking("blocked-empty"));
+  expect(remove).toHaveBeenCalledWith("blocked-empty");
+  expect(hook.result.current.status).toBe("idle");
+  expect(hook.result.current.storageFailed).toBe(false);
+  hook.unmount();
+});
+
+it.each(["tracking", "paused"] as const)("%s 세션은 저장소 차단을 알리고 저장 성공 시 해제한다", (status) => {
+  const hook = renderHook(() => useCourseTracking("blocked-active"));
+  act(() => hook.result.current.startTracking());
+  if (status === "paused") act(() => hook.result.current.pause());
+  const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new DOMException("Storage blocked", "SecurityError");
+  });
+  const remove = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+    throw new DOMException("Storage blocked", "SecurityError");
+  });
+  act(() => window.dispatchEvent(new Event("pagehide")));
+  expect(hook.result.current.status).toBe(status);
+  expect(hook.result.current.storageFailed).toBe(true);
+  set.mockRestore();
+  remove.mockRestore();
+  act(() => window.dispatchEvent(new Event("pagehide")));
+  expect(hook.result.current.storageFailed).toBe(false);
+  hook.unmount();
+});
+
+it("12시간 표본을 제한해도 거리·시간·페이스와 새로고침 후 위치를 보존한다", () => {
+  const hook = renderHook(() => useCourseTracking("long-test"));
+  act(() => hook.result.current.startTracking());
+  const points: RecordPoint[] = [];
+  const startedAt = now;
+  // 1초 간격, 지터·부정확한 표본·GPS 튐을 포함한다.
+  act(() => {
+    for (let i = 0; i < 12 * 3600; i++) {
+      now += 1000;
+      const point = { lat: 37.5 + i * 0.00001 + (i % 200 === 0 ? 0.1 : 0), lng: 127,
+        accuracy: i % 17 === 0 ? 100 : 10, timestamp: now };
+      points.push(point);
+      latestWatcher().success({ coords: { latitude: point.lat, longitude: point.lng,
+        accuracy: point.accuracy, heading: null }, timestamp: now } as GeolocationPosition);
+    }
+    window.dispatchEvent(new Event("pagehide"));
+  });
+  expect(points.length).toBeGreaterThan(MAX_TRACKING_POINTS);
+  const expected = summarize(points, now - startedAt);
+  expect(hook.result.current.sampleRecord()).toEqual(expected);
+  const serialized = sessionStorage.getItem("long-test")!;
+  expect(serialized.length * 2).toBeLessThan(2048);
+  expect(JSON.parse(serialized).points.length).toBeLessThanOrEqual(1);
+  const location = hook.result.current.currentLocation;
+  hook.unmount();
+  const restored = renderHook(() => useCourseTracking("long-test"));
+  expect(restored.result.current.currentLocation).toEqual(location);
+  expect(restored.result.current.sampleRecord()).toEqual(expected);
+  emit(1000, 10); // 새로고침 동안 이동한 거리는 제외한다.
+  expect(restored.result.current.sampleRecord()?.distanceKm).toBe(expected.distanceKm);
+  act(() => restored.result.current.pause());
+  expect(stopAndTakeRecord(restored.result.current.stopTracking)?.distanceKm).toBe(expected.distanceKm);
+  restored.unmount();
+});
+
+it("용량 초과를 알리고 주행을 유지하며 다음 저장 성공 시 경고를 해제한다", () => {
+  const hook = renderHook(() => useCourseTracking("quota-test"));
+  act(() => hook.result.current.startTracking());
+  emit(0, 1);
+  emit(1, 60);
+  const before = hook.result.current.sampleRecord();
+  const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new DOMException("Storage full", "QuotaExceededError");
+  });
+  act(() => window.dispatchEvent(new Event("pagehide")));
+  expect(hook.result.current.storageFailed).toBe(true);
+  expect(hook.result.current.status).toBe("tracking");
+  expect(hook.result.current.sampleRecord()).toEqual(before);
+  expect(sessionStorage.getItem("quota-test")).toBeNull();
+  spy.mockRestore();
+  act(() => window.dispatchEvent(new Event("pagehide")));
+  expect(hook.result.current.storageFailed).toBe(false);
+  hook.unmount();
+});
+
 describe("useCourseTracking 권한 거부", () => {
+  it("정확도가 나쁜 표본만 쌓인 뒤 권한이 거부돼도 세션을 지킨다", () => {
+    const hook = renderHook(() => useCourseTracking("bad-accuracy"));
+    act(() => hook.result.current.startTracking());
+    act(() => {
+      for (let i = 0; i < MAX_TRACKING_POINTS; i++) {
+        now += 1000;
+        latestWatcher().success({
+          coords: { latitude: 37.5, longitude: 127, accuracy: 80, heading: null },
+          timestamp: now,
+        } as GeolocationPosition);
+      }
+    });
+
+    deny();
+
+    expect(hook.result.current.status).toBe("paused");
+    expect(hook.result.current.currentLocation?.accuracy).toBe(80);
+    now += 600_000;
+    expect(stopAndTakeRecord(hook.result.current.stopTracking)).toEqual(summarize([], MAX_TRACKING_POINTS * 1000));
+    hook.unmount();
+  });
+
+  it("정확도가 나쁜 첫 표본을 저장하고 복원해도 권한 거부 시 세션을 지킨다", () => {
+    const hook = renderHook(() => useCourseTracking("bad-accuracy-restore"));
+    act(() => hook.result.current.startTracking());
+    now += 1000;
+    act(() => latestWatcher().success({
+      coords: { latitude: 37.5, longitude: 127, accuracy: 80, heading: null },
+      timestamp: now,
+    } as GeolocationPosition));
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    expect(JSON.parse(sessionStorage.getItem("bad-accuracy-restore")!).points).toEqual([
+      { lat: 37.5, lng: 127, accuracy: 80, timestamp: now, segmentStart: true },
+    ]);
+    hook.unmount();
+
+    const restored = renderHook(() => useCourseTracking("bad-accuracy-restore"));
+    deny();
+    expect(restored.result.current.status).toBe("paused");
+    expect(stopAndTakeRecord(restored.result.current.stopTracking)).toEqual(summarize([], 1000));
+    restored.unmount();
+  });
+
   it("시작하자마자 거부되면 남길 기록이 없어 초기 상태로 돌아간다", () => {
     const { result } = renderHook(() => useCourseTracking());
 
@@ -225,16 +355,16 @@ describe("세션 복원", () => {
       act(() => { vi.advanceTimersByTime(500); });
     }
     expect(setItem).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(sessionStorage.getItem("restore-test")!).points).toHaveLength(10);
+    expect(JSON.parse(sessionStorage.getItem("restore-test")!).activeMs).toBe(5000);
     emit(10, 0.5);
     act(() => window.dispatchEvent(new Event("pagehide")));
     expect(setItem).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(sessionStorage.getItem("restore-test")!).points).toHaveLength(11);
+    expect(JSON.parse(sessionStorage.getItem("restore-test")!).activeMs).toBe(5500);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     emit(11, 0.5);
     act(() => document.dispatchEvent(new Event("visibilitychange")));
     expect(setItem).toHaveBeenCalledTimes(3);
-    expect(JSON.parse(sessionStorage.getItem("restore-test")!).points).toHaveLength(12);
+    expect(JSON.parse(sessionStorage.getItem("restore-test")!).activeMs).toBe(6000);
     act(() => hook.result.current.pause());
     expect(setItem).toHaveBeenCalledTimes(4);
     expect(JSON.parse(sessionStorage.getItem("restore-test")!).status).toBe("paused");

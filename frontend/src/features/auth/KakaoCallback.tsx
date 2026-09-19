@@ -20,6 +20,19 @@ const EXPIRED_ERROR: UserError = {
   title: "로그인 요청이 만료되었어요",
   description: "다시 로그인해 주세요.",
 };
+const TOO_MANY_ATTEMPTS_ERROR: UserError = {
+  title: "로그인을 너무 자주 시도했어요",
+  description: "잠시 후 다시 시도해 주세요.",
+};
+
+function toLoginError(err: unknown): UserError {
+  if (err instanceof HttpError) {
+    if (err.status === 401) return EXPIRED_ERROR;
+    // 서버가 같은 IP에서 온 반복 요청을 막은 경우다. 한도는 서버가 정한다.
+    if (err.status === 429) return TOO_MANY_ATTEMPTS_ERROR;
+  }
+  return toUserError(err, LOGIN_FAILED_TITLE);
+}
 
 /** 카카오 인가 뒤 돌아오는 페이지. 인가 코드를 우리 토큰으로 바꾸고 원래 보던 페이지로 보낸다. */
 export default function KakaoCallback() {
@@ -56,9 +69,7 @@ export default function KakaoCallback() {
         navigate(returnTo, { replace: true });
       },
       (err: unknown) => {
-        setError(
-          err instanceof HttpError && err.status === 401 ? EXPIRED_ERROR : toUserError(err, LOGIN_FAILED_TITLE),
-        );
+        setError(toLoginError(err));
       },
     );
   }, [cancelled, code, navigate, returnTo, valid]);

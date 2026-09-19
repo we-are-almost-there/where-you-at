@@ -85,9 +85,10 @@ it("state가 다르거나 저장된 시도가 없으면 교환하지 않는다",
   expect(loginWithKakao).not.toHaveBeenCalled();
 });
 
-it("교환이 401이면 만료로, 그 밖의 실패는 일반 실패로 안내한다", async () => {
+it("교환이 401이면 만료로, 429면 요청 제한으로, 그 밖의 실패는 일반 실패로 안내한다", async () => {
   const cases = [
     { error: new HttpError(401, "만료"), title: "로그인 요청이 만료되었어요" },
+    { error: new HttpError(429, "요청 제한"), title: "로그인을 너무 자주 시도했어요" },
     { error: new HttpError(502, "카카오 오류"), title: "로그인하지 못했어요" },
     { error: new NetworkError(new TypeError("Failed to fetch")), title: "서버에 연결할 수 없어요" },
   ];

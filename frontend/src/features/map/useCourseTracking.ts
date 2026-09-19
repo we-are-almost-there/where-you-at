@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readSession, writeSession } from "./trackingSession";
 import type { LatLng } from "./types";
-import { summarize, type RecordPoint, type TrackingRecord } from "./trackingRecord";
+import { distanceCheckpoint, summarize, type RecordPoint, type TrackingRecord } from "./trackingRecord";
 import { useWakeLock } from "./useWakeLock";
 
 export interface TrackedLocation extends LatLng {
@@ -31,11 +31,14 @@ export function isTerminalGeolocationError(code: number): boolean {
 export type TrackingStatus = "idle" | "tracking" | "paused";
 
 const AUTO_RESUME_MAX_AGE_MS = 30 * 60 * 1000;
+// 약 1초 간격에서도 원시 표본은 최대 약 17분만 보관한다. 거리는 체크포인트에 누적한다.
+export const MAX_TRACKING_POINTS = 1024;
 
 interface SavedTracking {
   savedAt?: number;
   currentLocation?: TrackedLocation | null;
   points: RecordPoint[];
+  distanceMeters?: number;
   activeMs: number;
   status: TrackingStatus;
 }
@@ -62,6 +65,7 @@ export function useCourseTracking(sessionKey?: string) {
     return value && Array.isArray(value.points)
       && value.points.every((point) => point && [point.lat, point.lng, point.accuracy, point.timestamp].every(Number.isFinite))
       && Number.isFinite(value.activeMs)
+      && (value.distanceMeters === undefined || (Number.isFinite(value.distanceMeters) && value.distanceMeters >= 0))
       && value.activeMs >= 0 && (value.status === "tracking" || value.status === "paused")
       ? {
         ...value,
@@ -75,6 +79,7 @@ export function useCourseTracking(sessionKey?: string) {
   const watchGenerationRef = useRef(0);
   // 기록은 화면에 실시간으로 그리지 않고 종료 시 한 번만 요약하므로 ref로 모은다(렌더 유발 없음).
   const pointsRef = useRef<RecordPoint[]>(saved?.points ?? []);
+  const distanceMetersRef = useRef(saved?.distanceMeters ?? 0);
   // 소요시간은 벽시계가 아니라 활동 시간으로 센다. 끝난 구간들의 합과 지금 구간의 시작 시각을
   // 따로 들고 있어야 일시정지 구간을 뺄 수 있다(정지 중이면 segmentStartedAt은 null).
   const activeMsRef = useRef(saved?.activeMs ?? 0);
@@ -89,6 +94,7 @@ export function useCourseTracking(sessionKey?: string) {
   const currentLocationRef = useRef(currentLocation);
   const [status, setStatus] = useState<TrackingStatus>(saved?.status ?? "idle");
   const [error, setError] = useState<string | null>(null);
+  const [storageFailed, setStorageFailed] = useState(false);
   // 실제로 따라가는 중에만 화면을 붙잡는다. 일시정지는 "당분간 안 움직인다"는 선언이라 놓아준다.
   // 종료 경로(종료 버튼·권한 거부·언마운트)가 여럿이라 각자 해제하게 하면
   // 하나만 빠져도 화면이 켜진 채 남는다.
@@ -110,6 +116,7 @@ export function useCourseTracking(sessionKey?: string) {
 
   const resetSession = useCallback(() => {
     pointsRef.current = [];
+    distanceMetersRef.current = 0;
     activeMsRef.current = 0;
     segmentStartedAtRef.current = null;
     startedRef.current = false;
@@ -145,6 +152,13 @@ export function useCourseTracking(sessionKey?: string) {
             ...(resumedRef.current && { segmentStart: true }),
           });
           resumedRef.current = false;
+          if (pointsRef.current.length >= MAX_TRACKING_POINTS) {
+            const checkpoint = distanceCheckpoint(pointsRef.current, distanceMetersRef.current);
+            distanceMetersRef.current = checkpoint.distanceMeters;
+            // 유효 기준점이 없어도 마지막 표본을 남겨 권한 거부 시 세션을 유지한다.
+            const keep = checkpoint.anchor ?? pointsRef.current.at(-1);
+            pointsRef.current = keep ? [{ ...keep, segmentStart: true }] : [];
+          }
           setError(null);
         },
         ({ code }) => {
@@ -156,7 +170,7 @@ export function useCourseTracking(sessionKey?: string) {
           // 여기서 초기화하면 재개하다 거부당한 사람의 기록이 통째로 사라지고,
           // idle이 되면서 종료 버튼까지 없어져 남길 방법 자체가 사라진다.
           // 마지막 위치도 남긴다 — 일시정지는 원래 마커를 지우지 않는다.
-          if (pointsRef.current.length > 0) {
+          if (pointsRef.current.length > 0 || distanceMetersRef.current > 0) {
             closeSegment(); // 안 닫으면 구간이 열린 채 남아 정지 시간이 활동 시간에 더해진다
             setStatus("paused");
             return;
@@ -186,7 +200,7 @@ export function useCourseTracking(sessionKey?: string) {
     if (!startedRef.current) return null;
     // 열려 있는 구간은 닫지 않고 경과분만 더한다 — 여기서 닫으면 실제 정지가 아닌데 구간이 끊긴다.
     const openMs = segmentStartedAtRef.current == null ? 0 : Date.now() - segmentStartedAtRef.current;
-    return summarize(pointsRef.current, activeMsRef.current + openMs);
+    return summarize(pointsRef.current, activeMsRef.current + openMs, distanceMetersRef.current);
   }, []);
 
   /** 추적을 멈추고 이번 세션의 기록을 돌려준다. 시작한 적이 없으면 null. */
@@ -201,8 +215,9 @@ export function useCourseTracking(sessionKey?: string) {
     const started = startedRef.current;
     const points = pointsRef.current;
     const activeMs = activeMsRef.current;
+    const distanceMeters = distanceMetersRef.current;
     resetSession();
-    return started ? summarize(points, activeMs) : null;
+    return started ? summarize(points, activeMs, distanceMeters) : null;
   }, [clearActiveWatch, closeSegment, resetSession]);
 
   const startTracking = useCallback(() => {
@@ -241,12 +256,18 @@ export function useCourseTracking(sessionKey?: string) {
   const persist = useCallback(() => {
     if (!sessionKey) return;
     const openMs = segmentStartedAtRef.current == null ? 0 : Date.now() - segmentStartedAtRef.current;
-    writeSession(sessionKey, startedRef.current ? {
-      points: pointsRef.current, activeMs: activeMsRef.current + openMs,
+    // 기존 버전에서 복원된 대용량 세션도 첫 저장 전에 줄인다.
+    const checkpoint = distanceCheckpoint(pointsRef.current, distanceMetersRef.current);
+    // 정확도가 나쁜 표본만 받은 세션도 복원 후 일시정지할 수 있게 보존한다.
+    const keep = checkpoint.anchor ?? pointsRef.current.at(-1);
+    const success = writeSession(sessionKey, startedRef.current ? {
+      points: keep ? [{ ...keep, segmentStart: true }] : [],
+      distanceMeters: checkpoint.distanceMeters, activeMs: activeMsRef.current + openMs,
       savedAt: Date.now(),
       currentLocation: currentLocationRef.current,
       status: watchIdRef.current == null ? "paused" : "tracking",
     } : null);
+    setStorageFailed(startedRef.current && !success);
   }, [sessionKey]);
 
   useEffect(() => {
@@ -281,6 +302,7 @@ export function useCourseTracking(sessionKey?: string) {
     status,
     error,
     wakeLockFailed,
+    storageFailed,
     startTracking,
     pause,
     resume,

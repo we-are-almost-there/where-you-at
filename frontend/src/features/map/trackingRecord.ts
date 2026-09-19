@@ -32,7 +32,12 @@ const MIN_PACE_DISTANCE_KM = 0.01;
  * 버려진 표본은 기준점을 갱신하지 않는다 — 튄 점 하나 때문에 이후 구간까지 어긋나면 안 된다.
  */
 export function accumulateDistanceMeters(points: RecordPoint[]): number {
-  let total = 0;
+  return distanceCheckpoint(points).distanceMeters;
+}
+
+/** 표본을 줄여도 다음 표본의 필터 판정이 같도록 마지막 유효 기준점을 보존한다. */
+export function distanceCheckpoint(points: RecordPoint[], distanceMeters = 0) {
+  let total = distanceMeters;
   let prev: RecordPoint | null = null;
 
   for (const point of points) {
@@ -63,15 +68,15 @@ export function accumulateDistanceMeters(points: RecordPoint[]): number {
     total += meters;
     prev = point;
   }
-  return total;
+  return { distanceMeters: total, anchor: prev as RecordPoint | null };
 }
 
 /**
  * 세션을 요약한다. durationMs는 벽시계가 아니라 "일시정지를 뺀 활동 시간"이라
  * 호출자가 구간별로 누적해 넘긴다 — 여기서 시작/종료 시각을 빼면 정지 시간이 섞인다.
  */
-export function summarize(points: RecordPoint[], activeMs: number): TrackingRecord {
-  const distanceKm = accumulateDistanceMeters(points) / 1000;
+export function summarize(points: RecordPoint[], activeMs: number, distanceMeters = 0): TrackingRecord {
+  const distanceKm = distanceCheckpoint(points, distanceMeters).distanceMeters / 1000;
   const durationMs = Math.max(0, activeMs);
   return {
     distanceKm,

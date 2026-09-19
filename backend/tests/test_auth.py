@@ -10,15 +10,18 @@
 실행 (backend/ 에서):
     python -m unittest tests.test_auth
 """
+import io
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import MagicMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
 
+from app.api.routers import auth as auth_router
 from app.core.config import settings
 from app.main import app
-from app.services import auth_token
+from app.services import auth_token, rate_limit
 
 SETTINGS = {
     "kakao_login_client_id": "client-id",
@@ -60,6 +63,9 @@ class TestKakaoLogin(unittest.TestCase):
         cls.client = TestClient(app)
 
     def setUp(self):
+        # 제한 기록은 모듈 전역이라 테스트끼리 섞이지 않게 매번 비운다.
+        auth_router.login_limiter.reset()
+        auth_router.unverified_log_limiter.reset()
         settings_patcher = patch.multiple(settings, **SETTINGS)
         settings_patcher.start()
         self.addCleanup(settings_patcher.stop)
@@ -195,6 +201,64 @@ class TestKakaoLogin(unittest.TestCase):
     def test_empty_code_returns_422(self, mock_post, mock_get, mock_upsert):
         self.assertEqual(self._login(code="").status_code, 422)
         mock_post.assert_not_called()
+
+    def test_too_many_logins_from_one_ip_return_429(self, mock_post, mock_get, mock_upsert):
+        mock_post.return_value = _token_ok()
+        mock_get.return_value = _response(200, KAKAO_USER)
+        limit = auth_router.login_limiter.max_requests
+
+        for _ in range(limit):
+            self.assertEqual(self._login().status_code, 200)
+        mock_post.reset_mock()
+
+        res = self._login()
+
+        self.assertEqual(res.status_code, 429)
+        # 한도를 넘은 요청은 카카오를 호출하기 전에 막는다.
+        mock_post.assert_not_called()
+
+    def test_other_ip_is_not_affected(self, mock_post, mock_get, mock_upsert):
+        mock_post.return_value = _token_ok()
+        mock_get.return_value = _response(200, KAKAO_USER)
+        headers = {"CF-Connecting-IP": "203.0.113.10"}
+
+        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True):
+            for _ in range(auth_router.login_limiter.max_requests):
+                self.client.post("/api/auth/kakao", json={"code": "auth-code"}, headers=headers)
+
+            blocked = self.client.post("/api/auth/kakao", json={"code": "auth-code"}, headers=headers)
+            other = self.client.post(
+                "/api/auth/kakao", json={"code": "auth-code"}, headers={"CF-Connecting-IP": "198.51.100.7"}
+            )
+
+        self.assertEqual(blocked.status_code, 429)
+        self.assertEqual(other.status_code, 200)
+
+    def test_unverified_client_is_not_limited(self, mock_post, mock_get, mock_upsert):
+        # 문의와 반대로 통과시킨다. 헤더 검증이 깨졌을 때 전체 이용자가 한 키로 묶여 로그인이 막히는
+        # 피해가 더 크다. 문의 쪽 정책은 test_inquiries.py에서 확인한다.
+        mock_post.return_value = _token_ok()
+        mock_get.return_value = _response(200, KAKAO_USER)
+
+        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True):
+            statuses = {
+                self.client.post("/api/auth/kakao", json={"code": "auth-code"}).status_code
+                for _ in range(auth_router.login_limiter.max_requests + 1)
+            }
+
+        self.assertEqual(statuses, {200})
+
+    def test_unverified_client_is_logged_once(self, mock_post, mock_get, mock_upsert):
+        # 헤더 설정이 깨지면 요청마다 같은 줄이 쌓여 다른 로그를 덮으므로 10분에 한 번만 남긴다.
+        mock_post.return_value = _token_ok()
+        mock_get.return_value = _response(200, KAKAO_USER)
+        output = io.StringIO()
+
+        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True), redirect_stdout(output):
+            for _ in range(3):
+                self.client.post("/api/auth/kakao", json={"code": "auth-code"})
+
+        self.assertEqual(output.getvalue().count("로그인 요청 제한을 건너뜁니다"), 1)
 
 
 if __name__ == "__main__":

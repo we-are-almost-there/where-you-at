@@ -2,24 +2,37 @@ from psycopg2.extras import RealDictCursor
 
 
 # 코스가 실제로 존재하는 지역만 반환한다 (빈 시군구로 드롭다운이 지저분해지는 것 방지).
-# region.region_code(5자리 시군구)와 course.region_code를 조인. sido 정렬로 프론트 그룹핑 편의 제공.
+# region.region_code(5자리 시군구)와 course.region_code를 조인하고, route_type을 받으면
+# 그 경로를 가진 코스만 남긴다. region_code 정렬로 프론트 그룹핑 편의 제공.
 _REGIONS_WITH_COURSE_SQL = """
 SELECT DISTINCT r.region_code, r.name, r.sido, r.is_population_drop
 FROM region r
 JOIN course c ON c.region_code = r.region_code
+{route_join}
 {where}
 ORDER BY r.region_code
 """
 
 
-def list_regions_with_courses(conn, sido: str | None = None) -> list[dict]:
-    """코스를 보유한 지역 목록을 반환한다. sido(시도명) 지정 시 해당 시도로 필터."""
+def list_regions_with_courses(
+    conn,
+    sido: str | None = None,
+    route_type: str | None = None,
+) -> list[dict]:
+    """코스를 보유한 지역 목록. sido와 route_type을 주면 해당 조건으로 필터한다."""
+    route_join = ""
     where = ""
     params: list = []
+    if route_type:
+        route_join = (
+            "JOIN course_route cr ON cr.course_id = c.id "
+            "AND cr.route_type = %s"
+        )
+        params.append(route_type)
     if sido:
         where = "WHERE r.sido = %s"
         params.append(sido)
-    sql = _REGIONS_WITH_COURSE_SQL.format(where=where)
+    sql = _REGIONS_WITH_COURSE_SQL.format(route_join=route_join, where=where)
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(sql, params)
         return cur.fetchall()

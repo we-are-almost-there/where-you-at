@@ -7,21 +7,10 @@ INQUIRY_WEBHOOK_URL이 비어 있으면 아무것도 하지 않는다. 알림은
 보내지 않는다. 전송 항목을 바꾸면 개인정보처리방침 7·8번도 함께 고친다.
 """
 
-import json
-import logging
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
-
 from app.core.config import settings
+from app.services import slack_notify
 
-LOGGER = logging.getLogger(__name__)
 MESSAGE = "[어디까지왔니] 새 1:1 문의가 있어요"
-TIMEOUT_SECONDS = 3
-
-
-def _plain_text(text: str) -> dict[str, str]:
-    # 이용자가 입력한 Slack 마크업이나 멘션이 실행되지 않게 모든 입력을 plain_text로 보낸다.
-    return {"type": "plain_text", "text": text}
 
 
 def build_payload(*, category: str, email: str, content: str) -> dict[str, object]:
@@ -30,35 +19,20 @@ def build_payload(*, category: str, email: str, content: str) -> dict[str, objec
         # blocks를 표시하지 못하는 환경과 모바일 알림에 쓰이는 대체 문구에는 개인정보를 넣지 않는다.
         "text": MESSAGE,
         "blocks": [
-            {"type": "header", "text": _plain_text(MESSAGE)},
+            {"type": "header", "text": slack_notify.plain_text(MESSAGE)},
             {
                 "type": "section",
                 "fields": [
-                    _plain_text(f"문의 유형\n{category}"),
-                    _plain_text(f"이메일\n{email}"),
+                    slack_notify.plain_text(f"문의 유형\n{category}"),
+                    slack_notify.plain_text(f"이메일\n{email}"),
                 ],
             },
             {
                 "type": "section",
-                "text": _plain_text(f"문의 내용\n{content}"),
+                "text": slack_notify.plain_text(f"문의 내용\n{content}"),
             },
         ],
     }
-
-
-def _is_slack_webhook_url(url: str) -> bool:
-    try:
-        parsed = urlparse(url)
-        hostname = parsed.hostname
-    except ValueError:
-        return False
-    return (
-        parsed.scheme == "https"
-        and hostname == "hooks.slack.com"
-        and parsed.path.startswith("/services/")
-        and not parsed.username
-        and not parsed.password
-    )
 
 
 def notify_new_inquiry(
@@ -70,38 +44,8 @@ def notify_new_inquiry(
 ) -> bool:
     """알림을 보냈으면 True, 주소가 없거나 실패했으면 False를 반환한다."""
     url = webhook_url if webhook_url is not None else settings.inquiry_webhook_url
-    if not url:
-        return False
-    if not _is_slack_webhook_url(url):
-        LOGGER.error("문의 알림 설정이 올바른 Slack Incoming Webhook 주소가 아닙니다.")
-        return False
-
-    try:
-        request = Request(
-            url,
-            data=json.dumps(
-                build_payload(category=category, email=email, content=content),
-                ensure_ascii=False,
-            ).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "where-you-at-inquiry-notifier/1.0",
-            },
-            method="POST",
-        )
-        # urllib는 요청 URL을 INFO 로그로 남기지 않아 비밀인 Webhook 경로가 로그에 노출되지 않는다.
-        with urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            # Slack Incoming Webhook은 성공하면 본문으로 "ok"만 돌려준다. 형식이 틀린 주소는 api.slack.com 문서로
-            # 리다이렉트돼 200이 오므로, 상태 코드만 보면 알림이 끊겨도 성공으로 처리된다.
-            if response.read(16) != b"ok":
-                LOGGER.error("문의 알림 전송 실패 (Slack 응답이 ok가 아님, 웹훅 주소 확인 필요)")
-                return False
-        return True
-    except Exception as exc:
-        # 예외 문자열에는 웹훅 URL이 들어갈 수 있어 기록하지 않고, 비밀이 아닌 HTTP 상태만 함께 남긴다.
-        status_code = getattr(exc, "code", "")
-        if status_code:
-            LOGGER.error("문의 알림 전송 실패 (%s %s)", type(exc).__name__, status_code)
-        else:
-            LOGGER.error("문의 알림 전송 실패 (%s)", type(exc).__name__)
-        return False
+    return slack_notify.post(
+        url,
+        build_payload(category=category, email=email, content=content),
+        failure_log="문의 알림 전송 실패",
+    )
