@@ -22,7 +22,7 @@ def login_with_kakao(body: KakaoLoginRequest, request: Request):
         print("[ERROR] 카카오 로그인 설정이 비어 있거나 JWT_SECRET이 32바이트보다 짧습니다.")
         raise HTTPException(status_code=503, detail="지금은 로그인할 수 없습니다. 잠시 후 다시 시도해 주세요.")
 
-    # 카카오 토큰 교환 전에 막는다. 반복 요청이 카카오 호출과 스레드 점유로 이어지지 않게 한다.
+    # 카카오 토큰 교환 전에 한도를 확인해, 한도를 넘은 반복 요청이 외부 호출로 이어지지 않게 한다.
     key = client_key(request)
     if key is None:
         # 이용자 IP를 확인하지 못한 요청은 제한하지 않는다(fail open). 문의와 달리 한 키로 묶으면

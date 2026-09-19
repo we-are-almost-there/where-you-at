@@ -211,7 +211,7 @@ class TestKakaoLogin(unittest.TestCase):
         res = self._login()
 
         self.assertEqual(res.status_code, 429)
-        # 카카오를 호출하기 전에 막아, 반복 요청이 카카오 호출과 스레드 점유로 이어지지 않게 한다.
+        # 한도를 넘은 요청은 카카오를 호출하기 전에 막는다.
         mock_post.assert_not_called()
 
     def test_other_ip_is_not_affected(self, mock_post, mock_get, mock_upsert):
