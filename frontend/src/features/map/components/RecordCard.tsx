@@ -146,6 +146,12 @@ export function RecordCard({
 
   const editVersionRef = useRef(0);
   const savedVersionRef = useRef<number | null>(null);
+  const [closeConfirmationOpen, setCloseConfirmationOpen] = useState(false);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const requestClose = () => {
+    if (savedVersionRef.current === editVersionRef.current) onClose();
+    else setCloseConfirmationOpen(true);
+  };
   // 저장 후 다시 편집하면 보호를 재개한다. 도구 탭이나 미리보기 크기 변경은 제외한다.
   useLayoutEffect(() => {
     editVersionRef.current += 1;
@@ -684,7 +690,8 @@ export function RecordCard({
       >
         <button
           type="button"
-          onClick={onClose}
+          ref={closeButtonRef}
+          onClick={requestClose}
           className="h-14 flex-1 cursor-pointer rounded-[14px] bg-white/15 text-[15px] font-bold text-white"
         >
           닫기
@@ -697,7 +704,58 @@ export function RecordCard({
           이미지 저장
         </button>
       </div>
+      {closeConfirmationOpen && (
+        <CloseRecordConfirmation
+          onContinue={() => {
+            setCloseConfirmationOpen(false);
+            closeButtonRef.current?.focus();
+          }}
+          onDiscard={onClose}
+        />
+      )}
     </div>
+  );
+}
+
+function CloseRecordConfirmation({ onContinue, onDiscard }: {
+  onContinue: () => void;
+  onDiscard: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const continueRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    // 기본 모달 기능으로 뒤쪽 카드 조작을 막고 키보드 초점을 확인창 안에 가둔다.
+    dialog?.showModal();
+    continueRef.current?.focus();
+    return () => dialog?.close();
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby="close-record-title"
+      aria-describedby="close-record-description"
+      onCancel={(event) => { event.preventDefault(); onContinue(); }}
+      onKeyDown={(event) => {
+        // 뒤쪽 대화상자가 같은 Escape 입력으로 닫히지 않게 한다.
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onContinue();
+        }
+      }}
+      className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-sm rounded-2xl bg-white p-6 text-ink shadow-xl backdrop:bg-black/40"
+    >
+      <h2 id="close-record-title" className="text-lg font-bold">저장하지 않은 변경 내용이 있어요.</h2>
+      <p id="close-record-description" className="mt-3 text-sm text-caption">지금 닫으면 변경 내용이 사라져요.</p>
+      <div className="mt-6 flex gap-3">
+        <button ref={continueRef} type="button" onClick={onContinue}
+          className="flex-1 cursor-pointer rounded-xl bg-lavender px-3 py-3 text-sm font-bold text-ink">계속 편집</button>
+        <button type="button" onClick={onDiscard}
+          className="flex-1 cursor-pointer rounded-xl bg-accent px-3 py-3 text-sm font-bold text-white">저장하지 않고 닫기</button>
+      </div>
+    </dialog>
   );
 }
 
