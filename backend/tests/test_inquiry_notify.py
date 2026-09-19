@@ -10,12 +10,8 @@ from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
 
 from app.core.config import settings
-from app.services.inquiry_notify import (
-    MESSAGE,
-    TIMEOUT_SECONDS,
-    build_payload,
-    notify_new_inquiry,
-)
+from app.services.inquiry_notify import MESSAGE, build_payload, notify_new_inquiry
+from app.services.slack_notify import TIMEOUT_SECONDS
 
 SLACK = "https://hooks.slack.com/services/T000/B000/secret-token"
 CATEGORY = "코스 탐색"
@@ -75,14 +71,14 @@ class TestBuildPayload(unittest.TestCase):
 
 
 class TestNotifyNewInquiry(unittest.TestCase):
-    @patch("app.services.inquiry_notify.urlopen")
+    @patch("app.services.slack_notify.urlopen")
     def test_without_webhook_url_does_nothing(self, urlopen: MagicMock):
         with patch.object(settings, "inquiry_webhook_url", ""):
             self.assertFalse(notify_new_inquiry(CATEGORY, EMAIL, CONTENT))
 
         urlopen.assert_not_called()
 
-    @patch("app.services.inquiry_notify.urlopen")
+    @patch("app.services.slack_notify.urlopen")
     def test_uses_webhook_url_from_settings(self, urlopen: MagicMock):
         _respond(urlopen)
         with patch.object(settings, "inquiry_webhook_url", SLACK):
@@ -90,16 +86,16 @@ class TestNotifyNewInquiry(unittest.TestCase):
 
         self.assertEqual(urlopen.call_args.args[0].full_url, SLACK)
 
-    @patch("app.services.inquiry_notify.urlopen")
+    @patch("app.services.slack_notify.urlopen")
     def test_non_slack_webhook_is_rejected(self, urlopen: MagicMock):
         for url in ("https://example.com/hooks/not-slack", "https://["):
-            with self.subTest(url=url), self.assertLogs("app.services.inquiry_notify", level="ERROR"):
+            with self.subTest(url=url), self.assertLogs("app.services.slack_notify", level="ERROR"):
                 result = notify_new_inquiry(CATEGORY, EMAIL, CONTENT, webhook_url=url)
 
             self.assertFalse(result)
         urlopen.assert_not_called()
 
-    @patch("app.services.inquiry_notify.urlopen")
+    @patch("app.services.slack_notify.urlopen")
     def test_posts_slack_json_with_custom_user_agent_and_short_timeout(self, urlopen: MagicMock):
         _respond(urlopen)
         self.assertTrue(notify_new_inquiry(CATEGORY, EMAIL, CONTENT, webhook_url=SLACK))
@@ -116,7 +112,7 @@ class TestNotifyNewInquiry(unittest.TestCase):
         self.assertEqual(urlopen.call_args.kwargs, {"timeout": TIMEOUT_SECONDS})
         self.assertEqual(TIMEOUT_SECONDS, 3)
 
-    @patch("app.services.inquiry_notify.urlopen")
+    @patch("app.services.slack_notify.urlopen")
     def test_non_ok_response_is_failure_without_logging_webhook_secret(self, urlopen: MagicMock):
         # 세그먼트가 빠진 웹훅 주소는 Slack이 302로 api.slack.com에 보내고, urlopen이 따라가 문서 페이지를 200으로 받는다.
         for body in (b"<!DOCTYPE html><html>", b"", b"invalid_payload"):
@@ -131,7 +127,7 @@ class TestNotifyNewInquiry(unittest.TestCase):
                 self.assertNotIn(SLACK, output)
                 self.assertNotIn("/services/T000/B000/secret-token", output)
 
-    @patch("app.services.inquiry_notify.urlopen")
+    @patch("app.services.slack_notify.urlopen")
     def test_failure_is_swallowed_without_logging_webhook_secret(self, urlopen: MagicMock):
         urlopen.side_effect = URLError(f"연결 실패: {SLACK}")
 
@@ -144,7 +140,7 @@ class TestNotifyNewInquiry(unittest.TestCase):
         self.assertNotIn("/services/T000/B000/secret-token", output)
         self.assertIn("URLError", output)
 
-    @patch("app.services.inquiry_notify.urlopen")
+    @patch("app.services.slack_notify.urlopen")
     def test_http_failure_logs_status_without_webhook_secret(self, urlopen: MagicMock):
         error = HTTPError(SLACK, 404, f"폐기된 웹훅: {SLACK}", hdrs=None, fp=None)
         urlopen.side_effect = error
