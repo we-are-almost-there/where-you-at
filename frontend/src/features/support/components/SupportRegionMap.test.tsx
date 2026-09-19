@@ -282,6 +282,49 @@ describe("SupportRegionMap — 활성 지역 조회", () => {
     expect(activeSidoNames()).toEqual(["가도"]);
   });
 
+  it("경계 꼭짓점이 한쪽에 몰려도 알약을 도형의 면적 중심에 둔다", async () => {
+    const uneven = {
+      type: "Polygon" as const,
+      // 아래쪽 경계만 잘게 나눴다. 좌표 평균을 쓰면 라벨이 아래로 쏠리지만 도형은 정사각형이다.
+      coordinates: [[
+        [126, 34], [127, 34], [128, 34], [129, 34], [130, 34],
+        [130, 38], [126, 38], [126, 34],
+      ]],
+    };
+    const files: Record<string, unknown> = {
+      "/korea-sido.json": {
+        type: "FeatureCollection",
+        features: [feature(uneven, { sido_code: "12", sido_name: "가도" })],
+      },
+      "/korea-all-regions.json": {
+        type: "FeatureCollection",
+        features: [feature(uneven, { sgg_code: "36590", name: "가군" })],
+      },
+      "/region-index.json": {
+        byShape: { "36590": "12780" },
+        names: { "12780": "가군" },
+        supportRegions: ["12780"],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => Promise.resolve({ ok: true, json: () => Promise.resolve(files[url]) })),
+    );
+    mockedFetchActive.mockResolvedValue(["12780"]);
+
+    renderMap();
+
+    await waitFor(() => expect(badgeButtons()).toHaveLength(1));
+    const svg = document.querySelector("svg")!;
+    const badge = document.querySelector("foreignObject")!;
+    const viewBox = svg.viewBox.baseVal;
+    const badgeCenterX = Number(badge.getAttribute("x")) + Number(badge.getAttribute("width")) / 2;
+    const badgeCenterY = Number(badge.getAttribute("y")) + Number(badge.getAttribute("height")) / 2;
+    // viewBox 문자열은 소수 첫째 자리로 반올림하므로 그 정밀도 안에서 비교한다.
+    expect(badgeCenterX).toBeCloseTo(viewBox.width / 2, 1);
+    expect(badgeCenterY).toBeCloseTo(viewBox.height / 2, 1);
+  });
+
   // 색칠과 클릭 가능 여부는 기준이 다르다.
   //   색   = 지금 신청 가능한 제도가 있는가 (조회 결과)
   //   클릭 = 패널에 보여줄 게 있는가 — 대응하는 DB 지역이 있으면 항상 그렇다
