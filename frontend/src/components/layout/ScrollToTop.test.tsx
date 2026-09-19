@@ -91,6 +91,23 @@ describe("ScrollToTop", () => {
     focus.mockRestore();
   });
 
+  it("제목이 있으면 본문을 거치지 않고 제목에 한 번만 초점을 옮긴다", () => {
+    renderAt("/terms");
+    const heading = document.createElement("h1");
+    heading.textContent = "페이지 제목";
+    screen.getByRole("main").prepend(heading);
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    try {
+      click("경로 이동");
+
+      expect(document.activeElement).toBe(heading);
+      expect(focus).toHaveBeenCalledTimes(1);
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    } finally {
+      focus.mockRestore();
+    }
+  });
+
   it("쿼리만 바뀌면 조작하던 컨트롤에 초점을 남긴다", () => {
     renderAt("/bicycle-facilities?page=1");
     const button = screen.getByRole("button", { name: "다른 쿼리" });

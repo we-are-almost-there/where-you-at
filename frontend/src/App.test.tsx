@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Link, MemoryRouter, useNavigate } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import ScrollToTop from "./components/layout/ScrollToTop";
 import { useState } from "react";
 import SidebarDrawer from "./components/layout/SidebarDrawer";
 import { Home } from "./features/home";
@@ -16,33 +17,34 @@ vi.mock("./features/home/homeApi", () => ({
 // App의 라우트 선택과 화면 전환 시 포커스 관리를 확인한다.
 vi.mock("./features/home", () => ({ Home: vi.fn(() => {
   const [isOpen, setIsOpen] = useState(false);
-  return <div>
+  return <main id="main-content" tabIndex={-1}>
     <button onClick={() => setIsOpen(true)}>메뉴 열기</button>
     <h1>홈 화면</h1>
     <SidebarDrawer isOpen={isOpen} onClose={() => setIsOpen(false)} />
-  </div>;
+  </main>;
 }) }));
 vi.mock("./features/map", () => ({
-  CourseExplore: () => <><h1>코스 탐색 화면</h1><Link to="/courses/1">코스 카드</Link></>,
+  CourseExplore: () => <main id="main-content" tabIndex={-1}><h1>코스 탐색 화면</h1><Link to="/courses/1">코스 카드</Link></main>,
   CourseDetail: () => {
     const [loaded, setLoaded] = useState(false);
-    return <main>
-      {loaded ? <h1>코스 상세 화면</h1> : <p>코스를 불러오는 중…</p>}
+    return <main id="main-content" tabIndex={-1}>
+      <h1>{loaded ? "코스 상세 화면" : "코스 상세"}</h1>
+      {!loaded && <p role="status">코스를 불러오는 중…</p>}
       <button onClick={() => setLoaded(true)}>로드 완료</button>
     </main>;
   },
 }));
-vi.mock("./features/support", () => ({ Support: () => <h1>방문 혜택 화면</h1> }));
-vi.mock("./features/race", () => ({ Race: () => <h1>대회 행사 화면</h1> }));
-vi.mock("./features/bicycle", () => ({ BicycleExplore: () => <h1>자전거 대여 화면</h1> }));
+vi.mock("./features/support", () => ({ Support: () => <main id="main-content" tabIndex={-1}><h1>방문 혜택 화면</h1></main> }));
+vi.mock("./features/race", () => ({ Race: () => <main id="main-content" tabIndex={-1}><h1>대회 행사 화면</h1></main> }));
+vi.mock("./features/bicycle", () => ({ BicycleExplore: () => <main id="main-content" tabIndex={-1}><h1>자전거 대여 화면</h1></main> }));
 vi.mock("./features/help", () => ({
-  HelpPage: () => <h1>고객지원 화면</h1>,
-  NoticeList: () => <h1>공지사항 화면</h1>,
-  NoticeDetail: () => <h1>공지사항 상세 화면</h1>,
-  FaqPage: () => <h1>자주 묻는 질문 화면</h1>,
-  TermsPage: () => <h1>이용약관 화면</h1>,
-  PrivacyPage: () => <h1>개인정보처리방침 화면</h1>,
-  ContactPage: () => <h1>1:1 문의 화면</h1>,
+  HelpPage: () => <main id="main-content" tabIndex={-1}><h1>고객지원 화면</h1></main>,
+  NoticeList: () => <main id="main-content" tabIndex={-1}><h1>공지사항 화면</h1></main>,
+  NoticeDetail: () => <main id="main-content" tabIndex={-1}><h1>공지사항 상세 화면</h1></main>,
+  FaqPage: () => <main id="main-content" tabIndex={-1}><h1>자주 묻는 질문 화면</h1></main>,
+  TermsPage: () => <main id="main-content" tabIndex={-1}><h1>이용약관 화면</h1></main>,
+  PrivacyPage: () => <main id="main-content" tabIndex={-1}><h1>개인정보처리방침 화면</h1></main>,
+  ContactPage: () => <main id="main-content" tabIndex={-1}><h1>1:1 문의 화면</h1></main>,
 }));
 // 실제 NotFoundPage는 유지하고, 라우팅과 무관한 헤더의 브라우저 API 사용만 제외한다.
 vi.mock("./components/layout/AppHeader", () => ({ default: () => null }));
@@ -50,19 +52,26 @@ vi.mock("./components/layout/AppHeader", () => ({ default: () => null }));
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <App />
+      <ScrollToTop /><App />
     </MemoryRouter>,
   );
 }
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.stubGlobal("scrollTo", vi.fn());
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 it("사이드바 링크로 이동하면 새 페이지 제목에 포커스를 둔다", () => {
   const root = document.createElement("div");
   root.id = "root";
   document.body.append(root);
   try {
-    render(<MemoryRouter><App /></MemoryRouter>, { container: root });
+    render(<MemoryRouter><ScrollToTop /><App /></MemoryRouter>, { container: root });
     const opener = screen.getByRole("button", { name: "메뉴 열기" });
     opener.focus();
     fireEvent.click(opener);
@@ -101,12 +110,12 @@ it.each([
 it.each([false, true])("코스 카드 이동 후 제목 로드를 처리한다 (사용자 포커스 이동: %s)", async (moveFocus) => {
   renderAt("/courses");
   fireEvent.click(screen.getByRole("link", { name: "코스 카드" }));
-  const main = screen.getByRole("main");
-  expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
-  expect(document.activeElement).toBe(main);
+  const heading = screen.getByRole("heading", { level: 1, name: "코스 상세" });
+  expect(document.activeElement).toBe(heading);
   const load = screen.getByRole("button", { name: "로드 완료" });
   if (moveFocus) load.focus();
   fireEvent.click(load);
+  expect(screen.getByRole("heading", { name: "코스 상세 화면" })).toBe(heading);
   await waitFor(() => expect(document.activeElement).toBe(
     moveFocus ? load : screen.getByRole("heading", { name: "코스 상세 화면" }),
   ));
@@ -134,7 +143,7 @@ it("홈으로 링크 이동하면 실제 홈 제목에 포커스를 둔다", asy
   }
 });
 
-it("뒤로/앞으로 가기는 포커스를 강제로 이동하지 않는다", () => {
+it("뒤로/앞으로 가기도 제목에 포커스를 두고 스크롤 복원을 유지한다", () => {
   function HistoryControls() {
     const navigate = useNavigate();
     return <>
@@ -145,18 +154,20 @@ it("뒤로/앞으로 가기는 포커스를 강제로 이동하지 않는다", (
   }
   render(<MemoryRouter initialEntries={["/courses", "/support"]} initialIndex={1}>
     <HistoryControls />
-    <App />
+    <ScrollToTop /><App />
   </MemoryRouter>);
   const back = screen.getByRole("button", { name: "뒤로" });
   back.focus();
   fireEvent.click(back);
   expect(screen.getByRole("heading", { name: "코스 탐색 화면" })).toBeTruthy();
-  expect(document.activeElement).toBe(back);
+  expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }));
+  expect(window.scrollTo).not.toHaveBeenCalled();
   const forward = screen.getByRole("button", { name: "앞으로" });
   forward.focus();
   fireEvent.click(forward);
   expect(screen.getByRole("heading", { name: "방문 혜택 화면" })).toBeTruthy();
-  expect(document.activeElement).toBe(forward);
+  expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 }));
+  expect(window.scrollTo).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "대회로 이동" }));
   expect(document.activeElement).toBe(screen.getByRole("heading", { name: "대회 행사 화면" }));
 });

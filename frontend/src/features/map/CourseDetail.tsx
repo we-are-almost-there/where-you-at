@@ -768,55 +768,55 @@ function CourseDetailSession() {
             <span className="mx-auto block h-[5px] w-11 rounded-full bg-divider" />
           </button>
 
-          {/* 코스를 그리지 못하는 동안(로딩·오류)에도 페이지 제목이 있어야 한다.
-            코스가 그려지면 그 코스명이 유일한 h1이 되도록 이때만 둔다. */}
-          {!showsCourse && <h1 className="sr-only">코스 상세</h1>}
-          {loading && validId ? (
-            <p role="status" className="py-16 text-center text-[14px] text-caption">
-              코스를 불러오는 중…
-            </p>
-          ) : !validId ? (
-            <ErrorNotice
-              title="잘못된 코스예요"
-              description="존재하지 않는 코스 주소예요."
-              onBack={backToCourses}
-            />
-          ) : error?.kind === "not-found" ? (
-            // 없는 코스(404) — 다시 시도해도 같으니 목록으로만
-            <ErrorNotice title="코스를 찾을 수 없어요" onBack={backToCourses} />
-          ) : error?.kind === "request" ? (
-            // 조회 실패(연결/서버) — 재시도 + 목록으로
-            <ErrorNotice
-              title={error.value.title}
-              description={error.value.description}
-              onRetry={retry}
-              onBack={backToCourses}
-            />
-          ) : !detail ? null : (
-            <>
-              {/* 스크롤 영역 (모바일은 콘텐츠 높이에 맞춰 시트가 줄어 따라가기 버튼과 붙는다)
-                추적 중에는 모바일에서만 숨겨 지도를 넓게 쓴다. 데스크톱은 지도와 나란히 놓여
-                가릴 일이 없고, 숨기면 좌측 컬럼이 텅 비므로 그대로 둔다. */}
-              {/* 주변 정보 상세 시트가 이 패널을 통째로 덮는 동안, 가려진 내용은 초점에서 뺀다.
-                시트는 이 영역 밖(section 바로 아래)에 포털로 그려져 함께 잠기지 않는다. */}
-              <div
-                inert={spotSheetOpen}
-                className={`min-h-0 overflow-y-auto px-5 pb-6 pt-3 md:flex-1 ${
-                  isTracking ? "hidden md:block" : ""
-                }`}
-              >
-                {/* 뒤로 + 제목 + 주소.
-                  이 버튼이 모바일·데스크톱 공통으로 유일한 뒤로 이동 수단이라 md:hidden 없이 항상 노출된다. */}
-                <button
-                  type="button"
-                  onClick={() => navigate(-1)}
-                  aria-label="뒤로"
-                  className="-m-2 flex size-10 cursor-pointer items-center justify-center text-[20px] leading-none text-ink"
-                >
-                  ←
-                </button>
-                <h1 className="mt-2 font-bold text-ink text-[20px]">{detail.title}</h1>
+          {/* 스크롤 영역 (모바일은 콘텐츠 높이에 맞춰 시트가 줄어 따라가기 버튼과 붙는다)
+            추적 중에는 모바일에서만 숨겨 지도를 넓게 쓴다. 데스크톱은 지도와 나란히 놓여
+            가릴 일이 없고, 숨기면 좌측 컬럼이 텅 비므로 그대로 둔다. */}
+          {/* 주변 정보 상세 시트가 이 패널을 통째로 덮는 동안, 가려진 내용은 초점에서 뺀다.
+            시트는 이 영역 밖(section 바로 아래)에 포털로 그려져 함께 잠기지 않는다. */}
+          <div
+            inert={spotSheetOpen}
+            className={showsCourse ? `min-h-0 overflow-y-auto px-5 pb-6 pt-3 md:flex-1 ${
+              isTracking ? "hidden md:block" : ""
+            }` : "contents"}
+          >
+            {/* 뒤로 + 제목 + 주소.
+              이 버튼이 모바일·데스크톱 공통으로 유일한 뒤로 이동 수단이라 md:hidden 없이 항상 노출된다. */}
+            {showsCourse && <button
+              type="button"
+              onClick={() => navigate(-1)}
+              aria-label="뒤로"
+              className="-m-2 flex size-10 cursor-pointer items-center justify-center text-[20px] leading-none text-ink"
+            >
+              ←
+            </button>}
+            {/* 로딩·오류·성공 상태에서 같은 제목 요소를 유지해 초점이 사라지지 않게 한다. */}
+            <h1 className={showsCourse ? "mt-2 font-bold text-ink text-[20px]" : "sr-only"}>
+              {showsCourse ? detail.title : "코스 상세"}
+            </h1>
 
+            {loading && validId ? (
+              <p role="status" className="py-16 text-center text-[14px] text-caption">
+                코스를 불러오는 중…
+              </p>
+            ) : !validId ? (
+              <ErrorNotice
+                title="잘못된 코스예요"
+                description="존재하지 않는 코스 주소예요."
+                onBack={backToCourses}
+              />
+            ) : error?.kind === "not-found" ? (
+              // 없는 코스(404) — 다시 시도해도 같으니 목록으로만
+              <ErrorNotice title="코스를 찾을 수 없어요" onBack={backToCourses} />
+            ) : error?.kind === "request" ? (
+              // 조회 실패(연결/서버) — 재시도 + 목록으로
+              <ErrorNotice
+                title={error.value.title}
+                description={error.value.description}
+                onRetry={retry}
+                onBack={backToCourses}
+              />
+            ) : !detail ? null : (
+              <>
                 {/* 출발/도착 주소를 보여주는 유일한 자리라 탭과 무관하게 항상 띄운다.
                   세션이 진행 중이면 방향을 바꿀 수 없게(진행률 계산과 꼬이므로) 숨긴다 —
                   모바일에서 이 블록을 포함한 정보 영역 전체가 접히는 것과도 맞아떨어진다. */}
@@ -909,8 +909,12 @@ function CourseDetailSession() {
                     />
                   </div>
                 )}
-              </div>
+              </>
+            )}
+          </div>
 
+          {showsCourse && detail && (
+            <>
               {/* 시트 하단 페이드 — 시트가 콘텐츠 중간을 자르는 게 '깨진 레이아웃'이 아니라
                 '아래에 더 있음'으로 읽히게 한다. 진행 방향 카드가 역지오코딩된 주소 길이에 따라
                 높이가 변해(주소 로드 전후로도 커진다) 잘리는 위치가 코스마다·로드 전후로 달라지는데,
