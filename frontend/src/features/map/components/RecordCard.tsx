@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import type { TrackingRecord } from "../trackingRecord";
 import type { LatLng, RouteType } from "../types";
@@ -121,8 +121,9 @@ export function RecordCard({
   // 공유는 사용자 제스처 안에서 동기적으로 불러야 iOS에서 막히지 않는다.
   // 조작이 멎으면 미리 만들어 두고, 버튼에서는 그대로 넘긴다.
   const blobRef = useRef<Blob | null>(null);
-  // 마지막으로 그린 내용이 아직 blob에 담기지 않았는지. 저장 시 낡은 이미지를 내보내지 않으려고 둔다.
-  const dirtyRef = useRef(true);
+  // 캔버스와 저장용 이미지가 각각 어느 편집본인지 기록해 낡은 이미지 저장을 막는다.
+  const renderedVersionRef = useRef<number | null>(null);
+  const blobVersionRef = useRef<number | null>(null);
   const blobTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
   const dragTargetRef = useRef<"photo" | "route" | "stats" | null>(null);
@@ -143,6 +144,14 @@ export function RecordCard({
 
   const hasRoute = routePoints.length >= 2;
   const canvasH = RATIOS.find((r) => r.key === ratio)?.height ?? RATIOS[0].height;
+  const editSnapshot = useMemo(() => ({
+    record, routeType, routePoints, image, transform, template, textColor,
+    fontChoice, textScale, showRoute, routeOffset, routeScale, statsOffset, canvasH,
+  }), [record, routeType, routePoints, image, transform, template, textColor,
+    fontChoice, textScale, showRoute, routeOffset, routeScale, statsOffset, canvasH]);
+  const [readySnapshot, setReadySnapshot] = useState<typeof editSnapshot | null>(null);
+  const imageReady = readySnapshot === editSnapshot;
+  const currentSnapshotRef = useRef(editSnapshot);
 
   const editVersionRef = useRef(0);
   const savedVersionRef = useRef<number | null>(null);
@@ -155,8 +164,13 @@ export function RecordCard({
   // 저장 후 다시 편집하면 보호를 재개한다. 도구 탭이나 미리보기 크기 변경은 제외한다.
   useLayoutEffect(() => {
     editVersionRef.current += 1;
-  }, [record, routeType, routePoints, image, transform, template, textColor,
-    fontChoice, textScale, showRoute, routeOffset, routeScale, statsOffset, canvasH]);
+    currentSnapshotRef.current = editSnapshot;
+    // 글꼴 로딩이나 그리기를 기다리지 않고 편집 즉시 이전 이미지를 무효화한다.
+    blobRef.current = null;
+    blobVersionRef.current = null;
+    renderedVersionRef.current = null;
+    if (blobTimerRef.current) clearTimeout(blobTimerRef.current);
+  }, [editSnapshot]);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -205,26 +219,38 @@ export function RecordCard({
   // PNG 인코딩은 무거워서 그리기와 분리한다. 조작이 멎은 뒤 한 번만 만든다.
   const scheduleBlob = useCallback(() => {
     if (blobTimerRef.current) clearTimeout(blobTimerRef.current);
+    const version = renderedVersionRef.current;
+    if (version === null || version !== editVersionRef.current) return;
     blobTimerRef.current = setTimeout(() => {
+      if (version !== editVersionRef.current) return;
       canvasRef.current?.toBlob((blob) => {
+        // 이전 편집본의 변환이 늦게 끝나도 최신 이미지와 준비 상태를 덮어쓰지 않는다.
+        if (version !== editVersionRef.current) return;
+        if (!blob) {
+          setErrorMessage("이미지를 만들지 못했어요. 다시 편집하거나 화면을 캡처해 주세요.");
+          return;
+        }
         blobRef.current = blob;
-        dirtyRef.current = false;
+        blobVersionRef.current = version;
+        setReadySnapshot(currentSnapshotRef.current);
       }, "image/png");
     }, BLOB_DEBOUNCE_MS);
   }, []);
 
   useEffect(() => () => {
     if (blobTimerRef.current) clearTimeout(blobTimerRef.current);
+    editVersionRef.current += 1;
   }, []);
 
   useEffect(() => {
     let cancelled = false;
+    const version = editVersionRef.current;
     const { family, weight } = FONTS.find((f) => f.key === fontChoice) ?? FONTS[0];
 
     // 캔버스는 아직 내려받지 않은 글꼴을 조용히 기본 글꼴로 대체해 버리므로 먼저 실어 둔다.
     ensureCardFonts(family, weight).then(() => {
       const canvas = canvasRef.current;
-      if (cancelled || !canvas) return;
+      if (cancelled || !canvas || version !== editVersionRef.current) return;
       // 그리다 실패하면 여기서 잡아야 한다. 안 잡으면 처리되지 않은 거부로 새어 나가고
       // 화면은 이전 그림 그대로라, 사용자는 조작이 왜 안 먹는지 알 수 없다.
       let drawn: boolean;
@@ -251,8 +277,7 @@ export function RecordCard({
         setErrorMessage("카드를 그리지 못했어요. 화면을 캡처해 주세요.");
         return;
       }
-      // 그린 내용이 아직 blob에 없다는 표시는 항상 남긴다(끄는 중이라 인코딩을 미뤄도 마찬가지).
-      dirtyRef.current = true;
+      renderedVersionRef.current = version;
       // 끄는 중에는 인코딩을 미룬다 — 매 프레임 돌면 드래그가 끊긴다.
       if (!dragTargetRef.current) scheduleBlob();
     });
@@ -407,22 +432,10 @@ export function RecordCard({
 
   const save = useCallback(async () => {
     setErrorMessage(null);
-    const savingVersion = editVersionRef.current;
-
-    // 인코딩은 디바운스로 미뤄 두므로, 방금 바꾼 내용이 아직 blob에 안 담겼을 수 있다.
-    // 미리 만들어 둔 게 낡았으면 여기서 즉시 굽는다 — 안 그러면 변경 전 이미지가 저장된다.
-    let blob = dirtyRef.current ? null : blobRef.current;
-    if (!blob) {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-      if (!blob) {
-        setErrorMessage("이미지를 만들지 못했어요. 화면을 캡처해 주세요.");
-        return;
-      }
-      blobRef.current = blob;
-      dirtyRef.current = false;
-    }
+    const savingVersion = blobVersionRef.current;
+    const blob = blobRef.current;
+    // 실제 변환된 이미지의 버전으로 저장한다. 최신 편집본이 준비되지 않았으면 전달하지 않는다.
+    if (!blob || savingVersion === null || savingVersion !== editVersionRef.current) return;
 
     const file = new File([blob], "record.png", { type: "image/png" });
 
@@ -699,9 +712,10 @@ export function RecordCard({
         <button
           type="button"
           onClick={save}
-          className="h-14 flex-[2] cursor-pointer rounded-[14px] bg-accent text-[15px] font-bold text-white"
+          disabled={!imageReady}
+          className="h-14 flex-[2] cursor-pointer rounded-[14px] bg-accent text-[15px] font-bold text-white disabled:cursor-wait disabled:opacity-60"
         >
-          이미지 저장
+          {imageReady ? "이미지 저장" : "이미지 준비 중…"}
         </button>
       </div>
       {closeConfirmationOpen && (

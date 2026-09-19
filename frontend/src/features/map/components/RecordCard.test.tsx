@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RecordCard } from "./RecordCard";
+import { draw } from "../recordCardCanvas";
+
+vi.mock("@fontsource/do-hyeon", () => ({}));
+vi.mock("@fontsource/black-han-sans", () => ({}));
 
 vi.mock("../recordCardCanvas", async (importOriginal) => ({
   ...await importOriginal<typeof import("../recordCardCanvas")>(),
@@ -10,6 +14,8 @@ vi.mock("../recordCardCanvas", async (importOriginal) => ({
 
 const unloadAllowed = () => window.dispatchEvent(new Event("beforeunload", { cancelable: true }));
 const share = vi.fn();
+const loadFonts = vi.fn();
+const originalFonts = Object.getOwnPropertyDescriptor(document, "fonts");
 const dialogMethods = ["showModal", "close"] as const;
 const originalDialogMethods = dialogMethods.map((name) =>
   Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, name),
@@ -17,6 +23,9 @@ const originalDialogMethods = dialogMethods.map((name) =>
 
 beforeEach(() => {
   share.mockReset();
+  loadFonts.mockReset().mockResolvedValue([]);
+  vi.mocked(draw).mockClear();
+  Object.defineProperty(document, "fonts", { configurable: true, value: { load: loadFonts } });
   // jsdom에 없는 대화상자 메서드는 직접 정의해 열림 상태만 재현한다.
   for (const name of dialogMethods) {
     Object.defineProperty(HTMLDialogElement.prototype, name, {
@@ -33,6 +42,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  if (originalFonts) Object.defineProperty(document, "fonts", originalFonts);
+  else Reflect.deleteProperty(document, "fonts");
   dialogMethods.forEach((name, index) => {
     const original = originalDialogMethods[index];
     if (original) Object.defineProperty(HTMLDialogElement.prototype, name, original);
@@ -50,7 +61,8 @@ function mount(onClose = () => {}) {
 }
 
 async function save() {
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "이미지 저장" })); });
+  const button = await screen.findByRole("button", { name: "이미지 저장" });
+  await act(async () => { fireEvent.click(button); });
 }
 
 it("저장 전 이탈을 보호하고 공유 성공 후 해제한다", async () => {
@@ -147,4 +159,48 @@ it("확인창에서 Escape를 누르면 카드로 돌아간다", () => {
   expect(onClose).not.toHaveBeenCalled();
   expect(screen.queryByText("저장하지 않은 변경 내용이 있어요.")).toBeNull();
   expect(unloadAllowed()).toBe(false);
+});
+
+it("글꼴 로딩 중에는 이전 이미지를 저장하지 않고 최신 이미지 준비 후 보호를 해제한다", async () => {
+  mount();
+  share.mockResolvedValue(undefined);
+  await save();
+  expect(unloadAllowed()).toBe(true);
+  let finishFonts!: () => void;
+  loadFonts.mockImplementationOnce(() => new Promise<void>((resolve) => { finishFonts = resolve; }));
+  const oldDrawCount = vi.mocked(draw).mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "글꼴" }));
+  fireEvent.click(screen.getByRole("button", { name: "Do Hyeon" }));
+  const pendingButton = screen.getByRole("button", { name: "이미지 준비 중…" }) as HTMLButtonElement;
+  expect(pendingButton.disabled).toBe(true);
+  fireEvent.click(pendingButton);
+  expect(share).toHaveBeenCalledTimes(1);
+  expect(unloadAllowed()).toBe(false);
+  await waitFor(() => expect(finishFonts).toBeTypeOf("function"));
+  expect(vi.mocked(draw).mock.calls.length).toBe(oldDrawCount);
+  await act(async () => { finishFonts(); });
+  await save();
+  expect(vi.mocked(draw).mock.lastCall?.[1].fontChoice).toBe("dohyeon");
+  expect(share).toHaveBeenCalledTimes(2);
+  expect(unloadAllowed()).toBe(true);
+});
+
+it("이전 편집본의 이미지 변환이 늦게 끝나도 최신 이미지를 덮어쓰지 않는다", async () => {
+  const callbacks: BlobCallback[] = [];
+  vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementation((callback) => { callbacks.push(callback); });
+  mount();
+  await waitFor(() => expect(callbacks).toHaveLength(1));
+  fireEvent.click(screen.getByRole("button", { name: "글꼴" }));
+  fireEvent.click(screen.getByRole("button", { name: "Do Hyeon" }));
+  await waitFor(() => expect(callbacks).toHaveLength(2));
+  const latest = new Blob(["최신 이미지"]);
+  await act(async () => { callbacks[1](latest); });
+  await act(async () => { callbacks[0](new Blob(["이전 이미지"])); });
+  const createObjectURL = vi.fn(() => "blob:test");
+  vi.stubGlobal("URL", { createObjectURL, revokeObjectURL: vi.fn() });
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  share.mockRejectedValue(new Error("공유 불가"));
+  await save();
+  expect(createObjectURL).toHaveBeenCalledWith(latest);
+  expect(unloadAllowed()).toBe(true);
 });
