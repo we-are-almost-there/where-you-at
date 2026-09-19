@@ -85,10 +85,12 @@ describe("PrivacyPolicyContent", () => {
 
     const retention = screen.getByRole("region", { name: /개인정보의 처리 및 보유 기간/ });
     expect(retention.textContent).toContain("회원 정보 (카카오 회원번호, 닉네임, 한 줄 소개)");
-    expect(retention.textContent).toContain("회원 탈퇴 시까지");
+    expect(retention.textContent).toContain("회원 탈퇴 시까지(카카오에서 서비스와의 연결을 끊은 경우 포함)");
 
     const destruction = screen.getByRole("region", { name: /개인정보의 파기 절차 및 방법/ });
     expect(destruction.textContent).toContain("카카오에 연결 해제를 요청한 뒤 데이터베이스의 회원");
+    // 카카오 쪽에서 연결을 끊어도 연결 해제 웹훅으로 지운다(#164).
+    expect(destruction.textContent).toContain("카카오로부터 알림을 받으면 회원 정보를 바로 삭제");
 
     const children = screen.getByRole("region", { name: /14세 미만 아동/ });
     expect(children.textContent).toContain("회원 가입(카카오 로그인)은 만 14세 이상만");

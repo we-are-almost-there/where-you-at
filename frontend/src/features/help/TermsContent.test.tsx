@@ -55,6 +55,8 @@ describe("TermsContent", () => {
     expect(membership.textContent).toContain("가입하지 않아도 마이페이지를 뺀 서비스를 이용할 수");
     expect(membership.textContent).toContain("만 14세 이상만");
     expect(membership.textContent).toContain("마이페이지에서 언제든지 탈퇴");
+    // 카카오 쪽에서 연결을 끊어도 탈퇴로 본다(#164 연결 해제 웹훅).
+    expect(membership.textContent).toContain("카카오계정을 탈퇴하면 탈퇴한 것으로 보고");
     // 회원가입 없는 서비스라는 옛 문구가 남아 있지 않다.
     expect(document.body.textContent).not.toContain("회원가입 없이");
   });
