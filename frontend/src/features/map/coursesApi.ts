@@ -209,9 +209,10 @@ export async function getCourseDetail(id: number): Promise<CourseDetail> {
   };
 }
 
-/** GET /api/regions — 코스 보유 지역만. 지역 필터 드롭다운 데이터원. */
-export async function getRegions(): Promise<Region[]> {
-  return apiGet<Region[]>("/api/regions");
+/** GET /api/regions — 코스 보유 지역만. routeType을 주면 그 경로가 있는 지역으로 한정한다. */
+export async function getRegions(routeType?: RouteType): Promise<Region[]> {
+  const apiType = routeType ? ROUTE_TO_API[routeType] : null;
+  return apiGet<Region[]>(`/api/regions${apiType ? `?type=${apiType}` : ""}`);
 }
 
 /** GET /api/courses/{id}/gpx — 선택 주행방식의 전체 경로 좌표(폴리라인용). */
