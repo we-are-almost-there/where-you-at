@@ -4,7 +4,7 @@
 // 그리고 응답이 오기 전에 요청이 끊기는 경로(언마운트·supersede)까지.
 // 지도 도형·배지 배치는 이 테스트의 관심사가 아니라 최소 도형만 흘려보낸다.
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router";
+import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SupportRegionMap } from "./SupportRegionMap";
 import { fetchActiveRegionCodes } from "../supportApi";
@@ -102,14 +102,37 @@ function LocationProbe() {
 
 const currentSearch = () => screen.getByTestId("location-search").textContent;
 
-function renderMap() {
+/** 뒤로 가기·패널 닫기처럼 지도 밖에서 URL이 바뀌는 경우를 흉내 낸다 */
+function NavigateButton({ to }: { to: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      {`이동 ${to}`}
+    </button>
+  );
+}
+
+function renderMap(url = "/support", navigateTo: string[] = []) {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[url]}>
       <SupportRegionMap />
       <LocationProbe />
+      {navigateTo.map((to) => (
+        <NavigateButton key={to} to={to} />
+      ))}
     </MemoryRouter>,
   );
 }
+
+const click = (el: Element) => el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+/**
+ * 지도가 들어가 있는 시도의 이름. 전국뷰면 null.
+ * 머리말의 시도명은 '← 전국으로' 바로 옆 칩에만 있다. 이름으로 찾으면 전국뷰의
+ * 같은 이름 배지에도 걸려, 지도가 전국뷰에 남아 있어도 통과해 버린다.
+ */
+const drilledSido = () =>
+  screen.queryByRole("button", { name: "← 전국으로" })?.nextElementSibling?.textContent ?? null;
 
 describe("SupportRegionMap — 활성 지역 조회", () => {
   beforeEach(() => {
@@ -309,6 +332,77 @@ describe("SupportRegionMap — 활성 지역 조회", () => {
       await waitFor(() => expect(currentSearch()).toBe("?region=12800"));
     });
 
+    // 패널은 URL의 ?region=만 보고, 지도는 자기 상태(selectedSido)로 시도를 고른다.
+    // 지도 안에서 누를 때는 둘을 함께 바꾸지만, 주소를 직접 열거나 새로고침·뒤로 가기로
+    // URL만 바뀌면 지도는 전국뷰에 남는다. 거기서 다른 시도를 누르면 지도와 패널이
+    // 서로 다른 지역을 가리킨다.
+    it("URL의 지역으로 직접 들어오면 지도도 그 지역의 시도로 들어간다", async () => {
+      mockedFetchActive.mockResolvedValue([]);
+
+      renderMap("/support?region=12820"); // 마도의 마군 (세종처럼 하위가 하나뿐)
+
+      await waitFor(() => expect(drilledSido()).toBe("마도"));
+      expect(screen.getByRole("button", { name: /마군/ })).toBeTruthy();
+
+      click(screen.getByRole("button", { name: "← 전국으로" }));
+      await waitFor(() => expect(currentSearch()).toBe(""));
+      expect(drilledSido()).toBeNull();
+    });
+
+    it("URL의 지역이 바뀌면 지도가 따라가고, 패널을 닫아도 그 시도에 남는다", async () => {
+      mockedFetchActive.mockResolvedValue([]);
+
+      renderMap("/support?region=12800", ["/support?region=12790", "/support"]);
+
+      await waitFor(() => expect(drilledSido()).toBe("가도")); // 다군은 가도 소속
+
+      // 뒤로 가기 등으로 다른 도의 지역이 들어오면 지도도 그 도로 간다
+      click(screen.getByRole("button", { name: "이동 /support?region=12790" }));
+      await waitFor(() => expect(drilledSido()).toBe("나도"));
+
+      // 패널을 닫아(region 제거) 지도가 전국으로 튀면 보던 자리를 잃는다
+      click(screen.getByRole("button", { name: "이동 /support" }));
+      await waitFor(() => expect(currentSearch()).toBe(""));
+      expect(drilledSido()).toBe("나도");
+    });
+
+    it("도형이 없는 지역으로 바뀌면 코드 앞 두 자리의 시도로 맞춘다", async () => {
+      // 행정구처럼 DB에는 있지만 도형이 없는 지역(실데이터 39곳)도 코드 앞 두 자리가 시도
+      // 코드다. 맞출 도형이 없다고 지도를 그대로 두면 직전 시도(가도)가 남아 패널과 어긋난다.
+      mockedFetchActive.mockResolvedValue([]);
+
+      renderMap("/support?region=12800", ["/support?region=13999"]);
+      await waitFor(() => expect(drilledSido()).toBe("가도"));
+
+      click(screen.getByRole("button", { name: "이동 /support?region=13999" }));
+      await waitFor(() => expect(drilledSido()).toBe("나도"));
+    });
+
+    it("시도를 알 수 없는 지역 코드로 바뀌면 전국뷰로 돌아간다", async () => {
+      mockedFetchActive.mockResolvedValue([]);
+
+      renderMap("/support?region=12800", ["/support?region=99999"]);
+      await waitFor(() => expect(drilledSido()).toBe("가도"));
+
+      // 99로 시작하는 시도는 없다. 가도에 남으면 지도는 패널과 무관한 곳을 보여 준다
+      click(screen.getByRole("button", { name: "이동 /support?region=99999" }));
+      await waitFor(() => expect(drilledSido()).toBeNull());
+    });
+
+    it("시도를 알 수 없는 지역으로 들어와 전국뷰에 남았을 때 시도를 누르면 지역 쿼리를 비운다", async () => {
+      // 41111은 이름은 있지만 도형이 없고, 이 픽스처에는 41로 시작하는 시도도 없다. 지도를
+      // 맞출 시도를 몰라 전국뷰에 남는데, 거기서 시도로 들어가며 쿼리를 남기면 패널은 옛 지역을 가리킨다.
+      mockedFetchActive.mockResolvedValue([]);
+
+      renderMap("/support?region=41111");
+
+      click(await screen.findByRole("button", { name: /가도/ })); // 전국뷰의 시도 배지
+      expect(currentSearch()).toBe("?region=41111"); // 누르기 전에는 남아 있다
+
+      await waitFor(() => expect(currentSearch()).toBe(""));
+      expect(drilledSido()).toBe("가도");
+    });
+
     it("하위 시군구가 하나뿐인 시도는 한 번에 그 도로 들어가며 패널을 연다", async () => {
       // 마도(14)에는 마군 하나뿐이다(세종). 드릴다운만 하면 같은 땅을 한 번 더 눌러야 하고,
       // 패널만 열고 전국뷰에 남으면 머리말은 '지역을 선택하세요'인데 패널은 마군이다.
@@ -321,9 +415,8 @@ describe("SupportRegionMap — 활성 지역 조회", () => {
 
       await waitFor(() => expect(currentSearch()).toBe("?region=12820"));
       // 지도도 그 도로 들어가 머리말이 패널과 같은 곳을 가리킨다
-      expect(screen.getByText("마도")).toBeTruthy();
-      expect(screen.queryByText("지역을 선택하세요")).toBeNull();
-      // 다른 시도로 가는 길은 URL을 비우는 '← 전국으로'뿐이라 지도와 패널이 어긋날 수 없다
+      expect(drilledSido()).toBe("마도");
+      // 시도뷰에는 다른 시도 배지가 없다 — 다른 시도로 가려면 URL을 비우는 '← 전국으로'를 거친다
       expect(screen.queryByRole("button", { name: /가도/ })).toBeNull();
       screen
         .getByRole("button", { name: "← 전국으로" })

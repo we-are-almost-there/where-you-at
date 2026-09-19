@@ -166,7 +166,7 @@ function sidoCodesOf(
 }
 
 export function SupportRegionMap() {
-  const [, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const svgRef = useRef<SVGSVGElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const [svgPxWidth, setSvgPxWidth] = useState(VIEW_BASE);
@@ -271,6 +271,30 @@ export function SupportRegionMap() {
         : EMPTY_CODES;
 
   const regions = mapData?.regions ?? null;
+
+  // 지도를 URL의 지역에 맞춘다. 패널은 ?region=만 보고 지도는 자기 상태(selectedSido)로
+  // 시도를 고르므로, 주소를 직접 열거나 새로고침·뒤로 가기로 URL만 바뀌면 지도는 전국뷰에
+  // 남고 패널만 그 지역을 보여 준다. 거기서 다른 시도를 누르면 둘이 서로 다른 지역을 가리킨다.
+  //
+  // 이펙트가 아니라 렌더 중에 맞춘다(props가 바뀔 때 state를 조정하는 React 권장 방식).
+  // 이펙트로 하면 전국뷰가 한 번 그려진 뒤 시도뷰로 바뀌어 깜빡이고, 이펙트 본문의 동기
+  // setState 검사에도 걸린다.
+  //
+  // 시도는 도형에서 먼저 찾고, 없으면 코드 앞 두 자리로 찾는다. 행정구처럼 DB에는 있지만
+  // 도형이 없는 지역(실데이터 39곳)도 앞 두 자리가 시도 코드다. 그래도 모르면 전국뷰로
+  // 돌린다 — 직전 시도를 남겨 두면 지도가 패널과 무관한 곳을 보여 준다.
+  // 지역이 사라진 경우(패널 닫기)만은 건드리지 않아 지도가 보던 시도에 남는다.
+  const regionParam = searchParams.get("region");
+  const [syncedRegion, setSyncedRegion] = useState<string | null>(null);
+  if (regions && regionParam !== syncedRegion) {
+    setSyncedRegion(regionParam);
+    if (regionParam !== null) {
+      const shapeSido = regions.find((r) => r.regionCode === regionParam)?.sidoCode;
+      const prefix = regionParam.slice(0, 2);
+      const prefixSido = regions.some((r) => r.sidoCode === prefix) ? prefix : null;
+      setSelectedSido(shapeSido ?? prefixSido);
+    }
+  }
   const sido = mapData?.sido ?? null;
 
   // 지도는 시군구 단위 도형만 가진다(#64에서 행정구를 시 단위로 병합). 지원 제도도
@@ -362,7 +386,8 @@ export function SupportRegionMap() {
         // 한다. 한 번에 그 도로 들어가면서 패널까지 연다. 패널만 열고 지도를 전국뷰에 두면
         // 머리말은 '지역을 선택하세요'인데 패널은 세종이고, 거기서 다른 시도를 누르면
         // 지도와 패널이 서로 다른 지역을 가리킨다. 도로 들어가 두면 다른 곳으로 가는 길은
-        // URL을 비우는 '← 전국으로'뿐이라 둘이 어긋날 수 없다.
+        // URL을 비우는 '← 전국으로'뿐이다. 주소로 바로 들어온 경우는 위의 URL 동기화가
+        // 같은 상태를 만든다.
         const go: MapGo =
           sub.length === 1
             ? sub[0] != null
@@ -515,7 +540,14 @@ export function SupportRegionMap() {
   // 조각을 눌렀을 때와 배지를 눌렀을 때가 갈리면 같은 지역이 두 가지로 움직인다.
   const goTo = (go: MapGo) => {
     if (!go) return;
-    if (go.kind === "sido") return setSelectedSido(go.code);
+    if (go.kind === "sido") {
+      setSelectedSido(go.code);
+      // 전국뷰에 지역 쿼리가 남아 있는 건 위의 URL 동기화가 시도를 찾지 못했을 때뿐이다
+      // (잘못된 지역 코드 등). 쿼리를 남긴 채 시도로 들어가면 패널이 옛 지역을 가리키므로,
+      // '← 전국으로'와 같이 region·support를 함께 비운다.
+      if (searchParams.has("region")) setSearchParams({});
+      return;
+    }
     if (go.sido) setSelectedSido(go.sido);
     setSearchParams({ region: go.code });
   };
