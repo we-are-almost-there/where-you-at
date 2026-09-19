@@ -523,3 +523,28 @@ create table auth_session (
 create index idx_auth_session_user_id on auth_session(user_id);
 
 alter table auth_session enable row level security;
+
+
+-- 3. saved_course (찜한 코스)
+-- 코스가 아니라 "코스 + 종목"을 찜한다. 코스 목록이 도보·자전거 탭으로 나뉘고 한 코스가 두 종목을 다 가질 수
+--   있어서, 자전거로 찜한 코스는 마이페이지에서도 자전거로 보여 줘야 하기 때문이다.
+-- 종목 FK를 course_route(course_id, route_type)로 거는 이유
+--   - 자전거 경로가 없는 코스를 자전거로 찜하는 요청을 DB가 막는다.
+--   - 코스나 경로가 지워지면 찜도 함께 정리된다.
+-- 수정하는 칸이 없어 updated_at과 트리거를 두지 않는다. 추가와 삭제만 한다.
+create table saved_course (
+  user_id          bigint not null,
+  course_id        bigint not null,
+  route_type       varchar(10) not null,
+  created_at       timestamptz not null default now(),
+  primary key (user_id, course_id, route_type),
+  constraint saved_course_user_fk foreign key (user_id)
+    references app_user(id) on delete cascade,
+  constraint saved_course_route_fk foreign key (course_id, route_type)
+    references course_route(course_id, route_type) on delete cascade
+);
+
+-- 마이페이지 찜 목록은 한 회원의 것을 최근 찜한 순으로 읽는다.
+create index idx_saved_course_user_created on saved_course(user_id, created_at desc);
+
+alter table saved_course enable row level security;
