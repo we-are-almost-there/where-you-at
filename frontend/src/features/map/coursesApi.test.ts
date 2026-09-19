@@ -5,10 +5,11 @@
 //     - 404면 status가 담긴 HttpError (코스 상세가 "코스를 찾을 수 없어요"를 고르는 근거)
 //     - fetch가 연결에 실패하면 NetworkError (toUserError가 연결 실패로 판별하는 근거)
 //   - '가까운 순'용 전체 목록·출발점 목록 요청에 이용자 좌표가 들어가지 않는지
+//   - 지역 목록 요청이 화면의 경로 이름('도보')을 API 값(type=trail)으로 바꿔 보내는지
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HttpError, NetworkError } from "../../lib/http";
-import { getAllCourses, getCourseDetail, getCourseStarts } from "./coursesApi";
+import { getAllCourses, getCourseDetail, getCourseStarts, getRegions } from "./coursesApi";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -98,5 +99,35 @@ describe("getCourseStarts", () => {
     expect(course.image_url).toBe("https://tong.visitkorea.or.kr/a.jpg");
     expect(course.routes[0]).toMatchObject({ route_type: "도보", difficulty: "보통" });
     expect(course.start).toEqual({ lat: 35.1, lng: 129.1 });
+  });
+});
+
+// 방문 혜택 패널은 getRegions("도보")로 코스 링크를 판정한다. 컴포넌트 테스트는 "도보"를
+// 넘기는지만, 백엔드 테스트는 type=trail을 받는지만 본다. 그 사이에서 화면의 경로 이름을
+// API 값으로 바꾸는 이 연결이 어긋나면 두 쪽 테스트는 모두 통과한 채 판정만 틀어진다.
+describe("getRegions", () => {
+  const requestedUrl = async (call: () => Promise<unknown>) => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson([]));
+    vi.stubGlobal("fetch", fetchMock);
+    await call();
+    return new URL(String(fetchMock.mock.calls[0][0]));
+  };
+
+  it("도보는 type=trail로 보낸다", async () => {
+    const url = await requestedUrl(() => getRegions("도보"));
+    expect(url.pathname).toBe("/api/regions");
+    expect(url.searchParams.get("type")).toBe("trail");
+  });
+
+  it("자전거는 type=bicycle로 보낸다", async () => {
+    const url = await requestedUrl(() => getRegions("자전거"));
+    expect(url.searchParams.get("type")).toBe("bicycle");
+  });
+
+  it("경로 유형이 없으면 type 없이 보내 전 유형의 코스 보유 지역을 받는다", async () => {
+    // 코스 탐색 지역 필터가 쓰는 호출이다. type을 붙이면 기존 필터의 범위가 줄어든다.
+    const url = await requestedUrl(() => getRegions());
+    expect(url.pathname).toBe("/api/regions");
+    expect(url.searchParams.has("type")).toBe(false);
   });
 });
