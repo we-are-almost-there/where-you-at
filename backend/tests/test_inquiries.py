@@ -15,10 +15,10 @@ import unittest
 from unittest.mock import ANY, MagicMock, patch
 
 from fastapi.testclient import TestClient
-from starlette.requests import Request
 
 from app.api.routers import inquiries as inquiries_router
 from app.main import app
+from app.services import rate_limit
 
 
 VALID = {
@@ -27,75 +27,6 @@ VALID = {
     "content": "코스 경로가 실제 길과 달라요. 확인 부탁드립니다.",
     "agreed": True,
 }
-
-
-def _request(*, headers=None, client=("203.0.113.10", 12345)):
-    header_items = headers.items() if isinstance(headers, dict) else (headers or [])
-    return Request(
-        {
-            "type": "http",
-            "headers": [(name.lower().encode(), value.encode()) for name, value in header_items],
-            "client": client,
-        }
-    )
-
-
-class TestClientKey(unittest.TestCase):
-    def test_local_mode_ignores_forwarding_headers(self):
-        request = _request(
-            headers={
-                "X-Forwarded-For": "1.2.3.4",
-                "CF-Connecting-IP": "5.6.7.8",
-            }
-        )
-
-        with patch.object(inquiries_router.settings, "trust_cloudflare_ip_header", False):
-            self.assertEqual(inquiries_router._client_key(request), "203.0.113.10")
-
-    def test_render_mode_uses_valid_cloudflare_ip_and_ignores_xff(self):
-        request = _request(
-            headers={
-                "X-Forwarded-For": "1.2.3.4",
-                "CF-Connecting-IP": "198.51.100.23",
-            }
-        )
-
-        with patch.object(inquiries_router.settings, "trust_cloudflare_ip_header", True):
-            self.assertEqual(inquiries_router._client_key(request), "198.51.100.23")
-
-    def test_render_mode_groups_ipv6_by_64_prefix(self):
-        # 같은 /64 안에서 주소만 바꿔도(표기가 달라도) 같은 키, 다른 /64는 다른 키여야 한다.
-        same_prefix = [
-            _request(headers={"CF-Connecting-IP": "2001:0db8:0:0:0:0:0:1"}),
-            _request(headers={"CF-Connecting-IP": "2001:db8::ffff:1234"}),
-        ]
-        other_prefix = _request(headers={"CF-Connecting-IP": "2001:db8:0:1::1"})
-
-        with patch.object(inquiries_router.settings, "trust_cloudflare_ip_header", True):
-            self.assertEqual(
-                [inquiries_router._client_key(request) for request in same_prefix],
-                ["2001:db8::/64", "2001:db8::/64"],
-            )
-            self.assertEqual(inquiries_router._client_key(other_prefix), "2001:db8:0:1::/64")
-
-    def test_render_mode_fails_closed_for_missing_or_invalid_header(self):
-        requests = [
-            _request(),
-            _request(headers={"CF-Connecting-IP": "1.2.3.4, 5.6.7.8"}),
-            _request(headers={"CF-Connecting-IP": "not-an-ip"}),
-            _request(
-                headers=[
-                    ("CF-Connecting-IP", "1.2.3.4"),
-                    ("CF-Connecting-IP", "5.6.7.8"),
-                ]
-            ),
-        ]
-
-        with patch.object(inquiries_router.settings, "trust_cloudflare_ip_header", True):
-            self.assertEqual(
-                [inquiries_router._client_key(request) for request in requests],
-                ["unverified-cloudflare-client"] * 4,
-            )
 
 
 @patch("app.api.routers.inquiries.notify_new_inquiry")
@@ -173,8 +104,22 @@ class TestCreateInquiry(unittest.TestCase):
         self.assertEqual(mock_create.call_count, 3)
         self.assertEqual(mock_notify.call_count, 3)
 
+    def test_unverified_clients_share_one_limit(self, mock_create, mock_notify):
+        # 이용자 IP를 확인하지 못한 요청은 서로 다른 헤더로 와도 한 키로 묶여 함께 막힌다(fail closed).
+        # 로그인은 반대로 통과시키므로(test_auth.py) 문의 쪽 정책을 여기서 지킨다.
+        headers = [{}, {"CF-Connecting-IP": "not-an-ip"}, {"CF-Connecting-IP": "1.2.3.4, 5.6.7.8"}]
+
+        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True):
+            for header in headers:
+                self.assertEqual(self.client.post("/api/inquiries", json=VALID, headers=header).status_code, 201)
+
+            res = self.client.post("/api/inquiries", json=VALID)
+
+        self.assertEqual(res.status_code, 429)
+        self.assertEqual(mock_create.call_count, 3)
+
     def test_changing_xff_does_not_bypass_cloudflare_ip_limit(self, mock_create, mock_notify):
-        with patch.object(inquiries_router.settings, "trust_cloudflare_ip_header", True):
+        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True):
             for forged_ip in ("1.1.1.1", "2.2.2.2", "3.3.3.3"):
                 res = self.client.post(
                     "/api/inquiries",
