@@ -84,7 +84,13 @@ npm run dev --prefix frontend
 03_support_seed.sql       지원금 제도
 04_help_seed.sql          공지사항·자주 묻는 질문 (python -m scripts.seed_help)
 05_inquiry_retention.sql  1:1 문의 자동 파기 예약 작업 (Supabase SQL Editor에서 실행)
+08_app_user.sql           카카오 로그인 회원 테이블 (운영 DB에 적용)
+09_auth_session.sql       로그인 세션 테이블 (08 적용 뒤 운영 DB에 적용)
 ```
+
+`09_auth_session.sql`은 백엔드를 배포하기 전에 적용합니다. 순서가 바뀌면 로그인할 때
+세션을 저장하지 못해 로그인 자체가 막힙니다. 또 이 배포 직후에는 그전에 발급한 토큰이
+모두 무효가 되므로, 로그인해 있던 사용자는 한 번 다시 로그인해야 합니다.
 
 외부 API에서 데이터를 받아오는 스크립트는 `backend/scripts/`에 있습니다.
 `backend` 폴더에서 모듈로 실행해야 합니다. 파일 경로로 직접 실행하면

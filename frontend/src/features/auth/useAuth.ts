@@ -9,7 +9,7 @@
 import { useSyncExternalStore } from "react";
 import { clearAccessToken, readAccessToken, writeAccessToken } from "../../lib/authToken";
 import { HttpError } from "../../lib/http";
-import { deleteMe, fetchMe, type User } from "./authApi";
+import { deleteMe, fetchMe, logout, type User } from "./authApi";
 
 export type AuthState =
   | { status: "loading"; user: null }
@@ -30,6 +30,12 @@ const listeners = new Set<() => void>();
 function setState(next: AuthState) {
   state = next;
   listeners.forEach((listener) => listener());
+}
+
+function clearAuthState() {
+  needsCheck = false;
+  clearAccessToken();
+  setState(SIGNED_OUT);
 }
 
 function subscribe(listener: () => void) {
@@ -62,8 +68,8 @@ function checkMe() {
         // 연결 실패나 서버 오류(Render가 깨어나는 중 등)는 토큰이 멀쩡할 수 있어 남겨 두고 다음 구독 때 다시 확인한다.
         // 다시 확인하는 동안에는 로그아웃 상태를 유지해 버튼이 사라졌다 나타나지 않게 한다.
         if (error instanceof HttpError && error.status === 401) {
-          needsCheck = false;
-          clearAccessToken();
+          clearAuthState();
+          return;
         }
         setState(SIGNED_OUT);
       },
@@ -84,28 +90,40 @@ export function signIn(accessToken: string, user: User): void {
   setState({ status: "signedIn", user });
 }
 
-/** 토큰을 지운다. 서버에는 알리지 않으므로 이미 발급한 토큰은 만료 전까지 유효하다. */
-export function signOut(): void {
-  generation += 1;
-  needsCheck = false;
-  clearAccessToken();
-  setState(SIGNED_OUT);
+/** 서버에서 현재 로그인 세션을 삭제한 뒤 로컬 로그인 상태를 지운다. */
+export async function signOut(): Promise<void> {
+  const requestedGeneration = ++generation;
+  try {
+    await logout();
+  } catch (error) {
+    if (requestedGeneration !== generation) return;
+    if (error instanceof HttpError && error.status === 401) {
+      clearAuthState();
+      return;
+    }
+    throw error;
+  }
+  if (requestedGeneration === generation) clearAuthState();
 }
 
 /**
- * 회원 탈퇴. 성공(204)하면 로그아웃한다. 서버는 이미 지운 회원에게도 204를 돌려준다.
+ * 회원 탈퇴. 성공(204)하면 서버에서 회원과 모든 로그인 세션이 삭제되므로 로컬 상태만 지운다.
  *
  * 실패하면 오류를 그대로 던져, 호출한 화면이 안내하게 한다.
- * - 401: 토큰이 없거나 만료된 것이라 탈퇴되지 않았다. 로그아웃한 뒤 던진다.
- *   화면은 "다시 로그인한 뒤 탈퇴해 주세요"처럼 안내한다. 탈퇴 완료로 보이면 안 된다.
+ * - 401: 토큰이 없거나 만료됐거나, 앞선 탈퇴 요청에서 이미 회원이 삭제된 상태다.
+ *   로컬 상태를 지우고 오류를 던져 호출한 화면이 두 가능성을 함께 안내하게 한다.
  * - 그 밖의 실패: 로그인 상태를 그대로 둔다.
  */
 export async function withdraw(): Promise<void> {
   try {
     await deleteMe();
   } catch (error) {
-    if (error instanceof HttpError && error.status === 401) signOut();
+    if (error instanceof HttpError && error.status === 401) {
+      generation += 1;
+      clearAuthState();
+    }
     throw error;
   }
-  signOut();
+  generation += 1;
+  clearAuthState();
 }
