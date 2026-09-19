@@ -66,7 +66,7 @@ export function CourseCard({ course, routeType, onSelect, onHoverChange, active 
             >
               <img
                 src={course.image_url}
-                alt={course.title}
+                alt=""
                 className="h-full w-full object-cover"
               />
             </div>
