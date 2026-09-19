@@ -109,9 +109,14 @@ def _callback_params(request: Request, body: bytes) -> dict[str, str]:
 
     문서에 Content-Type이 없어 세 형태를 모두 받는다. Starlette의 request.form()은
     urlencoded에도 python-multipart 의존성을 요구하므로 바디를 직접 파싱한다.
+
+    쿼리와 바디를 합치고 겹치는 키는 바디를 우선한다. 한쪽만 보면 콘솔에 쿼리가 붙은 주소를
+    등록하는 실수 한 번으로 모든 웹훅의 바디가 조용히 버려진다.
     """
-    if request.query_params:
-        return dict(request.query_params)
+    return {**request.query_params, **_body_params(request, body)}
+
+
+def _body_params(request: Request, body: bytes) -> dict[str, str]:
     if request.headers.get("content-type", "").startswith("application/json"):
         try:
             parsed = json.loads(body or b"{}")

@@ -64,6 +64,23 @@ class TestKakaoUnlinkWebhook(unittest.TestCase):
                 # 탈퇴 API와 같은 삭제 함수를 회원 id로 부른다.
                 self.assertEqual(mock_delete.call_args.args[1], USER_ID)
 
+    def test_query_and_body_are_merged(self, mock_find, mock_delete):
+        # 콘솔에 쿼리가 붙은 주소를 등록하는 실수가 있어도 바디를 버리지 않아야 한다.
+        cases = {
+            "쿼리가 있어도 바디를 읽는다": "/api/auth/kakao/unlink?foo=1",
+            "겹치는 키는 바디가 이긴다": "/api/auth/kakao/unlink?user_id=9999",
+        }
+        for name, url in cases.items():
+            with self.subTest(name):
+                mock_find.reset_mock()
+                mock_delete.reset_mock()
+
+                res = self.client.post(url, data=PARAMS, headers=HEADERS)
+
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(mock_find.call_args.args[1], 4321)
+                self.assertEqual(mock_delete.call_args.args[1], USER_ID)
+
     def test_unverified_requests_return_401_without_db(self, mock_find, mock_delete):
         cases = {
             "헤더 없음": {},
