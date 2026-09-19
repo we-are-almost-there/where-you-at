@@ -1,6 +1,9 @@
 import { useLayoutEffect, useRef, useState, type MouseEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
+import { Link, useLocation } from "react-router";
+import { UserRound } from "lucide-react";
 import SidebarDrawer from "./SidebarDrawer";
+import { useAuth, useKakaoLogin } from "../../features/auth";
+import logoUrl from "../../assets/logo.svg";
 import { MAIN_CONTENT_ID } from "./mainContent";
 
 // 주소에 #main-content를 남기면 라우터가 새 이동으로 받고 새로고침·공유 주소에도 남는다.
@@ -18,7 +21,6 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "홈", to: "/" },
   { label: "코스 탐색", to: "/courses" },
   { label: "대회 행사", to: "/races" },
   { label: "방문 혜택", to: "/support" },
@@ -47,10 +49,9 @@ export default function AppHeader({
   const setIsSidebarOpen = isControlled ? onSidebarOpenChange : setInternalOpen;
 
   const location = useLocation();
-  const navigate = useNavigate();
-  // /courses 및 그 하위 경로(예: /courses/:id)에서는 CTA를 숨긴다.
+  const auth = useAuth();
+  const { login, dialog: loginDialog } = useKakaoLogin();
   const normalizedPath = location.pathname.replace(/\/+$/, "");
-  const hideCourseCta = normalizedPath === "/courses" || normalizedPath.startsWith("/courses/");
   const headerRef = useRef<HTMLElement>(null);
   const alignmentRef = useRef<HTMLDivElement>(null);
 
@@ -101,7 +102,9 @@ export default function AppHeader({
       </a>
       <div ref={alignmentRef}>
         <div className={sidePadding}>
-          <div className="flex h-16 items-center gap-3 md:h-auto md:py-5">
+          {/* md 이상은 [로고 | 메뉴 | 로그인] 세 칸이다. 양쪽 칸을 같은 비율(1fr)로 두어, 로고와 로그인 영역의
+              너비가 달라도 메뉴가 헤더 정가운데에 온다. 모바일은 햄버거와 로고만 있어 한 줄로 둔다. */}
+          <div className="flex h-16 items-center gap-3 md:grid md:h-20 md:grid-cols-[1fr_auto_1fr]">
             <button
               type="button"
               onClick={() => setIsSidebarOpen(true)}
@@ -113,14 +116,15 @@ export default function AppHeader({
 
             <Link
               to="/"
-              className="shrink-0 font-bold text-accent text-[24px] leading-8 tracking-tight md:text-[22px]"
+              aria-current={normalizedPath === "" ? "page" : undefined}
+              className="shrink-0 justify-self-start"
             >
-              어디까지왔니
+              <img src={logoUrl} alt="어디까지왔니" className="h-9 w-auto lg:h-10" />
             </Link>
 
             <nav
               aria-label="주요 메뉴"
-              className="hidden min-w-0 flex-1 items-center justify-center md:flex gap-[clamp(1rem,4vw,7rem)] px-[clamp(1rem,4vw,2rem)]"
+              className="hidden items-center justify-center md:flex gap-[clamp(1rem,4vw,7rem)] px-[clamp(1rem,4vw,2rem)]"
             >
               {NAV_ITEMS.map((item) => {
                 // 하위 경로(/courses/5)도 같은 메뉴 구간이다. 홈("/")은 모든 경로의 접두어라 정확히 같을 때만.
@@ -157,17 +161,40 @@ export default function AppHeader({
               })}
             </nav>
 
-            {/* CTA 공간을 유지해 코스 탐색에서도 메뉴 위치가 달라지지 않게 한다. */}
-            <button
-              type="button"
-              onClick={() => navigate("/courses")}
-              disabled={hideCourseCta}
-              aria-hidden={hideCourseCta || undefined}
-              tabIndex={hideCourseCta ? -1 : undefined}
-              className={`ml-auto hidden shrink-0 cursor-pointer whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:bg-accent/90 md:block ${hideCourseCta ? "invisible" : ""}`}
-            >
-              코스 둘러보기
-            </button>
+            {/* 모바일에서는 로그인·마이페이지를 사이드바에서 제공하므로 헤더에서 숨긴다. */}
+            <div className="ml-auto hidden shrink-0 justify-self-end md:block">
+              {auth.status === "signedIn" ? (
+                <Link
+                  to="/mypage"
+                  className="flex items-center gap-2.5 rounded-lg py-1 pl-1 pr-2 hover:bg-control-hover"
+                >
+                  {/* 카카오 프로필 사진은 받지 않아 기본 아바타를 쓴다. */}
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-lavender">
+                    <UserRound className="size-6 text-accent" aria-hidden="true" />
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="max-w-[7rem] truncate text-[14px] font-bold leading-5 text-ink">
+                      {auth.user.nickname ?? "회원"}
+                    </span>
+                    <span className="text-[12px] leading-4 text-muted">마이페이지</span>
+                  </span>
+                </Link>
+              ) : (
+                // 토큰을 확인하는 동안(loading)에는 자리만 잡아 두어, 로그인 버튼이 보였다가
+                // 마이페이지로 바뀌는 깜빡임을 막는다.
+                <button
+                  type="button"
+                  onClick={() => login(location.pathname + location.search)}
+                  disabled={auth.status === "loading"}
+                  aria-hidden={auth.status === "loading" || undefined}
+                  className={`cursor-pointer whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:bg-accent/90 ${
+                    auth.status === "loading" ? "invisible" : ""
+                  }`}
+                >
+                  로그인
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -175,6 +202,7 @@ export default function AppHeader({
       {!isControlled && (
         <SidebarDrawer isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       )}
+      {loginDialog}
     </header>
   );
 }

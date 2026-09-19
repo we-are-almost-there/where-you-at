@@ -58,6 +58,7 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
   const [stamps] = useState(getStamps);
   const [dialog, setDialog] = useState<"edit" | "withdraw" | "stampMap" | null>(null);
   const [status, setStatus] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
 
   // 프로필 수정을 열 때 알림 문구를 비운다. 저장할 때마다 "" → "프로필을 저장했어요."로 바뀌어야 화면낭독기가
   // 다시 읽는다. 같은 문구로 한 번 더 setStatus하면 React가 갱신을 건너뛰어 두 번째 저장부터 알림이 없다.
@@ -65,6 +66,21 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
   const openProfileEdit = () => {
     setStatus("");
     setDialog("edit");
+  };
+
+  const handleSignOut = async () => {
+    if (signingOut) return;
+    setStatus("");
+    setSigningOut(true);
+    try {
+      await signOut();
+    } catch {
+      // #172부터 로그아웃은 서버 세션 삭제가 성공해야 로컬 상태를 지운다. 실패를 삼키면 버튼이
+      // 아무 반응 없이 보이므로 로그인 상태를 유지한 채 다시 시도할 수 있게 알린다.
+      setStatus("로그아웃하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setSigningOut(false);
+    }
   };
 
   return (
@@ -117,11 +133,12 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
               </button>
               <button
                 type="button"
-                onClick={signOut}
-                className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-control-border text-[14px] font-bold text-ink hover:bg-control-hover"
+                onClick={handleSignOut}
+                disabled={signingOut}
+                className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-control-border text-[14px] font-bold text-ink hover:bg-control-hover disabled:cursor-wait disabled:opacity-60"
               >
                 <LogOut size={15} aria-hidden="true" />
-                로그아웃
+                {signingOut ? "로그아웃 중…" : "로그아웃"}
               </button>
             </div>
 

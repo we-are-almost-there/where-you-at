@@ -4,9 +4,14 @@ app_user 테이블 CRUD 함수
 inquiry.py와 같은 psycopg2 raw SQL + RealDictCursor 패턴.
 """
 
+from datetime import datetime
+from uuid import UUID
+
 from psycopg2.extras import RealDictCursor
 
 _USER_COLUMNS = "id, nickname, bio"
+# 인증 조회 결과가 deps.CurrentUser의 칸이 된다. 칸을 바꾸면 CurrentUser도 함께 고친다.
+_AUTHENTICATED_USER_COLUMNS = "u.id, u.nickname, u.bio, u.kakao_id"
 
 
 def upsert_kakao_user(conn, *, kakao_id: int, nickname: str | None) -> dict:
@@ -29,10 +34,35 @@ def upsert_kakao_user(conn, *, kakao_id: int, nickname: str | None) -> dict:
     return row
 
 
-def get_user(conn, user_id: int) -> dict | None:
-    query = f"select {_USER_COLUMNS} from app_user where id = %(id)s"
+def create_session(conn, *, user_id: int, session_id: UUID, expires_at: datetime) -> None:
+    """로그인 세션을 만들고, 같은 회원의 만료된 세션을 함께 정리한다."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "delete from auth_session where user_id = %(user_id)s and expires_at <= now()",
+            {"user_id": user_id},
+        )
+        cur.execute(
+            """
+            insert into auth_session (id, user_id, expires_at)
+            values (%(session_id)s, %(user_id)s, %(expires_at)s)
+            """,
+            {"session_id": str(session_id), "user_id": user_id, "expires_at": expires_at},
+        )
+    conn.commit()
+
+
+def get_authenticated_user(conn, *, user_id: int, session_id: UUID) -> dict | None:
+    """만료되지 않은 세션과 회원이 모두 남아 있을 때만 인증할 회원을 돌려준다."""
+    query = f"""
+        select {_AUTHENTICATED_USER_COLUMNS}
+        from auth_session s
+        join app_user u on u.id = s.user_id
+        where s.id = %(session_id)s
+          and s.user_id = %(user_id)s
+          and s.expires_at > now()
+    """
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(query, {"id": user_id})
+        cur.execute(query, {"session_id": str(session_id), "user_id": user_id})
         return cur.fetchone()
 
 
@@ -62,12 +92,14 @@ def update_profile(conn, user_id: int, fields: dict) -> dict | None:
     return row
 
 
-def get_kakao_id(conn, user_id: int) -> int | None:
-    """탈퇴할 때 카카오 연결 해제에 쓸 회원번호. 회원이 없으면 None."""
+def delete_session(conn, *, user_id: int, session_id: UUID) -> None:
+    """현재 로그인 세션만 삭제한다. 이미 사라졌으면 아무것도 하지 않는다."""
     with conn.cursor() as cur:
-        cur.execute("select kakao_id from app_user where id = %(id)s", {"id": user_id})
-        row = cur.fetchone()
-    return row[0] if row else None
+        cur.execute(
+            "delete from auth_session where id = %(session_id)s and user_id = %(user_id)s",
+            {"session_id": str(session_id), "user_id": user_id},
+        )
+    conn.commit()
 
 
 def get_user_id_by_kakao_id(conn, kakao_id: int) -> int | None:

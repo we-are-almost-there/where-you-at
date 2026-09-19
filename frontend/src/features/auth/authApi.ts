@@ -54,6 +54,14 @@ export async function updateMe(body: ProfileChanges): Promise<User> {
   return res.json();
 }
 
+export async function logout(): Promise<void> {
+  const res = await fetchOrNetworkError(`${API_BASE}/api/auth/logout`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new HttpError(res.status, `로그아웃 실패 (${res.status})`);
+}
+
 export async function deleteMe(): Promise<void> {
   const res = await fetchOrNetworkError(`${API_BASE}/api/me`, { method: "DELETE", headers: authHeaders() });
   if (!res.ok) throw new HttpError(res.status, `회원 탈퇴 실패 (${res.status})`);

@@ -480,7 +480,7 @@ alter table inquiry      enable row level security;
 -- ============================================
 -- 카카오 로그인으로 가입한 회원. 인증은 Supabase Auth가 아니라 FastAPI가 직접 처리한다.
 --   DB를 옮겨도 회원 데이터와 인증이 그대로 따라가도록 우리 스키마의 일반 테이블로 둔다.
--- 이미 운영 중인 공용 DB에는 08_app_user.sql로 같은 내용을 적용한다. 바꾸면 두 곳을 함께 고친다.
+-- 이미 운영 중인 공용 DB에는 08_app_user.sql과 09_auth_session.sql로 같은 내용을 적용한다.
 
 
 -- 1. app_user (회원)
@@ -508,3 +508,18 @@ create trigger trg_app_user_updated_at
 -- 행 수준 보안(RLS)
 -- 이유와 주의사항은 지원금/환급 섹션 끝의 RLS 주석 참고. 새 테이블을 추가하면 여기에도 한 줄 추가한다.
 alter table app_user enable row level security;
+
+
+-- 2. auth_session (로그인 세션)
+-- JWT의 sid와 연결된다. 세션 행이 있어야 토큰이 유효하며, 로그아웃하면 현재 행만 삭제한다.
+-- 회원 탈퇴나 연결 끊기 웹훅으로 app_user가 삭제되면 해당 회원의 모든 세션도 함께 삭제된다.
+create table auth_session (
+  id                uuid primary key,
+  user_id           bigint not null references app_user(id) on delete cascade,
+  expires_at        timestamptz not null
+);
+
+-- app_user 삭제 시 FK 연쇄 삭제가 세션을 빠르게 찾도록 한다.
+create index idx_auth_session_user_id on auth_session(user_id);
+
+alter table auth_session enable row level security;

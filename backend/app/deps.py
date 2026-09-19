@@ -1,9 +1,12 @@
 from contextlib import contextmanager
+from dataclasses import dataclass
+from uuid import UUID
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .db.supabase import get_db_connection
+from .crud import user as user_crud
 from .services import auth_token
 
 # auto_error=False: 헤더가 없을 때 FastAPI 기본 403 대신 아래에서 401을 돌려준다.
@@ -37,12 +40,21 @@ def get_db():
         yield conn
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> int:
-    """Authorization: Bearer 토큰을 검증하고 회원 id를 돌려주는 FastAPI 의존성.
+@dataclass(frozen=True)
+class CurrentUser:
+    id: int
+    nickname: str | None
+    bio: str | None
+    kakao_id: int
+    session_id: UUID
 
-    토큰만 확인하고 회원 행이 남아 있는지는 보지 않는다. 탈퇴한 회원의 토큰도 만료 전까지 통과하므로,
-    회원 행이 필요한 곳에서 직접 확인한다(GET /api/me).
-    라우터에서 get_db보다 앞에 두면 인증에 실패한 요청은 DB에 연결하지 않는다.
+
+def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> CurrentUser:
+    """JWT와 DB 세션·회원 행을 검증하고 현재 회원을 돌려주는 FastAPI 의존성.
+
+    토큰을 먼저 확인하므로 위조되거나 만료된 요청은 DB에 연결하지 않는다.
+    이 의존성을 쓰는 라우터가 get_db까지 받으면 요청 하나가 연결을 둘 잡는다.
+    인증이 필요한 라우터는 get_db 대신 본문에서 db_connection()을 직접 쓴다.
     """
     if not auth_token.is_configured():
         print("[ERROR] JWT_SECRET이 비어 있거나 32바이트보다 짧습니다.")
@@ -50,9 +62,19 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
     if credentials is None:
         raise unauthorized_error()
     try:
-        return auth_token.decode_access_token(credentials.credentials)
+        claims = auth_token.decode_access_token(credentials.credentials)
     except auth_token.InvalidTokenError:
         raise unauthorized_error()
+
+    with db_connection() as conn:
+        user = user_crud.get_authenticated_user(
+            conn,
+            user_id=claims.user_id,
+            session_id=claims.session_id,
+        )
+    if user is None:
+        raise unauthorized_error()
+    return CurrentUser(**user, session_id=claims.session_id)
 
 
 def unauthorized_error() -> HTTPException:
