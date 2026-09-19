@@ -101,7 +101,9 @@ export default function AppHeader({
       </a>
       <div ref={alignmentRef}>
         <div className={sidePadding}>
-          <div className="flex h-16 items-center gap-3 md:h-auto md:py-5">
+          {/* md 이상은 [로고 | 메뉴 | 로그인] 세 칸이다. 양쪽 칸을 같은 비율(1fr)로 두어, 로고와 로그인 영역의
+              너비가 달라도 메뉴가 헤더 정가운데에 온다. 모바일은 햄버거와 로고만 있어 한 줄로 둔다. */}
+          <div className="flex h-16 items-center gap-3 md:grid md:h-20 md:grid-cols-[1fr_auto_1fr]">
             <button
               type="button"
               onClick={() => setIsSidebarOpen(true)}
@@ -114,14 +116,14 @@ export default function AppHeader({
             <Link
               to="/"
               aria-current={normalizedPath === "" ? "page" : undefined}
-              className="shrink-0"
+              className="shrink-0 justify-self-start"
             >
-              <img src={logoUrl} alt="어디까지왔니" className="h-7 w-auto md:h-8" />
+              <img src={logoUrl} alt="어디까지왔니" className="h-9 w-auto lg:h-10" />
             </Link>
 
             <nav
               aria-label="주요 메뉴"
-              className="hidden min-w-0 flex-1 items-center justify-center md:flex gap-[clamp(1rem,4vw,7rem)] px-[clamp(1rem,4vw,2rem)]"
+              className="hidden items-center justify-center md:flex gap-[clamp(1rem,4vw,7rem)] px-[clamp(1rem,4vw,2rem)]"
             >
               {NAV_ITEMS.map((item) => {
                 // 하위 경로(/courses/5)도 같은 메뉴 구간이다. 홈("/")은 모든 경로의 접두어라 정확히 같을 때만.
@@ -159,7 +161,7 @@ export default function AppHeader({
             </nav>
 
             {/* 모바일에서는 로그인·마이페이지를 사이드바에서 제공하므로 헤더에서 숨긴다. */}
-            <div className="ml-auto hidden shrink-0 md:block">
+            <div className="ml-auto hidden shrink-0 justify-self-end md:block">
               {auth.status === "signedIn" ? (
                 <Link
                   to="/mypage"
