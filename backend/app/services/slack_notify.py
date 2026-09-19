@@ -9,13 +9,30 @@ import logging
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from app.core.config import settings
+
 LOGGER = logging.getLogger(__name__)
 TIMEOUT_SECONDS = 3
+UNLINK_FAILURE_MESSAGE = "[어디까지왔니] 연결 끊기 웹훅 삭제 실패, Render 로그 확인 필요"
 
 
 def plain_text(text: str) -> dict[str, str]:
     # 이용자가 입력한 Slack 마크업이나 멘션이 실행되지 않게 모든 입력을 plain_text로 보낸다.
     return {"type": "plain_text", "text": text}
+
+
+def notify_unlink_delete_failure() -> bool:
+    """연결 끊기 웹훅으로 받은 삭제가 실패했음을 알린다.
+
+    카카오는 웹훅을 다시 보내지 않고 Render 로그는 7일만 남으므로, 이 알림이 없으면 회원 정보가
+    모르는 사이 계속 남는다. 어느 회원인지는 Render 로그의 kakao_id로만 확인한다. Slack 전송
+    항목에 회원번호를 더하면 개인정보처리방침 7·8번을 함께 고쳐야 한다.
+    """
+    return post(
+        settings.inquiry_webhook_url,
+        {"text": UNLINK_FAILURE_MESSAGE},
+        failure_log="연결 끊기 웹훅 삭제 실패 알림 전송 실패",
+    )
 
 
 def is_webhook_url(url: str) -> bool:

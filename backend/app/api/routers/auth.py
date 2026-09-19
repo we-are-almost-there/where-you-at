@@ -9,7 +9,7 @@ from ...core.config import settings
 from ...crud import user as user_crud
 from ...deps import db_connection
 from ...schemas.user import KakaoLoginRequest, LoginResponse, UserOut
-from ...services import auth_token, kakao_oauth
+from ...services import auth_token, kakao_oauth, slack_notify
 from ...services.rate_limit import SlidingWindowLimiter, client_key
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -140,3 +140,5 @@ def _delete_user_by_kakao_id(kakao_id: int) -> None:
     except Exception as e:
         # DB 연결 실패(503)까지 여기서 삼킨다. 로그의 회원번호로 직접 지워야 한다.
         print(f"[ERROR] 연결 끊기 웹훅 회원 삭제 실패(직접 삭제 필요): kakao_id={kakao_id} {type(e).__name__}")
+        # 로그만으로는 7일 안에 아무도 보지 않으면 놓친다. 알림 전송이 실패해도 로그는 이미 남았다.
+        slack_notify.notify_unlink_delete_failure()

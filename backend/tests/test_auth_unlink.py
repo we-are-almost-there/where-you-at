@@ -39,6 +39,9 @@ class TestKakaoUnlinkWebhook(unittest.TestCase):
         connect_patcher = patch("app.deps.get_db_connection", return_value=self.conn)
         self.connect = connect_patcher.start()
         self.addCleanup(connect_patcher.stop)
+        notify_patcher = patch("app.services.slack_notify.notify_unlink_delete_failure")
+        self.notify = notify_patcher.start()
+        self.addCleanup(notify_patcher.stop)
 
     def _post(self, params=PARAMS, headers=HEADERS):
         return self.client.post("/api/auth/kakao/unlink", data=params, headers=headers)
@@ -128,25 +131,44 @@ class TestKakaoUnlinkWebhook(unittest.TestCase):
         self.connect.assert_not_called()
         mock_delete.assert_not_called()
 
-    def test_db_failure_still_returns_200(self, mock_find, mock_delete):
+    def test_db_failure_returns_200_and_notifies_slack(self, mock_find, mock_delete):
         # 재시도 정책이 문서에 없어, 200이 아닌 응답을 돌려줘도 삭제가 복구되지 않는다.
-        # 놓친 삭제는 [ERROR] 로그로 찾아 직접 지운다.
+        # 놓친 삭제는 Slack 알림을 받고 [ERROR] 로그로 찾아 직접 지운다.
         with self.subTest("DB 연결 실패"):
             self.connect.return_value = None
 
             self.assertEqual(self._post().status_code, 200)
+            self.assertEqual(self.notify.call_count, 1)
 
         with self.subTest("조회 중 오류"):
             self.connect.return_value = self.conn
             mock_find.side_effect = RuntimeError("boom")
 
             self.assertEqual(self._post().status_code, 200)
+            self.assertEqual(self.notify.call_count, 2)
 
         with self.subTest("삭제 중 오류"):
             mock_find.side_effect = None
             mock_delete.side_effect = RuntimeError("boom")
 
             self.assertEqual(self._post().status_code, 200)
+            self.assertEqual(self.notify.call_count, 3)
+
+    def test_slack_is_not_notified_when_nothing_failed(self, mock_find, mock_delete):
+        cases = {"삭제 성공": USER_ID, "회원 없음": None}
+        for name, found in cases.items():
+            with self.subTest(name):
+                mock_find.return_value = found
+
+                self.assertEqual(self._post().status_code, 200)
+        self.notify.assert_not_called()
+
+    def test_slack_failure_does_not_change_response(self, mock_find, mock_delete):
+        # 알림 전송은 실패해도 False만 돌려준다(slack_notify.post). 알림이 막혀도 [ERROR] 로그는 남는다.
+        mock_delete.side_effect = RuntimeError("boom")
+        self.notify.return_value = False
+
+        self.assertEqual(self._post().status_code, 200)
 
 
 if __name__ == "__main__":
