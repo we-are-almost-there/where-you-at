@@ -39,7 +39,7 @@ class TestKakaoUnlinkWebhook(unittest.TestCase):
         connect_patcher = patch("app.deps.get_db_connection", return_value=self.conn)
         self.connect = connect_patcher.start()
         self.addCleanup(connect_patcher.stop)
-        notify_patcher = patch("app.services.slack_notify.notify_unlink_delete_failure")
+        notify_patcher = patch("app.services.slack_notify.notify_unlink_failure")
         self.notify = notify_patcher.start()
         self.addCleanup(notify_patcher.stop)
 
@@ -125,14 +125,18 @@ class TestKakaoUnlinkWebhook(unittest.TestCase):
         }
         for name, params in cases.items():
             with self.subTest(name):
+                # 규격이 바뀌면 모든 웹훅이 이 경로로 빠지므로 알림이 가야 한다.
+                self.notify.reset_mock()
+
                 res = self.client.post("/api/auth/kakao/unlink", data=params, headers=HEADERS)
 
                 self.assertEqual(res.status_code, 200)
+                self.assertEqual(self.notify.call_count, 1)
         self.connect.assert_not_called()
         mock_delete.assert_not_called()
 
     def test_db_failure_returns_200_and_notifies_slack(self, mock_find, mock_delete):
-        # 재시도 정책이 문서에 없어, 200이 아닌 응답을 돌려줘도 삭제가 복구되지 않는다.
+        # 연결 해제 웹훅은 재전송되지 않아, 200이 아닌 응답을 돌려줘도 삭제가 복구되지 않는다.
         # 놓친 삭제는 Slack 알림을 받고 [ERROR] 로그로 찾아 직접 지운다.
         with self.subTest("DB 연결 실패"):
             self.connect.return_value = None

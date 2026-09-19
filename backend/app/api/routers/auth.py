@@ -67,14 +67,15 @@ async def kakao_unlink_callback(request: Request, background_tasks: BackgroundTa
     우리가 탈퇴 API에서 연결 해제를 호출한 경우에는 이 웹훅이 오지 않는다. 카카오 계정관리나
     카카오톡의 연결된 앱 관리에서 사용자가 직접 끊었을 때만 온다.
 
-    카카오는 3초 안에 200을 기대하고 재시도 정책은 문서에 없다. 그래서 회원을 못 찾거나
-    삭제가 실패해도 200을 돌려주고, 놓친 삭제는 Slack 알림과 [ERROR] 로그로 찾아 직접 지운다(README 참고).
+    카카오는 3초 안에 200을 기대하고, 재전송은 계정 상태 변경 웹훅에서만 지원해 연결 해제 웹훅은
+    다시 보내지 않는다. 그래서 회원을 못 찾거나 삭제가 실패해도 200을 돌려주고, 놓친 삭제는
+    Slack 알림과 [ERROR] 로그로 찾아 직접 지운다(README 참고).
     200이 아닌 응답은 검증에 실패한 요청(401)에만 쓴다. 이때의 401은 카카오가 아닌 요청이거나
     우리가 가진 키가 대표 어드민 키가 아니라는 신호다.
 
     삭제를 백그라운드로 넘기는 이유: DB의 connect_timeout이 3초라 연결이 느려지면 응답이 그대로
     3초를 넘긴다. 오류가 잦으면 카카오가 웹훅을 비활성화할 수 있고, 한 번 꺼지면 이후 웹훅이 모두
-    오지 않는다. 재시도가 없어 응답을 기다린다고 삭제 결과가 나아지지도 않는다.
+    오지 않는다. 재전송이 없어 응답을 기다린다고 삭제 결과가 나아지지도 않는다.
 
     async인 이유: 카카오가 보내는 형식이 문서에 없어 쿼리와 바디를 모두 봐야 하고, 바디를 읽으려면
     await이 필요하다.
@@ -90,7 +91,10 @@ async def kakao_unlink_callback(request: Request, background_tasks: BackgroundTa
         kakao_id = int(params["user_id"])
     except (KeyError, ValueError):
         # 다시 보내도 같은 결과라 200으로 끝내고, 규격이 바뀐 신호이므로 받은 항목 이름만 남긴다.
+        # 규격이 바뀌면 모든 웹훅이 이 경로로 빠지므로 삭제 실패와 같은 알림을 보낸다.
+        # Slack 전송도 3초까지 기다리므로 응답 뒤로 넘긴다.
         print(f"[ERROR] 연결 끊기 웹훅에 회원번호가 없습니다: params={sorted(params)}")
+        background_tasks.add_task(slack_notify.notify_unlink_failure)
         return {"received": True}
 
     background_tasks.add_task(_delete_user_by_kakao_id, kakao_id)
@@ -144,4 +148,4 @@ def _delete_user_by_kakao_id(kakao_id: int) -> None:
         # DB 연결 실패(503)까지 여기서 삼킨다. 로그의 회원번호로 직접 지워야 한다.
         print(f"[ERROR] 연결 끊기 웹훅 회원 삭제 실패(직접 삭제 필요): kakao_id={kakao_id} {type(e).__name__}")
         # 로그만으로는 7일 안에 아무도 보지 않으면 놓친다. 알림 전송이 실패해도 로그는 이미 남았다.
-        slack_notify.notify_unlink_delete_failure()
+        slack_notify.notify_unlink_failure()

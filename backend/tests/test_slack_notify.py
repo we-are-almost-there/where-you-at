@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from app.core.config import settings
-from app.services.slack_notify import notify_unlink_delete_failure
+from app.services.slack_notify import notify_unlink_failure
 
 SLACK = "https://hooks.slack.com/services/T000/B000/secret-token"
 
@@ -27,19 +27,19 @@ class TestNotifyUnlinkDeleteFailure(unittest.TestCase):
     def test_sends_fixed_message_without_personal_data(self, urlopen: MagicMock):
         urlopen.return_value.__enter__.return_value.read.return_value = b"ok"
 
-        self.assertTrue(notify_unlink_delete_failure())
+        self.assertTrue(notify_unlink_failure())
 
         request = urlopen.call_args.args[0]
         self.assertEqual(request.full_url, SLACK)
         # 어느 회원인지는 Render 로그의 kakao_id로만 확인한다. Slack에는 회원번호를 보내지 않는다.
         self.assertEqual(
             json.loads(request.data.decode("utf-8")),
-            {"text": "[어디까지왔니] 연결 끊기 웹훅 삭제 실패, Render 로그 확인 필요"},
+            {"text": "[어디까지왔니] 연결 끊기 웹훅 처리 실패, Render 로그 확인 필요"},
         )
 
     def test_without_webhook_url_does_nothing(self, urlopen: MagicMock):
         with patch.object(settings, "inquiry_webhook_url", ""):
-            self.assertFalse(notify_unlink_delete_failure())
+            self.assertFalse(notify_unlink_failure())
 
         urlopen.assert_not_called()
 
