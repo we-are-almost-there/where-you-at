@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 //
 // 찜한 코스 전체 보기가 코스 탐색 카드를 12개씩 나눠 보여 주고, 카드를 누르면 코스 상세로 가는지 본다.
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth } from "../auth";
-import type { Course } from "../map/types";
+import type { SavedCourse } from "../saved";
 import SavedCoursesPage from "./SavedCoursesPage";
 import { fetchSavedCourses } from "./mypageData";
 
@@ -13,17 +13,29 @@ vi.mock("../auth", () => ({ useAuth: vi.fn(), useKakaoLogin: () => ({ login: vi.
 vi.mock("./mypageData", () => ({ fetchSavedCourses: vi.fn() }));
 vi.mock("../../components/layout/AppHeader", () => ({ default: () => null }));
 
-const course = (id: number, routeType: "도보" | "자전거" = "도보"): Course => ({
-  id,
-  title: `코스 ${id}`,
-  start_address: "강원 춘천시",
-  image_url: "",
-  region_code: "51110",
-  is_population_drop_zone: false,
-  landmarks: [],
-  routes: [{ route_type: routeType, distance: 5, estimated_time: 60, difficulty: "쉬움" }],
-  path_trail: [],
-  path_bicycle: [],
+// 하트는 로그인 상태를 따라 찜 목록을 받으러 나간다. 이 화면의 관심사가 아니라 저장소만 대신한다.
+vi.mock("../saved/savedStore", () => ({
+  useSavedCourse: () => ({ saved: false, busy: false }),
+  toggleSavedCourse: vi.fn(),
+  ensureSavedKeysLoaded: vi.fn(),
+  clearSavedKeys: vi.fn(),
+}));
+
+const course = (id: number, routeType: "도보" | "자전거" = "도보"): SavedCourse => ({
+  course: {
+    id,
+    title: `코스 ${id}`,
+    start_address: "강원 춘천시",
+    image_url: "",
+    region_code: "51110",
+    is_population_drop_zone: false,
+    landmarks: [],
+    routes: [{ route_type: routeType, distance: 5, estimated_time: 60, difficulty: "쉬움" }],
+    path_trail: [],
+    path_bicycle: [],
+  },
+  routeType,
+  savedAt: "2026-09-19T10:00:00+00:00",
 });
 
 function renderPage(path = "/mypage/saved") {
@@ -68,6 +80,15 @@ describe("SavedCoursesPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: /코스 3 강원 춘천시/ }));
 
     expect(screen.getByText("코스 상세")).toBeTruthy();
+  });
+
+  it("자전거로 찜한 코스는 자전거 카드로 보여 주고 카드마다 찜을 해제할 수 있다", async () => {
+    vi.mocked(fetchSavedCourses).mockResolvedValue([course(3, "자전거")]);
+    renderPage();
+
+    const card = await screen.findByRole("article");
+    expect(within(card).getByText("자전거")).toBeTruthy();
+    expect(within(card).getByRole("button", { name: "코스 3 찜하기" })).toBeTruthy();
   });
 
   it("찜한 코스가 없으면 코스 둘러보기로 이어 준다", async () => {

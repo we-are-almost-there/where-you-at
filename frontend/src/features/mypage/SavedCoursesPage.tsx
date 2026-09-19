@@ -58,18 +58,16 @@ function SavedCourses() {
       <p className="text-[14px] text-caption">모두 {saved.courses.length}개</p>
       {/* 코스 탐색 목록(CourseList)과 같은 격자. 넓은 화면에서도 카드 폭이 지나치게 늘지 않게 4열까지만 둔다. */}
       <ul className="mt-4 grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
-        {items.map((course) => {
-          const routeType = course.routes[0]?.route_type ?? "도보";
-          return (
-            <li key={course.id}>
-              <CourseCard
-                course={course}
-                routeType={routeType}
-                onSelect={() => navigate(`/courses/${course.id}${routeType === "자전거" ? "?type=bicycle" : ""}`)}
-              />
-            </li>
-          );
-        })}
+        {/* 찜은 종목 단위라 찜할 때 고른 종목으로 카드를 그린다. 같은 코스를 도보·자전거로 찜했으면 두 장이다. */}
+        {items.map(({ course, routeType }) => (
+          <li key={`${course.id}:${routeType}`}>
+            <CourseCard
+              course={course}
+              routeType={routeType}
+              onSelect={() => navigate(`/courses/${course.id}${routeType === "자전거" ? "?type=bicycle" : ""}`)}
+            />
+          </li>
+        ))}
       </ul>
       <Pagination page={current} totalPages={totalPages} onChange={goToPage} />
     </>
