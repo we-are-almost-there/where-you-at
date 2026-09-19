@@ -164,6 +164,28 @@ describe("savedStore", () => {
     expect(result.current.busy).toBe(before.busy);
   });
 
+  it("로그아웃 뒤 늦게 도착한 이전 세션 응답을 버리고 다음 로그인에서 새로 받는다", async () => {
+    let finishOldRequest!: (keys: { courseId: number; routeType: string }[]) => void;
+    getSavedCourseKeys
+      .mockReturnValueOnce(new Promise((resolve) => (finishOldRequest = resolve)))
+      .mockResolvedValueOnce([{ courseId: 3, routeType: "도보" }]);
+    const store = await loadStore();
+    const { result } = renderHook(() => store.useSavedCourse(12, "자전거"));
+
+    act(() => store.ensureSavedKeysLoaded());
+    act(() => store.clearSavedKeys());
+    await act(async () => {
+      finishOldRequest([{ courseId: 12, routeType: "자전거" }]);
+      await Promise.resolve();
+    });
+
+    expect(result.current.saved).toBeUndefined();
+
+    act(() => store.ensureSavedKeysLoaded());
+    await waitFor(() => expect(getSavedCourseKeys).toHaveBeenCalledTimes(2));
+    expect(result.current.saved).toBe(false);
+  });
+
   it("키 목록을 받지 못하면 모름으로 남고 토글도 하지 않는다", async () => {
     getSavedCourseKeys.mockRejectedValue(new Error("500"));
     const store = await loadStore();

@@ -1,4 +1,4 @@
-import { getSavedCourses, seedSavedKeys, type SavedCourse } from "../saved";
+import { getSavedCourses, type SavedCourse } from "../saved";
 import { previewRecordCards, previewRecords, previewStamps } from "./mypagePreview";
 import type { RunRecord, SavedRecordCard, Stamp } from "./types";
 
@@ -14,12 +14,9 @@ const USE_PREVIEW = import.meta.env.DEV && import.meta.env.VITE_MYPAGE_PREVIEW =
 
 /**
  * 찜한 코스. 최근 찜한 순이며, 코스 탐색 카드를 그대로 쓰도록 코스 목록 응답 모양으로 받는다.
- * 받은 김에 하트 상태 저장소도 채워, 이 화면의 카드가 처음부터 찜한 상태로 그려지게 한다.
  */
 export async function fetchSavedCourses(): Promise<SavedCourse[]> {
-  const saved = await getSavedCourses();
-  seedSavedKeys(saved.map((item) => ({ courseId: item.course.id, routeType: item.routeType })));
-  return saved;
+  return getSavedCourses();
 }
 
 /** 완주 기록. 최근 완주순. */

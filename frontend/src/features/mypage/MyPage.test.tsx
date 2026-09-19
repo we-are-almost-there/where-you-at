@@ -30,6 +30,7 @@ vi.mock("../saved/savedStore", () => ({
   toggleSavedCourse: vi.fn(),
   ensureSavedKeysLoaded: vi.fn(),
   clearSavedKeys: vi.fn(),
+  seedSavedKeys: vi.fn(),
 }));
 
 vi.mock("./mypageData", () => ({

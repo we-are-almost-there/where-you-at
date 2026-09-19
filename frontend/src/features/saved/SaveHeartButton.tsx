@@ -17,6 +17,8 @@ interface Props {
   className?: string;
   /** 하트 아이콘 크기(px). */
   size?: number;
+  /** 서버 반영이 끝난 뒤 바뀐 찜 상태를 알린다. 찜 목록에서 해제한 카드를 바로 지울 때 쓴다. */
+  onSavedChange?: (saved: boolean) => void;
 }
 
 /**
@@ -25,7 +27,14 @@ interface Props {
  * 로그인하지 않았어도 하트를 빈 상태로 보여 주고, 누르면 만 14세 확인을 거쳐 카카오 로그인으로 보낸다.
  * 기능이 있다는 것을 로그인 전에도 알리기 위해서다. 로그인하고 돌아오면 보던 화면이며, 찜은 다시 눌러야 한다.
  */
-export default function SaveHeartButton({ courseId, courseTitle, routeType, className = "", size = 20 }: Props) {
+export default function SaveHeartButton({
+  courseId,
+  courseTitle,
+  routeType,
+  className = "",
+  size = 20,
+  onSavedChange,
+}: Props) {
   const auth = useAuth();
   const location = useLocation();
   const { login, dialog } = useKakaoLogin();
@@ -40,8 +49,10 @@ export default function SaveHeartButton({ courseId, courseTitle, routeType, clas
   }, [auth.status]);
 
   const signedIn = auth.status === "signedIn";
+  const authLoading = auth.status === "loading";
 
   const handleClick = async () => {
+    if (authLoading) return;
     if (!signedIn) {
       login(location.pathname + location.search);
       return;
@@ -50,6 +61,7 @@ export default function SaveHeartButton({ courseId, courseTitle, routeType, clas
     setStatus("");
     try {
       await toggleSavedCourse(courseId, routeType);
+      if (saved !== undefined) onSavedChange?.(!saved);
     } catch (error) {
       setStatus(toUserError(error, saved ? "찜을 해제하지 못했어요" : "찜하지 못했어요").title);
     }
@@ -63,7 +75,7 @@ export default function SaveHeartButton({ courseId, courseTitle, routeType, clas
         aria-pressed={saved ?? false}
         aria-label={`${courseTitle} ${saved ? "찜 해제" : "찜하기"}`}
         // 무엇을 찜했는지 아직 모르는 동안에는 누르지 못한다. 눌렀다가 곧바로 되돌아가는 일을 막는다.
-        disabled={busy || (signedIn && saved === undefined)}
+        disabled={authLoading || busy || (signedIn && saved === undefined)}
         className={`flex cursor-pointer items-center justify-center transition-colors disabled:cursor-default disabled:opacity-45 ${
           saved ? "text-accent" : "text-caption"
         } ${className}`}

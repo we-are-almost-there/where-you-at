@@ -11,9 +11,11 @@ interface Props {
   onHoverChange?: (hovered: boolean) => void;
   /** 지도 마커 쪽에서 이 코스를 가리키고 있을 때 — 카드에 테두리를 둘러 되짚어 준다. */
   active?: boolean;
+  /** 하트 요청이 성공해 찜 상태가 바뀌었을 때. */
+  onSavedChange?: (saved: boolean) => void;
 }
 
-export function CourseCard({ course, routeType, onSelect, onHoverChange, active }: Props) {
+export function CourseCard({ course, routeType, onSelect, onHoverChange, active, onSavedChange }: Props) {
   const route =
     course.routes.find((r) => r.route_type === routeType) ?? course.routes[0];
   const points = routeType === "자전거" ? course.path_bicycle : course.path_trail;
@@ -125,6 +127,7 @@ export function CourseCard({ course, routeType, onSelect, onHoverChange, active 
         courseId={course.id}
         courseTitle={course.title}
         routeType={routeType}
+        onSavedChange={onSavedChange}
         className="absolute right-2 top-2 z-10 size-9 rounded-full bg-white/90 shadow-[0px_1px_4px_0px_rgba(0,0,0,0.18)] hover:bg-white"
       />
     </article>

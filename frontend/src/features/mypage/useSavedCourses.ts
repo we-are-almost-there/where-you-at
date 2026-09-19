@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { SavedCourse } from "../saved";
+import { seedSavedKeys, type SavedCourse } from "../saved";
 import { toUserError, type UserError } from "../../components/error/userError";
 import { fetchSavedCourses } from "./mypageData";
 
@@ -18,7 +18,10 @@ export function useSavedCourses(): SavedCoursesState {
     let cancelled = false;
     fetchSavedCourses().then(
       (result) => {
-        if (!cancelled) setCourses(result);
+        if (!cancelled) {
+          seedSavedKeys(result.map((item) => ({ courseId: item.course.id, routeType: item.routeType })));
+          setCourses(result);
+        }
       },
       (err: unknown) => {
         if (!cancelled) setError(toUserError(err, "찜한 코스를 불러오지 못했어요"));

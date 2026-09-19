@@ -15,10 +15,11 @@ vi.mock("../../components/layout/AppHeader", () => ({ default: () => null }));
 
 // 하트는 로그인 상태를 따라 찜 목록을 받으러 나간다. 이 화면의 관심사가 아니라 저장소만 대신한다.
 vi.mock("../saved/savedStore", () => ({
-  useSavedCourse: () => ({ saved: false, busy: false }),
-  toggleSavedCourse: vi.fn(),
+  useSavedCourse: () => ({ saved: true, busy: false }),
+  toggleSavedCourse: vi.fn().mockResolvedValue(undefined),
   ensureSavedKeysLoaded: vi.fn(),
   clearSavedKeys: vi.fn(),
+  seedSavedKeys: vi.fn(),
 }));
 
 const course = (id: number, routeType: "도보" | "자전거" = "도보"): SavedCourse => ({
@@ -88,7 +89,10 @@ describe("SavedCoursesPage", () => {
 
     const card = await screen.findByRole("article");
     expect(within(card).getByText("자전거")).toBeTruthy();
-    expect(within(card).getByRole("button", { name: "코스 3 찜하기" })).toBeTruthy();
+    fireEvent.click(within(card).getByRole("button", { name: "코스 3 찜 해제" }));
+
+    expect(await screen.findByText("아직 찜한 코스가 없어요")).toBeTruthy();
+    expect(screen.queryByText("모두 1개")).toBeNull();
   });
 
   it("찜한 코스가 없으면 코스 둘러보기로 이어 준다", async () => {

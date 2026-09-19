@@ -92,6 +92,17 @@ describe("SaveHeartButton", () => {
     expect(screen.getByRole("button").hasAttribute("disabled")).toBe(true);
   });
 
+  it("로그인 정보를 확인하는 동안에는 누를 수 없고 로그인을 다시 시작하지 않는다", () => {
+    vi.mocked(useAuth).mockReturnValue({ status: "loading", user: null });
+    vi.mocked(useSavedCourse).mockReturnValue({ saved: undefined, busy: false });
+    renderButton();
+
+    const button = screen.getByRole("button");
+    expect(button.hasAttribute("disabled")).toBe(true);
+    button.click();
+    expect(login).not.toHaveBeenCalled();
+  });
+
   it("실패하면 안내를 남긴다", async () => {
     signedIn(false);
     vi.mocked(toggleSavedCourse).mockRejectedValue(new Error("500"));

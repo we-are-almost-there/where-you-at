@@ -20,7 +20,9 @@ interface State {
 const EMPTY: ReadonlySet<string> = new Set();
 
 let state: State = { keys: null, pending: EMPTY };
-let loading = false;
+// 로그아웃·다른 사용자 로그인 뒤 이전 세션의 조회 응답이 도착해도 캐시를 되살리지 않게 한다.
+let generation = 0;
+let loadingGeneration: number | null = null;
 const listeners = new Set<() => void>();
 
 function savedKey(courseId: number, routeType: RouteType): string {
@@ -48,13 +50,16 @@ function getSnapshot() {
  * 실패하면 keys를 null로 남겨 하트가 "모름"으로 남는다. 다음 화면에서 다시 시도한다.
  */
 export function ensureSavedKeysLoaded(): void {
-  if (state.keys !== null || loading) return;
-  loading = true;
+  if (state.keys !== null || loadingGeneration === generation) return;
+  const requestedGeneration = generation;
+  loadingGeneration = requestedGeneration;
   getSavedCourseKeys()
-    .then((keys) => setState({ ...state, keys: toKeySet(keys) }))
+    .then((keys) => {
+      if (requestedGeneration === generation) setState({ ...state, keys: toKeySet(keys) });
+    })
     .catch(() => {})
     .finally(() => {
-      loading = false;
+      if (loadingGeneration === requestedGeneration) loadingGeneration = null;
     });
 }
 
@@ -68,6 +73,8 @@ export function seedSavedKeys(items: SavedCourseKey[]): void {
 
 /** 로그아웃·탈퇴 때 캐시를 비운다. 같은 브라우저로 다른 사람이 로그인했을 때 이전 하트가 남지 않게 한다. */
 export function clearSavedKeys(): void {
+  generation += 1;
+  loadingGeneration = null;
   // 이미 비어 있으면 알리지 않는다. 화면마다 로그아웃을 감지해 부르므로, 매번 새 상태를 만들면 끝없이 다시 그린다.
   if (state.keys === null && state.pending.size === 0) return;
   setState({ keys: null, pending: EMPTY });
