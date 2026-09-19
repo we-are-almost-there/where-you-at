@@ -2,8 +2,7 @@ import hmac
 import json
 from urllib.parse import parse_qsl
 
-from fastapi import APIRouter, HTTPException, Request
-from starlette.concurrency import run_in_threadpool
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from ...core.config import settings
 from ...crud import user as user_crud
@@ -62,19 +61,23 @@ def login_with_kakao(body: KakaoLoginRequest, request: Request):
 
 # 카카오 콘솔에 등록하는 주소라 공개 문서(/docs)에는 싣지 않는다.
 @router.api_route("/kakao/unlink", methods=["GET", "POST"], include_in_schema=False)
-async def kakao_unlink_callback(request: Request):
+async def kakao_unlink_callback(request: Request, background_tasks: BackgroundTasks):
     """사용자가 카카오 쪽에서 직접 연결을 끊었을 때 회원 행을 지운다(연결 해제 웹훅).
 
     우리가 탈퇴 API에서 연결 해제를 호출한 경우에는 이 웹훅이 오지 않는다. 카카오 계정관리나
     카카오톡의 연결된 앱 관리에서 사용자가 직접 끊었을 때만 온다.
 
     카카오는 3초 안에 200을 기대하고 재시도 정책은 문서에 없다. 그래서 회원을 못 찾거나
-    삭제가 실패해도 200을 돌려주고, 놓친 삭제는 [ERROR] 로그를 보고 직접 지운다(README 참고).
+    삭제가 실패해도 200을 돌려주고, 놓친 삭제는 Slack 알림과 [ERROR] 로그로 찾아 직접 지운다(README 참고).
     200이 아닌 응답은 검증에 실패한 요청(401)에만 쓴다. 이때의 401은 카카오가 아닌 요청이거나
     우리가 가진 키가 대표 어드민 키가 아니라는 신호다.
 
+    삭제를 백그라운드로 넘기는 이유: DB의 connect_timeout이 3초라 연결이 느려지면 응답이 그대로
+    3초를 넘긴다. 오류가 잦으면 카카오가 웹훅을 비활성화할 수 있고, 한 번 꺼지면 이후 웹훅이 모두
+    오지 않는다. 재시도가 없어 응답을 기다린다고 삭제 결과가 나아지지도 않는다.
+
     async인 이유: 카카오가 보내는 형식이 문서에 없어 쿼리와 바디를 모두 봐야 하고, 바디를 읽으려면
-    await이 필요하다. DB 작업은 이벤트 루프를 막지 않도록 스레드로 넘긴다(main.py /health 주석 참고).
+    await이 필요하다.
     """
     if not _is_kakao_admin_request(request.headers.get("authorization")):
         # 우리 키가 대표 어드민 키가 아니면 모든 웹훅이 여기서 버려진다. 카카오 콘솔을 열지 않아도
@@ -90,7 +93,7 @@ async def kakao_unlink_callback(request: Request):
         print(f"[ERROR] 연결 끊기 웹훅에 회원번호가 없습니다: params={sorted(params)}")
         return {"received": True}
 
-    await run_in_threadpool(_delete_user_by_kakao_id, kakao_id)
+    background_tasks.add_task(_delete_user_by_kakao_id, kakao_id)
     return {"received": True}
 
 
