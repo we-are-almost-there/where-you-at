@@ -8,7 +8,7 @@ import { EFFECTIVE_DATE, PREVIOUS_VERSIONS, findPreviousVersion } from "./legalI
 
 const SEED_PATH = resolve(__dirname, "../../../../backend/sql/04_help_seed.sql");
 
-/** "2026년 9월 19일" → UTC 자정 Date. 형식이 다르면 실패시킨다. */
+/** "2026년 9월 20일" → UTC 자정 Date. 형식이 다르면 실패시킨다. */
 function parseKoreanDate(text: string): Date {
   const match = /^(\d{4})년 (\d{1,2})월 (\d{1,2})일$/.exec(text.trim());
   if (!match) throw new Error(`날짜 형식이 아닙니다: ${text}`);
@@ -16,7 +16,7 @@ function parseKoreanDate(text: string): Date {
   return new Date(Date.UTC(year, month - 1, day));
 }
 
-/** "2026년 9월 17일 ~ 2026년 9월 18일" → [시작, 끝] */
+/** "2026년 9월 17일 ~ 2026년 9월 19일" → [시작, 끝] */
 function parsePeriod(period: string): [Date, Date] {
   const [start, end] = period.split("~");
   return [parseKoreanDate(start), parseKoreanDate(end)];

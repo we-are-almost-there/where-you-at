@@ -65,7 +65,7 @@ describe("TermsContent", () => {
     renderTerms();
 
     const addendum = screen.getByRole("region", { name: "부칙" });
-    const link = within(addendum).getByRole("link", { name: "2026년 9월 17일 ~ 2026년 9월 18일 적용" });
+    const link = within(addendum).getByRole("link", { name: "2026년 9월 17일 ~ 2026년 9월 19일 적용" });
     expect(link.getAttribute("href")).toBe("/terms/2026-09-17");
   });
 });

@@ -4,7 +4,7 @@ import DocumentPage from "../../../components/layout/DocumentPage";
 
 interface Props {
   title: string;
-  /** 적용 기간. 예: "2026년 9월 17일 ~ 2026년 9월 18일" */
+  /** 적용 기간. 예: "2026년 9월 17일 ~ 2026년 9월 19일" */
   period: string;
   /** 현재 문서 주소 */
   currentPath: string;
