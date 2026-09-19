@@ -761,8 +761,8 @@ function CloseRecordConfirmation({ onContinue, onDiscard }: {
       }}
       className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-sm rounded-2xl bg-white p-6 text-ink shadow-xl backdrop:bg-black/40"
     >
-      <h2 id="close-record-title" className="text-lg font-bold">저장하지 않은 변경 내용이 있어요.</h2>
-      <p id="close-record-description" className="mt-3 text-sm text-caption">지금 닫으면 변경 내용이 사라져요.</p>
+      <h2 id="close-record-title" className="text-lg font-bold">저장하지 않은 기록 카드예요.</h2>
+      <p id="close-record-description" className="mt-3 text-sm text-caption">지금 닫으면 이 기록 카드는 사라져요.</p>
       <div className="mt-6 flex gap-3">
         <button ref={continueRef} type="button" onClick={onContinue}
           className="flex-1 cursor-pointer rounded-xl bg-lavender px-3 py-3 text-sm font-bold text-ink">계속 편집</button>

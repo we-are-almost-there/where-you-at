@@ -124,7 +124,7 @@ it("미저장 카드 닫기를 취소하면 편집과 이탈 보호를 유지한
   const onClose = vi.fn();
   mount(onClose);
   fireEvent.click(screen.getByRole("button", { name: /^닫기$/ }));
-  expect(screen.getByRole("dialog", { name: "저장하지 않은 변경 내용이 있어요." })).toBeTruthy();
+  expect(screen.getByRole("dialog", { name: "저장하지 않은 기록 카드예요." })).toBeTruthy();
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "계속 편집" }));
   fireEvent.click(screen.getByRole("button", { name: "계속 편집" }));
   expect(onClose).not.toHaveBeenCalled();
@@ -148,7 +148,7 @@ it("저장한 카드는 확인 없이 닫는다", async () => {
   await save();
   fireEvent.click(screen.getByRole("button", { name: /^닫기$/ }));
   expect(onClose).toHaveBeenCalledOnce();
-  expect(screen.queryByText("저장하지 않은 변경 내용이 있어요.")).toBeNull();
+  expect(screen.queryByText("저장하지 않은 기록 카드예요.")).toBeNull();
 });
 
 it("확인창에서 Escape를 누르면 카드로 돌아간다", () => {
@@ -157,7 +157,7 @@ it("확인창에서 Escape를 누르면 카드로 돌아간다", () => {
   fireEvent.click(screen.getByRole("button", { name: /^닫기$/ }));
   fireEvent.keyDown(screen.getByRole("button", { name: "계속 편집" }), { key: "Escape" });
   expect(onClose).not.toHaveBeenCalled();
-  expect(screen.queryByText("저장하지 않은 변경 내용이 있어요.")).toBeNull();
+  expect(screen.queryByText("저장하지 않은 기록 카드예요.")).toBeNull();
   expect(unloadAllowed()).toBe(false);
 });
 
