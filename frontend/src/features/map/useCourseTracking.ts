@@ -267,7 +267,7 @@ export function useCourseTracking(sessionKey?: string) {
       currentLocation: currentLocationRef.current,
       status: watchIdRef.current == null ? "paused" : "tracking",
     } : null);
-    setStorageFailed(!success);
+    setStorageFailed(startedRef.current && !success);
   }, [sessionKey]);
 
   useEffect(() => {

@@ -86,6 +86,37 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("빈 초기 세션 삭제가 차단되어도 저장 실패로 표시하지 않는다", () => {
+  const remove = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+    throw new DOMException("Storage blocked", "SecurityError");
+  });
+  const hook = renderHook(() => useCourseTracking("blocked-empty"));
+  expect(remove).toHaveBeenCalledWith("blocked-empty");
+  expect(hook.result.current.status).toBe("idle");
+  expect(hook.result.current.storageFailed).toBe(false);
+  hook.unmount();
+});
+
+it.each(["tracking", "paused"] as const)("%s 세션은 저장소 차단을 알리고 저장 성공 시 해제한다", (status) => {
+  const hook = renderHook(() => useCourseTracking("blocked-active"));
+  act(() => hook.result.current.startTracking());
+  if (status === "paused") act(() => hook.result.current.pause());
+  const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new DOMException("Storage blocked", "SecurityError");
+  });
+  const remove = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+    throw new DOMException("Storage blocked", "SecurityError");
+  });
+  act(() => window.dispatchEvent(new Event("pagehide")));
+  expect(hook.result.current.status).toBe(status);
+  expect(hook.result.current.storageFailed).toBe(true);
+  set.mockRestore();
+  remove.mockRestore();
+  act(() => window.dispatchEvent(new Event("pagehide")));
+  expect(hook.result.current.storageFailed).toBe(false);
+  hook.unmount();
+});
+
 it("12시간 표본을 제한해도 거리·시간·페이스와 새로고침 후 위치를 보존한다", () => {
   const hook = renderHook(() => useCourseTracking("long-test"));
   act(() => hook.result.current.startTracking());

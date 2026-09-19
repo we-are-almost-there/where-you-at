@@ -13,6 +13,7 @@ const tracking = vi.hoisted(() => ({
   currentLocation: null as LatLng | null,
   error: null,
   wakeLockFailed: false,
+  storageFailed: false,
   startTracking: vi.fn(), pause: vi.fn(), resume: vi.fn(),
   stopTracking: vi.fn(), sampleRecord: vi.fn(() => null),
 }));
@@ -46,7 +47,9 @@ beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
   courseApi.getCourseDetail.mockImplementation(async () => COURSE);
+  tracking.status = "paused";
   tracking.currentLocation = null;
+  tracking.storageFailed = false;
   vi.mocked(getCourseGpx).mockResolvedValue([]);
   vi.stubGlobal("matchMedia", () => ({
     matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
@@ -85,6 +88,30 @@ async function mount() {
   });
   return router;
 }
+
+describe("CourseDetail 저장 실패 경고", () => {
+  it.each([false, true])("빈 초기 화면은 저장소가 차단되어도 경고하지 않는다 (추적 실패 상태: %s)", async (storageFailed) => {
+    tracking.status = "idle";
+    tracking.storageFailed = storageFailed;
+    const remove = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new DOMException("Storage blocked", "SecurityError");
+    });
+    await mount();
+    fireEvent.click(screen.getByRole("tab", { name: "코스 정보" }));
+    expect(remove).toHaveBeenCalledWith("course-tracking:1:view");
+    expect(screen.queryByText(/임시 저장하지 못했어요/)).toBeNull();
+  });
+
+  it.each(["tracking", "paused"] as const)("%s 상태에서 화면 저장 실패는 경고한다", async (status) => {
+    tracking.status = status;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage blocked", "SecurityError");
+    });
+    await mount();
+    fireEvent.click(screen.getByRole("tab", { name: "코스 정보" }));
+    expect(screen.getByText(/임시 저장하지 못했어요/).getAttribute("role")).toBe("alert");
+  });
+});
 
 describe("CourseDetail 페이지 제목", () => {
   it("코스를 불러오면 코스명이 탭 제목이자 유일한 h1이다", async () => {

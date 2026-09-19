@@ -297,9 +297,10 @@ function CourseDetailSession() {
   );
   const [viewStorageFailed, setViewStorageFailed] = useState(false);
   useEffect(() => {
-    const success = writeSession(viewKey, sessionActive || record ? { direction, progress, startChecked, tooFarMeters, record } : null);
+    const hasPersistableState = sessionActive || record != null;
+    const success = writeSession(viewKey, hasPersistableState ? { direction, progress, startChecked, tooFarMeters, record } : null);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setViewStorageFailed(!success);
+    setViewStorageFailed(hasPersistableState && !success);
   }, [viewKey, sessionActive, direction, progress, startChecked, tooFarMeters, record]);
   // 다른 화면으로 이동하면 추적 기록과 화면 상태를 함께 지운다.
   // 새로고침에서는 React 정리가 실행되지 않아 복원할 저장값이 유지된다.
@@ -946,9 +947,9 @@ function CourseDetailSession() {
                   </p>
                 )}
 
-                {(storageFailed || viewStorageFailed) && (
+                {(sessionActive || record != null) && (storageFailed || viewStorageFailed) && (
                   <p role="alert" className="mb-2 text-center text-[13px] leading-relaxed text-caption">
-                    주행 기록을 임시 저장하지 못했어요. 주행은 계속되지만 새로고침하거나 페이지를 떠나면 기록을 복원하지 못할 수 있어요.
+                    기록을 임시 저장하지 못했어요. 현재 화면에서는 기록을 유지하지만, 새로고침하거나 페이지를 떠나면 복원하지 못할 수 있어요.
                   </p>
                 )}
 
@@ -1052,9 +1053,9 @@ function CourseDetailSession() {
                 <p className="mb-2 text-center text-[13px] font-bold text-caption">
                   따라가기를 잠시 멈췄어요
                 </p>
-                {(storageFailed || viewStorageFailed) && (
+                {(sessionActive || record != null) && (storageFailed || viewStorageFailed) && (
                   <p role="alert" className="mb-2 text-center text-[13px] leading-relaxed text-caption">
-                    주행 기록을 임시 저장하지 못했어요. 주행은 계속되지만 새로고침하거나 페이지를 떠나면 기록을 복원하지 못할 수 있어요.
+                    기록을 임시 저장하지 못했어요. 현재 화면에서는 기록을 유지하지만, 새로고침하거나 페이지를 떠나면 복원하지 못할 수 있어요.
                   </p>
                 )}
 
