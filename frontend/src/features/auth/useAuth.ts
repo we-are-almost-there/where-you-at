@@ -9,7 +9,7 @@
 import { useSyncExternalStore } from "react";
 import { clearAccessToken, readAccessToken, writeAccessToken } from "../../lib/authToken";
 import { HttpError } from "../../lib/http";
-import { deleteMe, fetchMe, logout, type User } from "./authApi";
+import { deleteMe, fetchMe, logout, updateMe, type ProfileChanges, type User } from "./authApi";
 
 export type AuthState =
   | { status: "loading"; user: null }
@@ -104,6 +104,28 @@ export async function signOut(): Promise<void> {
     throw error;
   }
   if (requestedGeneration === generation) clearAuthState();
+}
+
+/**
+ * 프로필(닉네임·한 줄 소개) 수정. 성공하면 서버가 돌려준 회원 정보로 바꿔, 헤더와 마이페이지가 함께 새 값을 그린다.
+ * 401이면 서버 세션이 이미 없으므로(만료·로그아웃·탈퇴) 탈퇴 때와 같이 로컬 상태만 지우고 던진다.
+ * 로그아웃 API(signOut)를 다시 부르지 않는다. 그 밖의 실패는 상태를 그대로 두고 던진다.
+ */
+export async function updateProfile(changes: ProfileChanges): Promise<void> {
+  const requestedGeneration = generation;
+  let user: User;
+  try {
+    user = await updateMe(changes);
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 401) {
+      generation += 1;
+      clearAuthState();
+    }
+    throw error;
+  }
+  // 응답을 기다리는 사이 로그아웃했으면 다시 로그인 상태로 되돌리지 않는다.
+  if (requestedGeneration !== generation || state.status !== "signedIn") return;
+  setState({ status: "signedIn", user });
 }
 
 /**

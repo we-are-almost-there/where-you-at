@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...crud import user as user_crud
-from ...deps import CurrentUser, db_connection, get_current_user
-from ...schemas.user import UserOut
+from ...deps import CurrentUser, db_connection, get_current_user, unauthorized_error
+from ...schemas.user import UserOut, UserUpdate
 from ...services import kakao_oauth
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -11,7 +11,21 @@ router = APIRouter(prefix="/api/me", tags=["me"])
 @router.get("", response_model=UserOut)
 def read_me(current_user: CurrentUser = Depends(get_current_user)):
     """로그인한 회원 정보."""
-    return UserOut(id=current_user.id, nickname=current_user.nickname)
+    return UserOut(id=current_user.id, nickname=current_user.nickname, bio=current_user.bio)
+
+
+@router.patch("", response_model=UserOut)
+def update_me(body: UserUpdate, current_user: CurrentUser = Depends(get_current_user)):
+    """프로필(닉네임·한 줄 소개) 수정. 보낸 칸만 바꾼다. 인증 뒤 회원 행이 사라졌으면(탈퇴) 401로 로그인을 다시 받게 한다.
+
+    인증(get_current_user)은 세션을 확인하려고 DB에 한 번 연결한다. 수정용 연결은 get_db 의존성이 아니라 본문에서 연다.
+    의존성은 본문 검증보다 먼저 풀려서, get_db를 쓰면 값이 잘못된 요청도 연결을 하나 더 잡는다.
+    """
+    with db_connection() as conn:
+        user = user_crud.update_profile(conn, current_user.id, body.changes())
+    if user is None:
+        raise unauthorized_error()
+    return user
 
 
 @router.delete("", status_code=204)

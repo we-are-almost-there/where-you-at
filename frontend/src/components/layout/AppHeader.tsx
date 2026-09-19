@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { Link, useLocation } from "react-router";
 import { UserRound } from "lucide-react";
 import SidebarDrawer from "./SidebarDrawer";
-import { startKakaoLogin, useAuth } from "../../features/auth";
+import { useAuth, useKakaoLogin } from "../../features/auth";
 import logoUrl from "../../assets/logo.svg";
 import { MAIN_CONTENT_ID } from "./mainContent";
 
@@ -50,6 +50,7 @@ export default function AppHeader({
 
   const location = useLocation();
   const auth = useAuth();
+  const { login, dialog: loginDialog } = useKakaoLogin();
   const normalizedPath = location.pathname.replace(/\/+$/, "");
   const headerRef = useRef<HTMLElement>(null);
   const alignmentRef = useRef<HTMLDivElement>(null);
@@ -183,7 +184,7 @@ export default function AppHeader({
                 // 마이페이지로 바뀌는 깜빡임을 막는다.
                 <button
                   type="button"
-                  onClick={() => startKakaoLogin(location.pathname + location.search)}
+                  onClick={() => login(location.pathname + location.search)}
                   disabled={auth.status === "loading"}
                   aria-hidden={auth.status === "loading" || undefined}
                   className={`cursor-pointer whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:bg-accent/90 ${
@@ -201,6 +202,7 @@ export default function AppHeader({
       {!isControlled && (
         <SidebarDrawer isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       )}
+      {loginDialog}
     </header>
   );
 }

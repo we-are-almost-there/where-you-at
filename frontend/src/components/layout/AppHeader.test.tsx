@@ -4,18 +4,21 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { startKakaoLogin, useAuth, type AuthState } from "../../features/auth";
+import { useAuth, useKakaoLogin, type AuthState } from "../../features/auth";
 import AppHeader from "./AppHeader";
 import { MAIN_CONTENT_ID } from "./mainContent";
 
-vi.mock("../../features/auth", () => ({ useAuth: vi.fn(), startKakaoLogin: vi.fn() }));
+vi.mock("../../features/auth", () => ({ useAuth: vi.fn(), useKakaoLogin: vi.fn() }));
 // 사이드바는 이 테스트의 대상이 아니다.
 vi.mock("./SidebarDrawer", () => ({ default: () => null }));
 
 const mockedUseAuth = vi.mocked(useAuth);
+const mockedUseKakaoLogin = vi.mocked(useKakaoLogin);
+const login = vi.fn();
 
 function renderHeader(auth: AuthState, path = "/") {
   mockedUseAuth.mockReturnValue(auth);
+  mockedUseKakaoLogin.mockReturnValue({ login, dialog: null });
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AppHeader />
@@ -59,8 +62,24 @@ describe("AppHeader", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "로그인" }));
 
-    expect(startKakaoLogin).toHaveBeenCalledWith("/courses?region=11");
+    expect(login).toHaveBeenCalledWith("/courses?region=11");
     expect(screen.queryByRole("link", { name: /마이페이지/ })).toBeNull();
+  });
+
+  it("로그인 훅이 만든 만 14세 확인 대화상자를 그린다", () => {
+    mockedUseAuth.mockReturnValue({ status: "signedOut", user: null });
+    mockedUseKakaoLogin.mockReturnValue({
+      login,
+      dialog: <div role="dialog" aria-label="만 14세 이상 확인" />,
+    });
+
+    render(
+      <MemoryRouter>
+        <AppHeader />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("dialog", { name: "만 14세 이상 확인" })).toBeTruthy();
   });
 
   it("로그인 상태를 확인하는 동안에는 로그인 버튼을 숨긴다", () => {

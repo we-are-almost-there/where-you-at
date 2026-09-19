@@ -1,12 +1,8 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import type { FeatureCollection, Geometry, Position } from "geojson";
+import type { FeatureCollection, Geometry } from "geojson";
 import { useSearchParams } from "react-router";
-import {
-  buildRegionIndex,
-  polygonsOf,
-  type RegionEntry,
-  type RegionIndex,
-} from "../regionMatch";
+import { buildRegionIndex, type RegionEntry, type RegionIndex } from "../regionMatch";
+import { VIEW_BASE, buildProjection, geometryPath, labelPoint } from "../koreaMapGeometry";
 import { fetchActiveRegionCodes } from "../supportApi";
 import { toUserError, type UserError } from "../../../components/error/userError";
 import { fetchOrNetworkError } from "../../../lib/http";
@@ -15,12 +11,6 @@ import { SupportErrorText } from "./SupportErrorText";
 // 같은 시도가 화면마다 다른 이름으로 불리지 않게 공용 표를 따른다.
 import { SIDO_ABBR } from "../../../lib/regionLabels";
 
-// viewBox는 고정하지 않고 그리는 대상의 비율에 맞춰 뷰마다 계산한다.
-// 고정하면 가로로 긴 도(강원 등)에서 위아래에 큰 죽은 여백이 생긴다.
-// VIEW_BASE는 긴 변의 크기(패딩 제외) — 좌표 정밀도 기준일 뿐 화면 크기와는 무관하다.
-const VIEW_BASE = 780;
-const PAD = 10;
-
 const COLOR_HOVER = "#6C5CE7"; // --color-accent (SVG fill이라 토큰 클래스 대신 값으로)
 const COLOR_INACTIVE = "#F1EFFC"; // --color-lavender (전국뷰의 미해당 시도)
 const COLOR_INACTIVE_HOVER = "#E0DBF7"; // 위와 같되 누를 수 있을 때의 hover (한 톤 어둡게)
@@ -28,52 +18,6 @@ const COLOR_SIGUNGU = "#C9B8F0"; // 시도 색을 못 찾았을 때의 폴백 �
 const COLOR_OFF = "#DFE3E8"; // 시도뷰의 미해당 시군구 (회색)
 const COLOR_OFF_HOVER = "#CBD2DA"; // 회색이지만 누를 수 있는 지역의 hover (한 톤 어둡게)
 const COLOR_OFF_STROKE = "#CFD5DC"; // 회색 지역끼리의 경계선
-
-// 본토를 크게 그리기 위한 인셋. 전국뷰 bbox가 울릉도(130.9°E)·백령도(124.6°E)·
-// 제주(33.1°N) 때문에 부풀어서, 본토가 실제로 쓸 수 있는 폭의 3분의 2로 그려지고 있었다.
-// 창(WINDOW) 안쪽 좌표는 손대지 않고, 밖으로 나간 거리만 압축해 창 쪽으로 붙인다.
-// 종이 지도가 울릉도·제주를 인셋 박스로 빼는 것과 같은 관례 — 지리 비율은 의도적으로 포기한다.
-// 압축률은 경도·위도를 따로 둔다. 좌우(울릉도·백령도)는 세게 당겨 가로 낭비를 줄이고,
-// 제주는 약하게 당겨 본토와 충분히 떨어진 남쪽에 남긴다.
-const WINDOW_LNG: [number, number] = [125.6, 129.7];
-const WINDOW_LAT: [number, number] = [34.2, 38.7];
-const INSET_COMPRESS_LNG = 0.16;
-const INSET_COMPRESS_LAT = 0.5;
-
-// 등장방형 보정. 위도 36°(본토 중심)에서 경도 1°는 위도 1°의 약 0.81배 거리라,
-// 보정하지 않으면 본토가 가로로 1.2배 늘어난다.
-const COS_LAT0 = Math.cos((36 * Math.PI) / 180);
-
-function clampToWindow(v: number, [lo, hi]: [number, number], compress: number): number {
-  if (v < lo) return lo + (v - lo) * compress;
-  if (v > hi) return hi + (v - hi) * compress;
-  return v;
-}
-
-/**
- * 폴리곤을 인셋 규칙에 맞춰 옮긴 링 배열로 편다.
- * 좌표를 하나씩 압축하면 섬 모양이 찌그러지므로, 폴리곤 중심의 이동량만큼
- * 링 전체를 평행이동해 모양과 구멍 정렬을 그대로 유지한다.
- * bbox 계산과 path 생성이 반드시 같은 함수를 거쳐야 좌표계가 어긋나지 않는다.
- */
-function insetRings(geom: Geometry): Position[][] {
-  const rings: Position[][] = [];
-  for (const poly of polygonsOf(geom)) {
-    const shell = poly[0];
-    let sx = 0, sy = 0;
-    for (const [lng, lat] of shell) { sx += lng; sy += lat; }
-    const cx = sx / shell.length;
-    const cy = sy / shell.length;
-    const dLng = clampToWindow(cx, WINDOW_LNG, INSET_COMPRESS_LNG) - cx;
-    const dLat = clampToWindow(cy, WINDOW_LAT, INSET_COMPRESS_LAT) - cy;
-    if (dLng === 0 && dLat === 0) {
-      for (const ring of poly) rings.push(ring);
-    } else {
-      for (const ring of poly) rings.push(ring.map(([lng, lat]) => [lng + dLng, lat + dLat]));
-    }
-  }
-  return rings;
-}
 
 // 시도별 색상 (활성 시도만)
 const SIDO_COLOR: Record<string, string> = {
@@ -420,54 +364,15 @@ export function SupportRegionMap() {
       }));
   }, [selectedSido, sido, regions, activeSidoCodes, subRegionsBySido, supportCodes]);
 
-  // 현재 뷰 대상의 경위도 범위에 맞춰 projection 계산 (전국이든 시도든).
-  // 인셋을 적용한 좌표 기준으로 bbox를 잡으므로, project에 넘기는 좌표도
-  // 반드시 insetRings를 통과한 값이어야 한다.
-  const { project, viewW, viewH } = useMemo(() => {
-    if (!viewItems.length) {
-      return { project: null, viewW: VIEW_BASE, viewH: VIEW_BASE };
-    }
-    let minX = Infinity, maxX = -Infinity, minLat = Infinity, maxLat = -Infinity;
-    viewItems.forEach((f) => {
-      insetRings(f.geometry).forEach((ring) =>
-        ring.forEach(([lng, lat]) => {
-          const x = lng * COS_LAT0;
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (lat < minLat) minLat = lat;
-          if (lat > maxLat) maxLat = lat;
-        }),
-      );
-    });
-    const dX = maxX - minX;
-    const dY = maxLat - minLat;
-    // 긴 변을 VIEW_BASE에 맞추고, 짧은 변은 비율대로 — viewBox가 콘텐츠에 딱 맞으니 여백이 없다
-    const scale = VIEW_BASE / Math.max(dX, dY);
-    const proj = ([lng, lat]: number[]): [number, number] => [
-      PAD + (lng * COS_LAT0 - minX) * scale,
-      PAD + (maxLat - lat) * scale,
-    ];
-    return {
-      project: proj,
-      viewW: dX * scale + PAD * 2,
-      viewH: dY * scale + PAD * 2,
-    };
-  }, [viewItems]);
+  // 현재 뷰 대상의 경위도 범위에 맞춘 투영 (전국이든 시도든). 계산은 koreaMapGeometry 참고.
+  const { project, viewW, viewH } = useMemo(
+    () => buildProjection(viewItems.map((it) => it.geometry)),
+    [viewItems],
+  );
 
   // viewBox 단위 / CSS px. 모바일처럼 지도가 작게 그려질수록 1보다 커진다.
   const unitPerPx = viewW / svgPxWidth;
   const badgeFont = BADGE_FONT_PX * unitPerPx;
-
-  const toPath = (geom: Geometry, proj: (p: Position) => [number, number]): string =>
-    insetRings(geom)
-      .map(
-        (ring) =>
-          ring.map((pt, i) => {
-            const [x, y] = proj(pt);
-            return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-          }).join("") + "Z",
-      )
-      .join("");
 
   // 배지 위치 (중심 좌표).
   // 전국·시도 모두 그리는 조각 전부에 이름을 단다. 지원 대상 여부로 거르면
@@ -476,18 +381,11 @@ export function SupportRegionMap() {
   const badges = useMemo(() => {
     if (!project) return [];
     return viewItems.map((it) => {
-      const rings = insetRings(it.geometry);
       // 가장 큰 링의 중심 (작은 섬 말고 본체에 배지)
-      let best = rings[0];
-      for (const ring of rings) if (ring.length > best.length) best = ring;
-      let sx = 0, sy = 0, n = 0;
-      best.forEach((pt) => {
-        const [x, y] = project(pt);
-        sx += x; sy += y; n++;
-      });
+      const [cx, cy] = labelPoint(it.geometry, project);
       return {
         key: it.key, name: it.name, fullName: it.fullName, active: it.active, go: it.go,
-        cx: sx / n, cy: sy / n,
+        cx, cy,
       };
     });
   }, [viewItems, project]);
@@ -680,7 +578,7 @@ export function SupportRegionMap() {
             return (
               <path
                 key={it.key}
-                d={toPath(it.geometry, project)}
+                d={geometryPath(it.geometry, project)}
                 fill={fill}
                 stroke={it.active ? "#fff" : COLOR_OFF_STROKE}
                 strokeWidth={nation ? 0.8 : 0.6}

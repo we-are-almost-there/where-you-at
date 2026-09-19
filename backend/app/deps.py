@@ -44,6 +44,7 @@ def get_db():
 class CurrentUser:
     id: int
     nickname: str | None
+    bio: str | None
     kakao_id: int
     session_id: UUID
 

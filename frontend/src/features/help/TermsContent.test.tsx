@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // 이용약관 본문의 구조와, 고치다가 빠뜨리기 쉬운 조항을 본다. 문안 자체의 적정성은 사람이 검토한다.
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
 import TermsContent from "./TermsContent";
@@ -42,9 +42,30 @@ describe("TermsContent", () => {
   it("개인정보 처리는 개인정보처리방침으로 안내한다", () => {
     renderTerms();
 
-    // 제4조(약관 외 준칙)와 제8조(위치 기능) 두 곳에서 안내한다.
+    // 제4조(약관 외 준칙), 제8조(위치 기능), 제11조의2(회원 가입과 탈퇴)에서 안내한다.
     const links = screen.getAllByRole("link", { name: "개인정보처리방침" });
     expect(links.length).toBeGreaterThan(0);
     for (const link of links) expect(link.getAttribute("href")).toBe("/privacy");
+  });
+
+  it("회원 가입은 선택이고 만 14세 이상만 할 수 있으며, 마이페이지에서 탈퇴할 수 있다", () => {
+    renderTerms();
+
+    const membership = screen.getByRole("region", { name: "제11조의2(회원 가입과 탈퇴)" });
+    expect(membership.textContent).toContain("가입하지 않아도 마이페이지를 뺀 서비스를 이용할 수");
+    expect(membership.textContent).toContain("만 14세 이상만");
+    expect(membership.textContent).toContain("마이페이지에서 언제든지 탈퇴");
+    // 카카오 쪽에서 연결을 끊어도 탈퇴로 본다(#164 연결 해제 웹훅).
+    expect(membership.textContent).toContain("카카오계정을 탈퇴하면 탈퇴한 것으로 보고");
+    // 회원가입 없는 서비스라는 옛 문구가 남아 있지 않다.
+    expect(document.body.textContent).not.toContain("회원가입 없이");
+  });
+
+  it("부칙에서 이전 약관을 적용 기간과 함께 연결한다", () => {
+    renderTerms();
+
+    const addendum = screen.getByRole("region", { name: "부칙" });
+    const link = within(addendum).getByRole("link", { name: "2026년 9월 17일 ~ 2026년 9월 19일 적용" });
+    expect(link.getAttribute("href")).toBe("/terms/2026-09-17");
   });
 });

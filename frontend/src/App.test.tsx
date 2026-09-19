@@ -44,6 +44,8 @@ vi.mock("./features/help", () => ({
   FaqPage: () => <main id="main-content" tabIndex={-1}><h1>자주 묻는 질문 화면</h1></main>,
   TermsPage: () => <main id="main-content" tabIndex={-1}><h1>이용약관 화면</h1></main>,
   PrivacyPage: () => <main id="main-content" tabIndex={-1}><h1>개인정보처리방침 화면</h1></main>,
+  PrivacyPolicy20260917Page: () => <main id="main-content" tabIndex={-1}><h1>이전 개인정보처리방침 화면</h1></main>,
+  Terms20260917Page: () => <main id="main-content" tabIndex={-1}><h1>이전 이용약관 화면</h1></main>,
   ContactPage: () => <main id="main-content" tabIndex={-1}><h1>1:1 문의 화면</h1></main>,
 }));
 // 실제 NotFoundPage는 유지하고, 라우팅과 무관한 헤더의 브라우저 API 사용만 제외한다.
@@ -201,5 +203,14 @@ describe("App Not Found 라우트", () => {
 
     expect(screen.getByRole("heading", { name: "코스 탐색 화면" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "페이지를 찾을 수 없어요" })).toBeNull();
+  });
+
+  it("이전 방침·약관 주소는 이전 버전 화면으로 연결된다", () => {
+    renderAt("/privacy/2026-09-17");
+    expect(screen.getByRole("heading", { name: "이전 개인정보처리방침 화면" })).toBeTruthy();
+    cleanup();
+
+    renderAt("/terms/2026-09-17");
+    expect(screen.getByRole("heading", { name: "이전 이용약관 화면" })).toBeTruthy();
   });
 });
