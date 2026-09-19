@@ -8,10 +8,11 @@ from ...services.rate_limit import SlidingWindowLimiter, client_key
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# 같은 IP에서 10분에 60회까지. 공용 IP(학교, 회사, 모바일 캐리어 NAT) 뒤에 여러 사람이 있어도
-# 막히지 않을 만큼 넉넉하게 두고, 반복 호출만 끊는다. 한 번의 로그인은 한 번 호출한다.
+# 같은 IP에서 10분에 20회까지. 한 번의 로그인은 한 번 호출하므로 공용 IP(학교, 회사, 모바일 캐리어 NAT)
+# 뒤에 여러 사람이 있어도 걸리지 않고, 단일 IP가 한 번에 몰아 보낼 수 있는 양을 동기 라우터가 함께 쓰는
+# 스레드풀(기본 40)보다 작게 둔다. 동시 실행 수 자체는 제한하지 않는다(#150 후속).
 # 메모리 기반이라 서버 재시작 시 초기화된다 (services/rate_limit.py 참고).
-login_limiter = SlidingWindowLimiter(max_requests=60, window_seconds=600)
+login_limiter = SlidingWindowLimiter(max_requests=20, window_seconds=600)
 
 
 @router.post("/kakao", response_model=LoginResponse)
