@@ -146,8 +146,26 @@ describe("CourseExplore 지역 필터 표시", () => {
     { region_code: "26110", name: "중구", sido: "부산광역시", is_population_drop: false },
   ];
 
-  beforeEach(() => {
-    vi.mocked(getRegions).mockResolvedValue(BUSAN);
+  // 지역명 로더(lib/regionNames)는 받은 이름을 모듈 캐시에 담는다. 모듈을 다시 불러오지 않으면
+  // 앞 테스트가 채운 캐시 때문에 이름 파일을 다시 받지 않아, "받지 않는다"는 단언이 코드와
+  // 무관하게 늘 통과한다. 테스트마다 모듈을 새로 불러 첫 조회 상황을 만든다.
+  // 모듈을 새로 부르면 vi.mock의 함수도 새로 만들어지므로 목 동작도 새 함수에 심는다.
+  let Fresh: typeof CourseExplore;
+  let regions: typeof getRegions;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const api = await import("./coursesApi");
+    regions = api.getRegions;
+    vi.mocked(api.getRegions).mockResolvedValue(BUSAN);
+    vi.mocked(api.getCourses).mockResolvedValue({
+      total_count: ALL.length,
+      page: 1,
+      size: 6,
+      courses: ALL.slice(0, 6),
+    });
+    vi.mocked(api.getAllCourses).mockResolvedValue(ALL);
+    Fresh = (await import("./CourseExplore")).CourseExplore;
     // region-index.json — DB 지역 전체의 이름
     vi.stubGlobal(
       "fetch",
@@ -157,48 +175,65 @@ describe("CourseExplore 지역 필터 표시", () => {
     );
   });
 
+  const renderFresh = (url: string) =>
+    render(
+      <MemoryRouter initialEntries={[url]}>
+        <Fresh />
+      </MemoryRouter>,
+    );
+
   // 데스크톱 칩과 모바일 필터가 같이 그려져 트리거는 둘 다 잡힌다
   const regionTriggers = () => screen.getAllByRole("button", { name: "지역" });
 
-  it("항목에 없는 지역으로 들어오면 그 지역 이름을 필터에 띄운다", async () => {
-    renderAt("/courses?region=28710");
+  // 이 그룹은 모듈을 새로 불러 CourseExplore를 처음부터 그리고, 지역 목록 → 지역명 파일로
+  // 이어지는 두 번의 응답을 기다린다. 전체 테스트가 병렬로 돌며 부하가 걸리면 waitFor 기본
+  // 제한(1초)을 넘겨 간헐적으로 실패해 이 그룹의 대기만 늘린다. 공통 시간 제한은 #168에서 다룬다.
+  const WAIT_FOR_REGION_LABEL = { timeout: 3000 };
 
-    await waitFor(() =>
-      regionTriggers().forEach((t) => expect(t.textContent).toContain("인천 강화")),
+  it("항목에 없는 지역으로 들어오면 그 지역 이름을 필터에 띄운다", async () => {
+    renderFresh("/courses?region=28710");
+
+    await waitFor(
+      () => regionTriggers().forEach((t) => expect(t.textContent).toContain("인천 강화")),
+      WAIT_FOR_REGION_LABEL,
     );
   });
 
-  it("항목에 있는 지역은 그대로 둔다", async () => {
-    renderAt("/courses?region=26");
+  it("항목에 있는 지역은 그대로 두고 이름 파일을 받지 않는다", async () => {
+    renderFresh("/courses?region=26");
 
-    await waitFor(() => regionTriggers().forEach((t) => expect(t.textContent).toContain("부산")));
+    await waitFor(
+      () => regionTriggers().forEach((t) => expect(t.textContent).toContain("부산")),
+      WAIT_FOR_REGION_LABEL,
+    );
     // 항목이 이미 있으므로 이름 파일을 받을 이유가 없다
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
   });
 
   it("지역 목록이 빈 배열이어도 URL 지역 이름을 필터에 띄운다", async () => {
-    vi.mocked(getRegions).mockResolvedValue([]);
+    vi.mocked(regions).mockResolvedValue([]);
 
-    renderAt("/courses?region=28710");
+    renderFresh("/courses?region=28710");
 
-    await waitFor(() =>
-      regionTriggers().forEach((t) => expect(t.textContent).toContain("인천 강화")),
+    await waitFor(
+      () => regionTriggers().forEach((t) => expect(t.textContent).toContain("인천 강화")),
+      WAIT_FOR_REGION_LABEL,
     );
   });
 
   it("지역 목록 재시도를 모두 소진해도 URL 지역 이름을 필터에 띄운다", async () => {
     vi.useFakeTimers();
     const error = new TypeError("Failed to fetch");
-    vi.mocked(getRegions).mockRejectedValue(error);
+    vi.mocked(regions).mockRejectedValue(error);
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    renderAt("/courses?region=28710");
+    renderFresh("/courses?region=28710");
 
     // 최초 요청 뒤 5회 재시도한다. 마지막 실패가 옵션을 []로 확정하면 지역명 보완이 시작된다.
     await act(async () => {
       await vi.runAllTimersAsync();
     });
-    expect(getRegions).toHaveBeenCalledTimes(6);
+    expect(regions).toHaveBeenCalledTimes(6);
     regionTriggers().forEach((t) => expect(t.textContent).toContain("인천 강화"));
     expect(consoleError).toHaveBeenCalledWith("[CourseExplore] regions fetch failed:", error);
 
