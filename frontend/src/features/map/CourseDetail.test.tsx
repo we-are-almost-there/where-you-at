@@ -114,6 +114,26 @@ describe("CourseDetail 저장 실패 경고", () => {
 });
 
 describe("CourseDetail 페이지 제목", () => {
+  it.each([false, true])("로딩 완료 후 제목 요소와 사용자 초점을 유지한다 (초점 이동: %s)", async (moveFocus) => {
+    let resolveCourse!: (course: typeof COURSE) => void;
+    const pendingCourse = new Promise<typeof COURSE>((resolve) => { resolveCourse = resolve; });
+    courseApi.getCourseDetail.mockReturnValue(pendingCourse);
+    await mount();
+
+    const heading = screen.getByRole("heading", { level: 1, name: "코스 상세" });
+    // 경로 이동 시 부여되는 초점을 재현하고, 실제 데이터 로드 전후의 요소를 비교한다.
+    heading.tabIndex = -1;
+    heading.focus();
+    const toggle = screen.getByRole("button", { name: /코스 정보 (펼치기|접기)/ });
+    if (moveFocus) toggle.focus();
+
+    await act(async () => { resolveCourse(COURSE); });
+
+    expect(screen.getByRole("heading", { level: 1, name: "테스트 코스" })).toBe(heading);
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(document.activeElement).toBe(moveFocus ? toggle : heading);
+  });
+
   it("코스를 불러오면 코스명이 탭 제목이자 유일한 h1이다", async () => {
     await mount();
 

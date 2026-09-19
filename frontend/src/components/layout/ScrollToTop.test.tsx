@@ -17,6 +17,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   scrollTo.mockReset();
+  vi.restoreAllMocks();
 });
 
 // 버튼마다 한 가지 이동을 일으킨다. 지금 주소는 문단으로 보여 준다.
@@ -89,6 +90,45 @@ describe("ScrollToTop", () => {
     expect(document.activeElement).toBe(screen.getByRole("main"));
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
     focus.mockRestore();
+  });
+
+  it.each(["", "sr-only"])("렌더링되는 제목(%s)에 한 번만 초점을 옮긴다", (className) => {
+    renderAt("/terms");
+    const heading = document.createElement("h1");
+    heading.textContent = "페이지 제목";
+    heading.className = className;
+    // jsdom은 레이아웃을 계산하지 않는다. sr-only도 브라우저에서는 영역이 있다.
+    vi.spyOn(heading, "getClientRects").mockReturnValue([new DOMRect(0, 0, 1, 1)] as unknown as DOMRectList);
+    screen.getByRole("main").prepend(heading);
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    try {
+      click("경로 이동");
+
+      expect(document.activeElement).toBe(heading);
+      expect(focus).toHaveBeenCalledTimes(1);
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    } finally {
+      focus.mockRestore();
+    }
+  });
+
+  it("제목의 부모가 숨겨져 영역이 없으면 본문에 한 번만 초점을 옮긴다", () => {
+    renderAt("/terms");
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "none";
+    const heading = document.createElement("h1");
+    heading.textContent = "숨겨진 제목";
+    wrapper.append(heading);
+    const main = screen.getByRole("main");
+    main.prepend(wrapper);
+    vi.spyOn(heading, "getClientRects").mockReturnValue([] as unknown as DOMRectList);
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+
+    click("경로 이동");
+
+    expect(document.activeElement).toBe(main);
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
   });
 
   it("쿼리만 바뀌면 조작하던 컨트롤에 초점을 남긴다", () => {

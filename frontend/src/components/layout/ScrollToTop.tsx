@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation, useNavigationType } from "react-router";
 import { MAIN_CONTENT_ID } from "./mainContent";
 
@@ -21,20 +21,39 @@ import { MAIN_CONTENT_ID } from "./mainContent";
  *
  * 초점도 함께 옮긴다. SPA는 화면이 바뀌어도 초점이 이전 화면의 링크 자리(이미 사라진 요소)에
  * 남아, 화면낭독기 사용자는 페이지가 바뀐 줄 모른다. 경로가 바뀌면(POP 포함) 새 화면의
- * 본문(main)으로 초점을 옮기되, 스크롤은 위 규칙대로 두도록 preventScroll로 옮긴다.
+ * 제목(h1), 없으면 본문(main)으로 초점을 옮기되, 스크롤은 preventScroll로 유지한다.
  * 쿼리만 바뀌는 필터·페이지 이동은 사용자가 조작하던 컨트롤에 초점이 있어야 하므로 건드리지 않는다.
  */
 export default function ScrollToTop() {
   const { pathname } = useLocation();
   const navigationType = useNavigationType();
   const prevPathname = useRef(pathname);
+  const prevFocusPathname = useRef(pathname);
 
   useLayoutEffect(() => {
     const changed = prevPathname.current !== pathname;
     prevPathname.current = pathname;
     if (!changed) return;
     if (navigationType !== "POP") window.scrollTo(0, 0);
-    document.getElementById(MAIN_CONTENT_ID)?.focus({ preventScroll: true });
+  }, [pathname, navigationType]);
+
+  // 드로어의 비활성화 해제와 포커스 복귀 정리가 끝난 뒤 새 화면에 초점을 둔다.
+  useEffect(() => {
+    const changed = prevFocusPathname.current !== pathname;
+    prevFocusPathname.current = pathname;
+    if (!changed) return;
+    const page = document.getElementById(MAIN_CONTENT_ID);
+    if (!page) return;
+    // 제목이 숨겨져 있으면 포커스를 받을 수 없으므로 본문으로 이동한다.
+    const heading = page.querySelector<HTMLElement>("h1");
+    const target = heading?.getClientRects().length ? heading : page;
+    if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
+    target.classList.add("outline-none");
+    target.focus({ preventScroll: true });
+    // 제목에 포커스를 주지 못했으면 본문으로 이동한다.
+    if (document.activeElement !== target) {
+      page.focus({ preventScroll: true });
+    }
   }, [pathname, navigationType]);
 
   return null;

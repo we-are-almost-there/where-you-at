@@ -13,7 +13,7 @@ interface SidebarDrawerProps {
 interface NavItem {
   label: string; // 한글 라벨
   eyebrow: string; // 대문자 영문 라벨
-  description: string; // hover 시 나타나는 짧은 설명
+  description: string; // 마우스를 올리면 나타나는 짧은 설명
   to: string | null; // null이면 비활성화(준비중)
 }
 
@@ -66,7 +66,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
     closeButtonRef.current?.focus();
   }, [shouldBeInert]);
 
-  // 열려 있는 동안 Tab 포커스를 드로어 내부에 가둔다 (focus trap).
+  // 열려 있는 동안 탭 키로 이동하는 포커스를 드로어 내부에 가둔다.
   useEffect(() => {
     if (shouldBeInert) return;
 
@@ -161,7 +161,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
           글자 수에 따라 폰트 크기를 자동 조절해 짧은 라벨(EVENT)은 크게, 긴 라벨(SUPPORT)은
           폭 안에 맞게 살짝 작게 표시한다. 설명 문구는 모바일(터치 디바이스, hover 불가)에서는
           항상 펼쳐진 상태로 보이고, md 이상(마우스 환경)에서만 hover 시 펼쳐진다. 밑줄은
-          평소엔 숨겨져 있다가 hover/active 시에만 나타난다(늘어나는 애니메이션 없음). */}
+          평소엔 숨겨져 있다가 마우스를 올리거나 활성화되면 나타난다(늘어나는 애니메이션 없음). */}
         <nav key={isOpen ? "open" : "closed"} className="relative flex-1 overflow-y-auto px-6">
           {NAV_ITEMS.map((item, i) => {
             const isActive = item.to !== null && location.pathname === item.to;
@@ -169,7 +169,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
 
             const rowContent = (
               <>
-                {/* 배경 워터마크 — active일 때만, 자신의 eyebrow 텍스트를 크게 확대해 은은하게 */}
+                {/* 배경 워터마크 — 활성화됐을 때만 영문 라벨을 크게 확대해 은은하게 */}
                 {isActive && (
                   <span
                     aria-hidden
@@ -205,7 +205,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
                   )}
                 </span>
 
-                {/* 설명 — 모바일은 항상 펼침(grid-rows-[1fr] 고정), md+는 hover/active 시에만 펼침 */}
+                {/* 설명 — 모바일은 항상 펼침(grid-rows-[1fr] 고정), 중간 화면 이상에서는 마우스를 올리거나 활성화되면 펼침 */}
                 {!isDisabled && (
                   <div
                     className={`grid grid-rows-[1fr] transition-[grid-template-rows] duration-300 ease-out md:grid-rows-[0fr] ${
@@ -222,7 +222,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
                   </div>
                 )}
 
-                {/* 밑줄 — 평소엔 투명, hover/active 시에만 나타남(위치·길이는 항상 고정) */}
+                {/* 밑줄 — 평소엔 투명, 마우스를 올리거나 활성화되면 나타남(위치·길이는 항상 고정) */}
                 <span
                   className={`relative mt-2 block h-px bg-accent transition-opacity duration-200 ${
                     isActive ? "opacity-100" : isDisabled ? "opacity-0" : "opacity-0 md:group-hover:opacity-40"
