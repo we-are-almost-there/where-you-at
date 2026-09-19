@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { StrictMode } from "react";
+import { StrictMode, type ComponentProps } from "react";
+import type { RecordCard } from "./components/RecordCard";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CourseDetail } from "./CourseDetail";
@@ -21,9 +22,15 @@ const tracking = vi.hoisted(() => ({
 vi.mock("./useCourseTracking", () => ({ useCourseTracking: () => tracking }));
 vi.mock("./speech", () => ({ announce: vi.fn(), primeSpeech: vi.fn() }));
 vi.mock("./components/RecordCard", () => ({
-  RecordCard: ({ record, onClose }: { record: { distanceKm: number }; onClose: () => void }) => (
+  RecordCard: ({ record, onClose, onProtectionChange, navigationBlocked, onCancelNavigation, onConfirmNavigation }: ComponentProps<typeof RecordCard>) => (
     <div role="dialog" aria-label="restored record">
       <span>{record.distanceKm}</span><button onClick={onClose}>close record</button>
+      <button onClick={() => onProtectionChange?.(true)}>카드 편집</button>
+      <button onClick={() => onProtectionChange?.(false)}>카드 저장</button>
+      {navigationBlocked && <div role="alertdialog" aria-label="이동 확인">
+        <button onClick={onCancelNavigation}>계속 편집</button>
+        <button onClick={onConfirmNavigation}>저장하지 않고 나가기</button>
+      </div>}
     </div>
   ),
 }));
@@ -297,6 +304,32 @@ it("저장하지 않은 기록 카드를 복원하고 닫으면 저장값을 지
   expect(screen.getByText("1.23")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "close record" }));
   expect(sessionStorage.getItem("course-tracking:1:view")).toBeNull();
+});
+
+it.each(["편집 전", "저장 후", "편집 후"])("%s 카드의 뒤로가기 보호와 데이터 정리", async (state) => {
+  tracking.status = "idle";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({ record: {
+    summary: { distanceKm: 1.23, durationMs: 60000, paceSecPerKm: 50 },
+    routeType: "도보", routePoints: [],
+  } }));
+  const router = await mount();
+  const confirm = vi.spyOn(window, "confirm");
+  if (state !== "편집 전") fireEvent.click(screen.getByText("카드 편집"));
+  if (state === "저장 후") fireEvent.click(screen.getByText("카드 저장"));
+  await act(async () => { await router.navigate(-1); });
+  if (state === "편집 후") {
+    expect(router.state.location.pathname).toBe("/courses/1");
+    expect(screen.getByRole("alertdialog", { name: "이동 확인" })).toBeTruthy();
+    const saved = sessionStorage.getItem("course-tracking:1:view");
+    fireEvent.click(screen.getByText("계속 편집"));
+    expect(router.state.location.pathname).toBe("/courses/1");
+    expect(sessionStorage.getItem("course-tracking:1:view")).toBe(saved);
+    await act(async () => { await router.navigate(-1); });
+    await act(async () => { fireEvent.click(screen.getByText("저장하지 않고 나가기")); });
+  }
+  expect(router.state.location.pathname).toBe("/courses");
+  expect(sessionStorage.getItem("course-tracking:1:view")).toBeNull();
+  expect(confirm).not.toHaveBeenCalled();
 });
 
 it.each([
