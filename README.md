@@ -84,6 +84,8 @@ npm run dev --prefix frontend
 03_support_seed.sql       지원금 제도
 04_help_seed.sql          공지사항·자주 묻는 질문 (python -m scripts.seed_help)
 05_inquiry_retention.sql  1:1 문의 자동 파기 예약 작업 (Supabase SQL Editor에서 실행)
+08_app_user.sql           카카오 로그인 회원 테이블 (운영 DB에 적용)
+09_auth_session.sql       로그인 세션 테이블 (08 적용 뒤 운영 DB에 적용)
 ```
 
 외부 API에서 데이터를 받아오는 스크립트는 `backend/scripts/`에 있습니다.
