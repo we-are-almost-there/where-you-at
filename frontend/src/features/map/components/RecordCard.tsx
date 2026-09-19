@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import type { TrackingRecord } from "../trackingRecord";
 import type { LatLng, RouteType } from "../types";
@@ -737,6 +737,13 @@ function CloseRecordConfirmation({ onContinue, onDiscard }: {
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const continueRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  const cancelClose = () => {
+    // 모달이 뒤쪽 카드의 초점을 막는 상태를 먼저 해제한 뒤 닫기 버튼으로 돌아간다.
+    dialogRef.current?.close();
+    onContinue();
+  };
   useEffect(() => {
     const dialog = dialogRef.current;
     // 기본 모달 기능으로 뒤쪽 카드 조작을 막고 키보드 초점을 확인창 안에 가둔다.
@@ -748,26 +755,27 @@ function CloseRecordConfirmation({ onContinue, onDiscard }: {
   return (
     <dialog
       ref={dialogRef}
-      aria-labelledby="close-record-title"
-      aria-describedby="close-record-description"
-      onCancel={(event) => { event.preventDefault(); onContinue(); }}
+      role="alertdialog"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      onCancel={(event) => { event.preventDefault(); cancelClose(); }}
       onKeyDown={(event) => {
         // 뒤쪽 대화상자가 같은 Escape 입력으로 닫히지 않게 한다.
         if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
-          onContinue();
+          cancelClose();
         }
       }}
-      className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-sm rounded-2xl bg-white p-6 text-ink shadow-xl backdrop:bg-black/40"
+      className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-sm rounded-[18px] bg-white px-5 py-6 text-center text-ink shadow-[0px_8px_24px_0px_rgba(0,0,0,0.2)] backdrop:bg-black/40"
     >
-      <h2 id="close-record-title" className="text-lg font-bold">저장하지 않은 기록 카드예요.</h2>
-      <p id="close-record-description" className="mt-3 text-sm text-caption">지금 닫으면 이 기록 카드는 사라져요.</p>
-      <div className="mt-6 flex gap-3">
-        <button ref={continueRef} type="button" onClick={onContinue}
-          className="flex-1 cursor-pointer rounded-xl bg-lavender px-3 py-3 text-sm font-bold text-ink">계속 편집</button>
+      <h2 id={titleId} className="break-keep text-[17px] font-bold">저장하지 않은 기록 카드예요.</h2>
+      <p id={descriptionId} className="mt-2 break-keep text-[14px] leading-relaxed text-caption">지금 닫으면 이 기록 카드는 사라져요.</p>
+      <div className="mt-5 flex gap-3">
+        <button ref={continueRef} type="button" onClick={cancelClose}
+          className="h-12 flex-1 cursor-pointer break-keep rounded-[14px] bg-lavender px-3 text-[15px] font-bold text-ink">계속 편집</button>
         <button type="button" onClick={onDiscard}
-          className="flex-1 cursor-pointer rounded-xl bg-accent px-3 py-3 text-sm font-bold text-white">저장하지 않고 닫기</button>
+          className="h-12 flex-1 cursor-pointer break-keep rounded-[14px] bg-accent px-3 text-[15px] font-bold text-white">저장하지 않고 닫기</button>
       </div>
     </dialog>
   );

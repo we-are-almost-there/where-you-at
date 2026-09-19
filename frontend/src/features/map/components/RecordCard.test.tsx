@@ -124,7 +124,10 @@ it("미저장 카드 닫기를 취소하면 편집과 이탈 보호를 유지한
   const onClose = vi.fn();
   mount(onClose);
   fireEvent.click(screen.getByRole("button", { name: /^닫기$/ }));
-  expect(screen.getByRole("dialog", { name: "저장하지 않은 기록 카드예요." })).toBeTruthy();
+  expect(screen.getByRole("alertdialog", {
+    name: "저장하지 않은 기록 카드예요.",
+    description: "지금 닫으면 이 기록 카드는 사라져요.",
+  })).toBeTruthy();
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "계속 편집" }));
   fireEvent.click(screen.getByRole("button", { name: "계속 편집" }));
   expect(onClose).not.toHaveBeenCalled();
@@ -151,11 +154,23 @@ it("저장한 카드는 확인 없이 닫는다", async () => {
   expect(screen.queryByText("저장하지 않은 기록 카드예요.")).toBeNull();
 });
 
-it("확인창에서 Escape를 누르면 카드로 돌아간다", () => {
+it.each(["계속 편집", "Escape", "cancel"])("%s로 취소하면 모달을 닫은 뒤 카드 버튼으로 초점을 돌린다", (method) => {
   const onClose = vi.fn();
   mount(onClose);
   fireEvent.click(screen.getByRole("button", { name: /^닫기$/ }));
-  fireEvent.keyDown(screen.getByRole("button", { name: "계속 편집" }), { key: "Escape" });
+  const dialog = screen.getByRole("alertdialog") as HTMLDialogElement;
+  const closeButton = screen.getByRole("button", { name: /^닫기$/ });
+  const focus = closeButton.focus.bind(closeButton);
+  // jsdom은 모달 바깥의 초점을 막지 않으므로, 복귀 시 모달이 닫혔는지도 검증한다.
+  const focusSpy = vi.spyOn(closeButton, "focus").mockImplementation(() => {
+    expect(dialog.open).toBe(false);
+    focus();
+  });
+  if (method === "계속 편집") fireEvent.click(screen.getByRole("button", { name: "계속 편집" }));
+  else if (method === "Escape") fireEvent.keyDown(screen.getByRole("button", { name: "계속 편집" }), { key: "Escape" });
+  else fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  expect(focusSpy).toHaveBeenCalledOnce();
+  expect(document.activeElement).toBe(closeButton);
   expect(onClose).not.toHaveBeenCalled();
   expect(screen.queryByText("저장하지 않은 기록 카드예요.")).toBeNull();
   expect(unloadAllowed()).toBe(false);
