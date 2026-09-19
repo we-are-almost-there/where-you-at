@@ -159,6 +159,14 @@ export function RecordCard({
     fontChoice, textScale, showRoute, routeOffset, routeScale, statsOffset, canvasH]);
   const [readySnapshot, setReadySnapshot] = useState<typeof editSnapshot | null>(null);
   const imageReady = readySnapshot === editSnapshot;
+  const [failedSnapshot, setFailedSnapshot] = useState<typeof editSnapshot | null>(null);
+  const preparationFailed = failedSnapshot === editSnapshot;
+  const [retryCount, setRetryCount] = useState(0);
+  const retryPreparation = () => {
+    // 재시도는 편집이나 저장이 아니다. 보호 상태는 그대로 두고 생성 작업만 다시 실행한다.
+    setFailedSnapshot(null);
+    setRetryCount((count) => count + 1);
+  };
   const currentSnapshotRef = useRef(editSnapshot);
 
   const editVersionRef = useRef(0);
@@ -251,17 +259,22 @@ export function RecordCard({
     if (version === null || version !== editVersionRef.current) return;
     blobTimerRef.current = setTimeout(() => {
       if (version !== editVersionRef.current) return;
-      canvasRef.current?.toBlob((blob) => {
-        // 이전 편집본의 변환이 늦게 끝나도 최신 이미지와 준비 상태를 덮어쓰지 않는다.
-        if (version !== editVersionRef.current) return;
-        if (!blob) {
-          setErrorMessage("이미지를 만들지 못했어요. 다시 편집하거나 화면을 캡처해 주세요.");
-          return;
-        }
-        blobRef.current = blob;
-        blobVersionRef.current = version;
-        setReadySnapshot(currentSnapshotRef.current);
-      }, "image/png");
+      try {
+        canvasRef.current?.toBlob((blob) => {
+          // 이전 편집본의 변환이 늦게 끝나도 최신 이미지와 준비 상태를 덮어쓰지 않는다.
+          if (version !== editVersionRef.current) return;
+          if (!blob) {
+            setFailedSnapshot(currentSnapshotRef.current);
+            return;
+          }
+          blobRef.current = blob;
+          blobVersionRef.current = version;
+          setReadySnapshot(currentSnapshotRef.current);
+          setFailedSnapshot(null);
+        }, "image/png");
+      } catch {
+        if (version === editVersionRef.current) setFailedSnapshot(currentSnapshotRef.current);
+      }
     }, BLOB_DEBOUNCE_MS);
   }, []);
 
@@ -302,7 +315,7 @@ export function RecordCard({
         drawn = false;
       }
       if (!drawn) {
-        setErrorMessage("카드를 그리지 못했어요. 화면을 캡처해 주세요.");
+        setFailedSnapshot(currentSnapshotRef.current);
         return;
       }
       renderedVersionRef.current = version;
@@ -329,6 +342,7 @@ export function RecordCard({
     statsOffset,
     canvasH,
     scheduleBlob,
+    retryCount,
   ]);
 
   const pickPhoto = (file: File | undefined) => {
@@ -543,9 +557,9 @@ export function RecordCard({
         </div>
       </div>
 
-      {errorMessage && (
+      {(preparationFailed || errorMessage) && (
         <p role="alert" className="px-5 pb-2 text-center text-[13px] text-white">
-          {errorMessage}
+          {preparationFailed ? "이미지를 만들지 못했어요. 다시 시도해 주세요. 계속 실패하면 화면을 캡처해 주세요." : errorMessage}
         </p>
       )}
 
@@ -741,11 +755,11 @@ export function RecordCard({
         </button>
         <button
           type="button"
-          onClick={save}
-          disabled={!imageReady}
+          onClick={preparationFailed ? retryPreparation : save}
+          disabled={!imageReady && !preparationFailed}
           className="h-14 flex-[2] cursor-pointer rounded-[14px] bg-accent text-[15px] font-bold text-white disabled:cursor-wait disabled:opacity-60"
         >
-          {imageReady ? "이미지 저장" : "이미지 준비 중…"}
+          {preparationFailed ? "다시 시도" : imageReady ? "이미지 저장" : "이미지 준비 중…"}
         </button>
       </div>
       {(navigationBlocked || closeConfirmationOpen) && (

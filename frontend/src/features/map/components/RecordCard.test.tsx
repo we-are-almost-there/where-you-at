@@ -25,7 +25,7 @@ const originalDialogMethods = dialogMethods.map((name) =>
 beforeEach(() => {
   share.mockReset();
   loadFonts.mockReset().mockResolvedValue([]);
-  vi.mocked(draw).mockClear();
+  vi.mocked(draw).mockReset().mockReturnValue(true);
   Object.defineProperty(document, "fonts", { configurable: true, value: { load: loadFonts } });
   // jsdom에 없는 대화상자 메서드는 직접 정의해 열림 상태만 재현한다.
   for (const name of dialogMethods) {
@@ -70,6 +70,43 @@ function editFont() {
   fireEvent.click(screen.getByRole("button", { name: "글꼴" }));
   fireEvent.click(screen.getByRole("button", { name: "Do Hyeon" }));
 }
+
+it.each(["그리기 실패", "그리기 예외", "이미지 변환 실패", "이미지 변환 예외"])("%s 후 편집 없이 재시도하며 저장 전까지 보호한다", async (failure) => {
+  mount();
+  await screen.findByRole("button", { name: "이미지 저장" });
+  if (failure === "그리기 실패") vi.mocked(draw).mockReturnValueOnce(false);
+  else if (failure === "그리기 예외") vi.mocked(draw).mockImplementationOnce(() => { throw new Error("그리기 실패"); });
+  else if (failure === "이미지 변환 실패") vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementationOnce((callback) => callback(null));
+  else vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementationOnce(() => { throw new Error("변환 실패"); });
+  editFont();
+  const retry = await screen.findByRole("button", { name: "다시 시도" });
+  expect((retry as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByRole("alert").textContent).toContain("다시 시도해 주세요");
+  expect(unloadAllowed()).toBe(false);
+  const edited = vi.mocked(draw).mock.lastCall?.[1];
+  fireEvent.click(retry);
+  expect((screen.getByRole("button", { name: "이미지 준비 중…" }) as HTMLButtonElement).disabled).toBe(true);
+  await screen.findByRole("button", { name: "이미지 저장" });
+  expect(vi.mocked(draw).mock.lastCall?.[1]).toEqual(edited);
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(unloadAllowed()).toBe(false);
+  expect(share).not.toHaveBeenCalled();
+  share.mockResolvedValue(undefined);
+  await save();
+  expect(unloadAllowed()).toBe(true);
+});
+
+it("초기 생성의 반복 실패를 재시도해도 사용자 편집으로 처리하지 않는다", async () => {
+  vi.mocked(draw).mockReturnValueOnce(false).mockReturnValueOnce(false);
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "다시 시도" }));
+  fireEvent.click(await screen.findByRole("button", { name: "다시 시도" }));
+  await screen.findByRole("button", { name: "이미지 저장" });
+  expect(unloadAllowed()).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: /^닫기$/ }));
+  expect(screen.getByRole("alertdialog")).toBeTruthy();
+  expect(share).not.toHaveBeenCalled();
+});
 
 it("편집·저장·재편집에 맞춰 페이지 이동 보호 상태를 전달한다", async () => {
   const onProtectionChange = vi.fn();
