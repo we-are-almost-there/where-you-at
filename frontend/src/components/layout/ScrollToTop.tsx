@@ -44,7 +44,9 @@ export default function ScrollToTop() {
     if (!changed) return;
     const page = document.getElementById(MAIN_CONTENT_ID);
     if (!page) return;
-    const target = page.querySelector<HTMLElement>("h1") ?? page;
+    // 제목이 숨겨져 있으면 포커스를 받을 수 없으므로 본문으로 이동한다.
+    const heading = page.querySelector<HTMLElement>("h1");
+    const target = heading?.getClientRects().length ? heading : page;
     if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
     target.focus({ preventScroll: true });
   }, [pathname, navigationType]);

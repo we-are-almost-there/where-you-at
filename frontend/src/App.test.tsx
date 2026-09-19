@@ -59,11 +59,16 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   vi.stubGlobal("scrollTo", vi.fn());
+  // jsdom은 레이아웃을 계산하지 않으므로 이 화면들의 제목 영역을 모의한다.
+  vi.spyOn(HTMLElement.prototype, "getClientRects").mockImplementation(function (this: HTMLElement) {
+    return (this.tagName === "H1" ? [new DOMRect(0, 0, 1, 1)] : []) as unknown as DOMRectList;
+  });
 });
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 it("사이드바 링크로 이동하면 새 페이지 제목에 포커스를 둔다", () => {
