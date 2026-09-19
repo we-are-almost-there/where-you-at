@@ -146,19 +146,27 @@ def list_courses(
         )
         rows = cur.fetchall()
 
-    if rows:
-        ids = [r["id"] for r in rows]
-        routes = _fetch_routes(conn, ids)
-        paths = _fetch_simplified_paths(conn, ids)
-        landmarks = _fetch_landmarks(conn, ids)
-        for r in rows:
-            r["routes"] = routes.get(r["id"], [])
-            r["path_trail"] = paths.get((r["id"], "trail"), [])
-            r["path_bicycle"] = paths.get((r["id"], "bicycle"), [])
-            r["landmarks"] = landmarks.get(r["id"], [])
-            r["start_address"] = normalize_address(r["start_address"], r["region_code"])
-
+    attach_card_fields(conn, rows)
     return total, rows
+
+
+def attach_card_fields(conn, rows: list[dict]) -> None:
+    """코스 카드가 필요한 나머지 값(경로 메트릭, 썸네일 좌표, 관광지, 정규화한 주소)을 행에 채운다.
+
+    코스 목록과 찜한 코스 목록이 같은 카드를 쓰므로 함께 쓴다. rows는 제자리에서 바뀐다.
+    """
+    if not rows:
+        return
+    ids = [r["id"] for r in rows]
+    routes = _fetch_routes(conn, ids)
+    paths = _fetch_simplified_paths(conn, ids)
+    landmarks = _fetch_landmarks(conn, ids)
+    for r in rows:
+        r["routes"] = routes.get(r["id"], [])
+        r["path_trail"] = paths.get((r["id"], "trail"), [])
+        r["path_bicycle"] = paths.get((r["id"], "bicycle"), [])
+        r["landmarks"] = landmarks.get(r["id"], [])
+        r["start_address"] = normalize_address(r["start_address"], r["region_code"])
 
 
 # 도보 경로가 있는 코스만 담는다. 홈 '가까운 코스'는 위치를 못 얻었을 때 GET /api/courses 기본값(type=trail)으로

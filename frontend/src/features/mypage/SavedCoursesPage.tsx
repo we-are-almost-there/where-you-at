@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Heart } from "lucide-react";
 import { CourseCard } from "../map/components/CourseCard";
@@ -23,6 +24,7 @@ function SavedCourses() {
   const saved = useSavedCourses();
   const [page, goToPage] = usePageParam();
   const navigate = useNavigate();
+  const [removedKeys, setRemovedKeys] = useState<ReadonlySet<string>>(() => new Set());
 
   if (saved.status === "loading") {
     return (
@@ -41,7 +43,8 @@ function SavedCourses() {
       </div>
     );
   }
-  if (saved.courses.length === 0) {
+  const visibleCourses = saved.courses.filter(({ course, routeType }) => !removedKeys.has(`${course.id}:${routeType}`));
+  if (visibleCourses.length === 0) {
     return (
       <EmptyState
         icon={<Heart size={26} strokeWidth={1.75} />}
@@ -52,24 +55,27 @@ function SavedCourses() {
     );
   }
 
-  const { current, totalPages, items } = paginate(saved.courses, page, PER_PAGE);
+  const { current, totalPages, items } = paginate(visibleCourses, page, PER_PAGE);
   return (
     <>
-      <p className="text-[14px] text-caption">모두 {saved.courses.length}개</p>
+      <p className="text-[14px] text-caption">모두 {visibleCourses.length}개</p>
       {/* 코스 탐색 목록(CourseList)과 같은 격자. 넓은 화면에서도 카드 폭이 지나치게 늘지 않게 4열까지만 둔다. */}
       <ul className="mt-4 grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
-        {items.map((course) => {
-          const routeType = course.routes[0]?.route_type ?? "도보";
-          return (
-            <li key={course.id}>
-              <CourseCard
-                course={course}
-                routeType={routeType}
-                onSelect={() => navigate(`/courses/${course.id}${routeType === "자전거" ? "?type=bicycle" : ""}`)}
-              />
-            </li>
-          );
-        })}
+        {/* 찜은 종목 단위라 찜할 때 고른 종목으로 카드를 그린다. 같은 코스를 도보·자전거로 찜했으면 두 장이다. */}
+        {items.map(({ course, routeType }) => (
+          <li key={`${course.id}:${routeType}`}>
+            <CourseCard
+              course={course}
+              routeType={routeType}
+              onSelect={() => navigate(`/courses/${course.id}${routeType === "자전거" ? "?type=bicycle" : ""}`)}
+              onSavedChange={(isSaved) => {
+                if (isSaved) return;
+                const key = `${course.id}:${routeType}`;
+                setRemovedKeys((currentKeys) => new Set(currentKeys).add(key));
+              }}
+            />
+          </li>
+        ))}
       </ul>
       <Pagination page={current} totalPages={totalPages} onChange={goToPage} />
     </>

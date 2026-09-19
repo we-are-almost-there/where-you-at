@@ -24,7 +24,7 @@ interface ApiRoute {
   bounds?: Bounds;
 }
 
-interface ApiCourse {
+export interface ApiCourse {
   id: number;
   title: string;
   start_address: string | null;
@@ -93,7 +93,18 @@ function fromApiRoute(r: ApiRoute): CourseRoute {
   };
 }
 
-function fromApiCourse(c: ApiCourse): Course {
+/** UI 종목 → 백엔드 값. 찜 API도 같은 경계 변환을 쓴다. */
+export function toApiRouteType(routeType: RouteType): string {
+  return ROUTE_TO_API[routeType] ?? routeType;
+}
+
+/** 백엔드 종목 → UI 종목. */
+export function fromApiRouteType(routeType: string): RouteType {
+  return ROUTE_FROM_API[routeType] ?? (routeType as RouteType);
+}
+
+/** 코스 목록 응답 항목 → UI 코스. 찜한 코스 목록이 같은 카드를 쓰므로 함께 쓴다. */
+export function fromApiCourse(c: ApiCourse): Course {
   return {
     id: c.id,
     title: c.title,
