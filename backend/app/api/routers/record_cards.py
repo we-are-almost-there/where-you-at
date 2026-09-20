@@ -66,6 +66,21 @@ def _discard_promoted_image(image_key: str) -> None:
         print(f"[ERROR] 고아 기록 카드 이미지 삭제 실패(직접 삭제 필요): {image_key} {e}")
 
 
+def _card_was_committed(*, user_id: int, image_key: str) -> bool | None:
+    """저장 중 예외가 난 뒤, 실제로 커밋됐는지 새 연결로 다시 확인한다.
+
+    커밋이 확인되면(True) 이미지를 지우면 안 된다 — DB 행이 그 이미지를 가리키고 있다.
+    확인 자체가 실패하면(None) 커밋 여부를 알 수 없으므로, 아직 참조 중일 가능성을 감안해
+    지우지 않는 쪽으로 둔다. 확실히 커밋 안 됐을 때만(False) 지운다.
+    """
+    try:
+        with db_connection() as conn:
+            return crud.card_exists_with_image(conn, user_id=user_id, image_key=image_key)
+    except Exception as e:
+        print(f"[ERROR] 기록 카드 커밋 여부 확인 실패(이미지 유지): {image_key} {e}")
+        return None
+
+
 @router.post("/upload-url", response_model=RecordCardUploadResponse)
 def create_upload_url(body: RecordCardUploadRequest, current_user: CurrentUser = Depends(get_current_user)):
     """카드 이미지를 올릴 임시 URL을 발급한다. 브라우저가 이 URL로 PUT(같은 Content-Type)한다."""
@@ -118,9 +133,12 @@ def create_card(body: RecordCardCreate, current_user: CurrentUser = Depends(get_
             row = crud.create_card(
                 conn, user_id=current_user.id, record_id=body.record_id, image_key=image_key
             )
-    except BaseException:
-        # 연결 실패(503), insert·commit 예외 모두 카드 행이 없으니 옮겨 둔 이미지를 지우고 원래 오류를 그대로 올린다.
-        _discard_promoted_image(image_key)
+    except Exception:
+        # 연결 실패나 insert 도중 예외는 대부분 커밋 전이라 이미지를 지워도 안전하다.
+        # 다만 commit() 자체가 응답 직전에 끊긴 경우처럼 실제로는 커밋됐을 수 있어,
+        # 확실히 "커밋 안 됨"으로 확인될 때만 지운다.
+        if _card_was_committed(user_id=current_user.id, image_key=image_key) is False:
+            _discard_promoted_image(image_key)
         raise
     if row == crud.CARD_QUOTA_EXCEEDED:
         _discard_promoted_image(image_key)

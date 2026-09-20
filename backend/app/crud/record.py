@@ -139,20 +139,30 @@ def create_card(conn, *, user_id: int, record_id: int, image_key: str) -> dict |
 
 
 def list_cards(conn, *, user_id: int, page: int, size: int) -> tuple[int, list[dict]]:
-    """내 기록 카드를 최근 순으로 한 쪽만 돌려준다. (전체 개수, 그 쪽의 행 목록)"""
-    query = f"""
-        select {_CARD_COLUMNS}
-        from record_card k
-        join run_record r on r.id = k.record_id
-        join course c on c.id = r.course_id
-        where k.user_id = %(user_id)s
-        order by k.created_at desc, k.id desc
-        limit %(size)s offset %(offset)s
-    """
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("select count(*) as n from record_card where user_id = %(user_id)s", {"user_id": user_id})
+        cur.execute(
+            "select count(*) as n from record_card where user_id = %(user_id)s",
+            {"user_id": user_id},
+        )
         total = cur.fetchone()["n"]
-        cur.execute(query, {"user_id": user_id, "size": size, "offset": (page - 1) * size})
+
+        offset = (page - 1) * size
+        if offset >= total:
+            # page가 실제 마지막 페이지를 넘어가면 굳이 조인 쿼리를 또 안 던진다.
+            return total, []
+
+        cur.execute(
+            f"""
+            select {_CARD_COLUMNS}
+            from record_card k
+            join run_record r on r.id = k.record_id
+            join course c on c.id = r.course_id
+            where k.user_id = %(user_id)s
+            order by k.created_at desc, k.id desc
+            limit %(size)s offset %(offset)s
+            """,
+            {"user_id": user_id, "size": size, "offset": offset},
+        )
         rows = cur.fetchall()
     return total, rows
 
@@ -171,3 +181,13 @@ def count_cards(conn, *, user_id: int) -> int:
     with conn.cursor() as cur:
         cur.execute("select count(*) from record_card where user_id = %(user_id)s", {"user_id": user_id})
         return cur.fetchone()[0]
+
+
+def card_exists_with_image(conn, *, user_id: int, image_key: str) -> bool:
+    """image_key로 저장된 카드가 실제로 커밋됐는지 확인한다(커밋 여부가 불확실할 때 검증용)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "select 1 from record_card where user_id = %(user_id)s and image_key = %(image_key)s",
+            {"user_id": user_id, "image_key": image_key},
+        )
+        return cur.fetchone() is not None

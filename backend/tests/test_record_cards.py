@@ -126,6 +126,7 @@ class CreateCardTest(unittest.TestCase):
         ), patch("app.api.routers.record_cards.storage.delete") as delete:
             crud.record_exists.return_value = True
             crud.create_card.side_effect = RuntimeError("commit failed")
+            crud.card_exists_with_image.return_value = False  # 검증 결과 커밋 안 됨
             with self.assertRaises(RuntimeError):
                 self.post()
         delete.assert_called_once_with("record-cards/7/a.png")
@@ -146,6 +147,7 @@ class CreateCardTest(unittest.TestCase):
             "app.api.routers.record_cards.storage.promote", return_value="record-cards/7/a.png"
         ), patch("app.api.routers.record_cards.storage.delete") as delete:
             crud.record_exists.return_value = True
+            crud.card_exists_with_image.return_value = False  # 검증용 세 번째 연결은 성공, 결과는 "없음"
             res = self.post()
         self.assertEqual(res.status_code, 503)
         delete.assert_called_once_with("record-cards/7/a.png")
@@ -180,6 +182,19 @@ class CreateCardTest(unittest.TestCase):
         self.assertEqual(res.status_code, 409)
         new_key.assert_not_called()
 
+    def test_exception_after_actual_commit_keeps_image(self):
+        """commit()은 서버에서 성공했는데 응답 직전에 예외가 나는 경우 — 이미지를 지우면 안 된다."""
+        with patch("app.api.routers.record_cards.crud") as crud, patch(
+            "app.api.routers.record_cards.storage.head", return_value=INFO
+        ), patch(
+            "app.api.routers.record_cards.storage.promote", return_value="record-cards/7/a.png"
+        ), patch("app.api.routers.record_cards.storage.delete") as delete:
+            crud.record_exists.return_value = True
+            crud.create_card.side_effect = RuntimeError("response lost after commit")
+            crud.card_exists_with_image.return_value = True  # 검증 결과 실제로는 커밋됨
+            with self.assertRaises(RuntimeError):
+                self.post()
+        delete.assert_not_called()
 
 class ListCardsTest(unittest.TestCase):
     def setUp(self):
