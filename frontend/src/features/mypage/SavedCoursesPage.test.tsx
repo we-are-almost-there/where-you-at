@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // 찜한 코스 전체 보기가 코스 탐색 카드를 12개씩 나눠 보여 주고, 카드를 누르면 코스 상세로 가는지 본다.
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth } from "../auth";
@@ -15,7 +15,7 @@ vi.mock("../../components/layout/AppHeader", () => ({ default: () => null }));
 
 // 하트는 로그인 상태를 따라 찜 목록을 받으러 나간다. 이 화면의 관심사가 아니라 저장소만 대신한다.
 vi.mock("../saved/savedStore", () => ({
-  useSavedCourse: () => ({ saved: true, busy: false }),
+  useSavedCourse: () => ({ saved: true, busy: false, loadStatus: "ready" }),
   toggleSavedCourse: vi.fn().mockResolvedValue(undefined),
   ensureSavedKeysLoaded: vi.fn(),
   clearSavedKeys: vi.fn(),
@@ -92,7 +92,34 @@ describe("SavedCoursesPage", () => {
     fireEvent.click(within(card).getByRole("button", { name: "코스 3 찜 해제" }));
 
     expect(await screen.findByText("아직 찜한 코스가 없어요")).toBeTruthy();
+    expect(screen.getByText("코스 3 찜을 해제했어요")).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "찜한 코스 목록" }));
     expect(screen.queryByText("모두 1개")).toBeNull();
+  });
+
+  it("찜을 해제하면 다음 카드 하트로 포커스를 옮긴다", async () => {
+    vi.mocked(fetchSavedCourses).mockResolvedValue([course(1), course(2), course(3)]);
+    renderPage();
+
+    const firstHeart = await screen.findByRole("button", { name: "코스 1 찜 해제" });
+    firstHeart.focus();
+    fireEvent.click(firstHeart);
+
+    const secondHeart = await screen.findByRole("button", { name: "코스 2 찜 해제" });
+    await waitFor(() => expect(document.activeElement).toBe(secondHeart));
+  });
+
+  it("마지막 페이지의 마지막 코스를 해제하면 이전 페이지 마지막 카드로 포커스를 옮긴다", async () => {
+    vi.mocked(fetchSavedCourses).mockResolvedValue(Array.from({ length: 13 }, (_, i) => course(i + 1)));
+    renderPage("/mypage/saved?page=2");
+
+    const lastHeart = await screen.findByRole("button", { name: "코스 13 찜 해제" });
+    lastHeart.focus();
+    fireEvent.click(lastHeart);
+
+    const previousHeart = await screen.findByRole("button", { name: "코스 12 찜 해제" });
+    await waitFor(() => expect(document.activeElement).toBe(previousHeart));
+    expect(screen.getAllByRole("article")).toHaveLength(12);
   });
 
   it("찜한 코스가 없으면 코스 둘러보기로 이어 준다", async () => {

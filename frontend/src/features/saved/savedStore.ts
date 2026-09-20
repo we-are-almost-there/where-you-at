@@ -7,22 +7,29 @@
 // 주의: 캐시는 세션당 한 번이라 다른 기기에서 바꾼 찜은 새로고침해야 반영된다.
 
 import { useSyncExternalStore } from "react";
+import { HttpError } from "../../lib/http";
+import { expireAuthSession } from "../auth/useAuth";
 import type { RouteType } from "../map/types";
 import { addSavedCourse, getSavedCourseKeys, removeSavedCourse, type SavedCourseKey } from "./savedApi";
+
+type LoadStatus = "idle" | "loading" | "ready" | "error";
 
 interface State {
   /** 찜한 키들. null이면 아직 받지 못한 상태다(하트를 "모름"으로 그린다). */
   keys: ReadonlySet<string> | null;
   /** 요청이 끝나기를 기다리는 키들. 그 버튼만 잠시 못 누르게 한다. */
   pending: ReadonlySet<string>;
+  /** 초기 키 목록 조회 상태. error면 하트 버튼에서 사용자가 다시 시도할 수 있다. */
+  loadStatus: LoadStatus;
 }
 
 const EMPTY: ReadonlySet<string> = new Set();
 
-let state: State = { keys: null, pending: EMPTY };
+let state: State = { keys: null, pending: EMPTY, loadStatus: "idle" };
 // 로그아웃·다른 사용자 로그인 뒤 이전 세션의 조회 응답이 도착해도 캐시를 되살리지 않게 한다.
 let generation = 0;
 let loadingGeneration: number | null = null;
+let loadingPromise: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 
 function savedKey(courseId: number, routeType: RouteType): string {
@@ -47,20 +54,45 @@ function getSnapshot() {
 
 /**
  * 찜한 키 목록을 한 번만 받는다. 이미 받았거나 받는 중이면 아무것도 하지 않는다.
- * 실패하면 keys를 null로 남겨 하트가 "모름"으로 남는다. 다음 화면에서 다시 시도한다.
+ * 실패하면 error 상태를 남겨 현재 화면의 하트 버튼에서 다시 시도할 수 있게 한다.
  */
 export function ensureSavedKeysLoaded(): void {
-  if (state.keys !== null || loadingGeneration === generation) return;
+  if (state.keys !== null || state.loadStatus === "error") return;
+  void loadSavedKeys().catch(() => {});
+}
+
+/** 실패한 키 목록 조회를 사용자가 현재 화면에서 다시 시도한다. */
+export function retrySavedKeys(): Promise<void> {
+  return loadSavedKeys();
+}
+
+function loadSavedKeys(): Promise<void> {
+  if (state.keys !== null) return Promise.resolve();
+  if (loadingGeneration === generation && loadingPromise) return loadingPromise;
   const requestedGeneration = generation;
   loadingGeneration = requestedGeneration;
-  getSavedCourseKeys()
+  setState({ ...state, loadStatus: "loading" });
+  const request = getSavedCourseKeys()
     .then((keys) => {
-      if (requestedGeneration === generation) setState({ ...state, keys: toKeySet(keys) });
+      if (requestedGeneration === generation) {
+        setState({ ...state, keys: toKeySet(keys), loadStatus: "ready" });
+      }
     })
-    .catch(() => {})
+    .catch((error: unknown) => {
+      if (requestedGeneration === generation) {
+        if (error instanceof HttpError && error.status === 401) expireAuthSession();
+        setState({ ...state, loadStatus: "error" });
+      }
+      throw error;
+    })
     .finally(() => {
-      if (loadingGeneration === requestedGeneration) loadingGeneration = null;
+      if (loadingGeneration === requestedGeneration) {
+        loadingGeneration = null;
+        loadingPromise = null;
+      }
     });
+  loadingPromise = request;
+  return request;
 }
 
 /**
@@ -68,16 +100,17 @@ export function ensureSavedKeysLoaded(): void {
  * 키를 따로 받을 때까지 하트가 빈 상태로 보였다가 채워지는 깜빡임을 막는다.
  */
 export function seedSavedKeys(items: SavedCourseKey[]): void {
-  setState({ ...state, keys: toKeySet(items) });
+  setState({ ...state, keys: toKeySet(items), loadStatus: "ready" });
 }
 
 /** 로그아웃·탈퇴 때 캐시를 비운다. 같은 브라우저로 다른 사람이 로그인했을 때 이전 하트가 남지 않게 한다. */
 export function clearSavedKeys(): void {
   generation += 1;
   loadingGeneration = null;
+  loadingPromise = null;
   // 이미 비어 있으면 알리지 않는다. 화면마다 로그아웃을 감지해 부르므로, 매번 새 상태를 만들면 끝없이 다시 그린다.
-  if (state.keys === null && state.pending.size === 0) return;
-  setState({ keys: null, pending: EMPTY });
+  if (state.keys === null && state.pending.size === 0 && state.loadStatus === "idle") return;
+  setState({ keys: null, pending: EMPTY, loadStatus: "idle" });
 }
 
 function toKeySet(items: SavedCourseKey[]): ReadonlySet<string> {
@@ -94,7 +127,7 @@ export async function toggleSavedCourse(courseId: number, routeType: RouteType):
   if (state.keys === null || state.pending.has(key)) return;
 
   const wasSaved = state.keys.has(key);
-  setState({ keys: withKey(state.keys, key, !wasSaved), pending: withKey(state.pending, key, true) });
+  setState({ ...state, keys: withKey(state.keys, key, !wasSaved), pending: withKey(state.pending, key, true) });
 
   try {
     if (wasSaved) await removeSavedCourse(courseId, routeType);
@@ -119,11 +152,12 @@ function withKey(set: ReadonlySet<string>, key: string, present: boolean): Reado
 export function useSavedCourse(
   courseId: number,
   routeType: RouteType,
-): { saved: boolean | undefined; busy: boolean } {
+): { saved: boolean | undefined; busy: boolean; loadStatus: LoadStatus } {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const key = savedKey(courseId, routeType);
   return {
     saved: snapshot.keys ? snapshot.keys.has(key) : undefined,
     busy: snapshot.pending.has(key),
+    loadStatus: snapshot.loadStatus,
   };
 }

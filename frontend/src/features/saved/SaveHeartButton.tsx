@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Ref } from "react";
 import { useLocation } from "react-router";
 import { Heart } from "lucide-react";
 import { StatusMessage } from "../../components/common/a11y";
 import { toUserError } from "../../components/error/userError";
 import { useAuth, useKakaoLogin } from "../auth";
 import type { RouteType } from "../map/types";
-import { clearSavedKeys, ensureSavedKeysLoaded, toggleSavedCourse, useSavedCourse } from "./savedStore";
+import { clearSavedKeys, ensureSavedKeysLoaded, retrySavedKeys, toggleSavedCourse, useSavedCourse } from "./savedStore";
 
 interface Props {
   courseId: number;
@@ -19,6 +19,8 @@ interface Props {
   size?: number;
   /** 서버 반영이 끝난 뒤 바뀐 찜 상태를 알린다. 찜 목록에서 해제한 카드를 바로 지울 때 쓴다. */
   onSavedChange?: (saved: boolean) => void;
+  /** 찜 목록에서 삭제 후 다음 버튼으로 포커스를 옮길 때 쓴다. */
+  buttonRef?: Ref<HTMLButtonElement>;
 }
 
 /**
@@ -34,11 +36,12 @@ export default function SaveHeartButton({
   className = "",
   size = 20,
   onSavedChange,
+  buttonRef,
 }: Props) {
   const auth = useAuth();
   const location = useLocation();
   const { login, dialog } = useKakaoLogin();
-  const { saved, busy } = useSavedCourse(courseId, routeType);
+  const { saved, busy, loadStatus } = useSavedCourse(courseId, routeType);
   const [status, setStatus] = useState("");
 
   // 로그인하면 무엇을 찜했는지 한 번 받아 두고, 로그아웃·탈퇴하면 비운다.
@@ -60,22 +63,32 @@ export default function SaveHeartButton({
     // 같은 문구를 다시 읽히려면 한 번 비워야 한다(마이페이지 프로필 저장 알림과 같은 이유).
     setStatus("");
     try {
+      if (loadStatus === "error") {
+        await retrySavedKeys();
+        return;
+      }
       await toggleSavedCourse(courseId, routeType);
       if (saved !== undefined) onSavedChange?.(!saved);
     } catch (error) {
-      setStatus(toUserError(error, saved ? "찜을 해제하지 못했어요" : "찜하지 못했어요").title);
+      const fallback = loadStatus === "error"
+        ? "찜 상태를 불러오지 못했어요"
+        : saved
+          ? "찜을 해제하지 못했어요"
+          : "찜하지 못했어요";
+      setStatus(toUserError(error, fallback).title);
     }
   };
 
   return (
     <>
       <button
+        ref={buttonRef}
         type="button"
         onClick={handleClick}
         aria-pressed={saved ?? false}
-        aria-label={`${courseTitle} ${saved ? "찜 해제" : "찜하기"}`}
+        aria-label={`${courseTitle} ${loadStatus === "error" && signedIn ? "찜 상태 다시 불러오기" : saved ? "찜 해제" : "찜하기"}`}
         // 무엇을 찜했는지 아직 모르는 동안에는 누르지 못한다. 눌렀다가 곧바로 되돌아가는 일을 막는다.
-        disabled={authLoading || busy || (signedIn && saved === undefined)}
+        disabled={authLoading || busy || (signedIn && saved === undefined && loadStatus !== "error")}
         className={`flex cursor-pointer items-center justify-center transition-colors disabled:cursor-default disabled:opacity-45 ${
           saved ? "text-accent" : "text-caption"
         } ${className}`}

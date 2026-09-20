@@ -11,7 +11,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth } from "../auth";
 import SaveHeartButton from "./SaveHeartButton";
-import { toggleSavedCourse, useSavedCourse } from "./savedStore";
+import { retrySavedKeys, toggleSavedCourse, useSavedCourse } from "./savedStore";
 
 const login = vi.fn();
 
@@ -23,6 +23,7 @@ vi.mock("../auth", () => ({
 vi.mock("./savedStore", () => ({
   useSavedCourse: vi.fn(),
   toggleSavedCourse: vi.fn(),
+  retrySavedKeys: vi.fn(),
   ensureSavedKeysLoaded: vi.fn(),
   clearSavedKeys: vi.fn(),
 }));
@@ -35,13 +36,14 @@ function renderButton() {
   );
 }
 
-function signedIn(saved: boolean | undefined, busy = false) {
+function signedIn(saved: boolean | undefined, busy = false, loadStatus: "idle" | "loading" | "ready" | "error" = "ready") {
   vi.mocked(useAuth).mockReturnValue({ status: "signedIn", user: { id: 7, nickname: "길손" } });
-  vi.mocked(useSavedCourse).mockReturnValue({ saved, busy });
+  vi.mocked(useSavedCourse).mockReturnValue({ saved, busy, loadStatus });
 }
 
 beforeEach(() => {
   vi.mocked(toggleSavedCourse).mockResolvedValue(undefined);
+  vi.mocked(retrySavedKeys).mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -52,7 +54,7 @@ afterEach(() => {
 describe("SaveHeartButton", () => {
   it("로그인하지 않았으면 누를 때 찜하지 않고 보던 화면으로 돌아오게 로그인을 시작한다", async () => {
     vi.mocked(useAuth).mockReturnValue({ status: "signedOut", user: null });
-    vi.mocked(useSavedCourse).mockReturnValue({ saved: undefined, busy: false });
+    vi.mocked(useSavedCourse).mockReturnValue({ saved: undefined, busy: false, loadStatus: "idle" });
     renderButton();
 
     const button = screen.getByRole("button", { name: "해파랑길 1코스 찜하기" });
@@ -94,7 +96,7 @@ describe("SaveHeartButton", () => {
 
   it("로그인 정보를 확인하는 동안에는 누를 수 없고 로그인을 다시 시작하지 않는다", () => {
     vi.mocked(useAuth).mockReturnValue({ status: "loading", user: null });
-    vi.mocked(useSavedCourse).mockReturnValue({ saved: undefined, busy: false });
+    vi.mocked(useSavedCourse).mockReturnValue({ saved: undefined, busy: false, loadStatus: "loading" });
     renderButton();
 
     const button = screen.getByRole("button");
@@ -111,5 +113,27 @@ describe("SaveHeartButton", () => {
     screen.getByRole("button").click();
 
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("찜하지 못했어요"));
+  });
+
+  it("키 목록 조회가 실패했으면 하트에서 다시 시도할 수 있다", async () => {
+    signedIn(undefined, false, "error");
+    renderButton();
+
+    const button = screen.getByRole("button", { name: "해파랑길 1코스 찜 상태 다시 불러오기" });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    button.click();
+
+    await waitFor(() => expect(retrySavedKeys).toHaveBeenCalledTimes(1));
+    expect(toggleSavedCourse).not.toHaveBeenCalled();
+  });
+
+  it("키 목록 재조회도 실패하면 화면낭독기에 안내한다", async () => {
+    signedIn(undefined, false, "error");
+    vi.mocked(retrySavedKeys).mockRejectedValue(new Error("500"));
+    renderButton();
+
+    screen.getByRole("button").click();
+
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("찜 상태를 불러오지 못했어요"));
   });
 });

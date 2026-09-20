@@ -13,6 +13,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const getSavedCourseKeys = vi.fn();
 const addSavedCourse = vi.fn();
 const removeSavedCourse = vi.fn();
+const { expireAuthSession } = vi.hoisted(() => ({ expireAuthSession: vi.fn() }));
+
+vi.mock("../auth/useAuth", () => ({ expireAuthSession }));
 
 vi.mock("./savedApi", () => ({
   getSavedCourseKeys: () => getSavedCourseKeys(),
@@ -43,10 +46,12 @@ describe("savedStore", () => {
     const walk = renderHook(() => store.useSavedCourse(12, "도보"));
 
     expect(result.current.saved).toBeUndefined();
+    expect(result.current.loadStatus).toBe("idle");
 
     act(() => store.ensureSavedKeysLoaded());
 
     await waitFor(() => expect(result.current.saved).toBe(true));
+    expect(result.current.loadStatus).toBe("ready");
     expect(walk.result.current.saved).toBe(false);
   });
 
@@ -186,18 +191,38 @@ describe("savedStore", () => {
     expect(result.current.saved).toBe(false);
   });
 
-  it("키 목록을 받지 못하면 모름으로 남고 토글도 하지 않는다", async () => {
-    getSavedCourseKeys.mockRejectedValue(new Error("500"));
+  it("키 목록을 받지 못하면 현재 화면에서 다시 시도할 수 있다", async () => {
+    getSavedCourseKeys
+      .mockRejectedValueOnce(new Error("500"))
+      .mockResolvedValueOnce([{ courseId: 12, routeType: "자전거" }]);
     const store = await loadStore();
     const { result } = renderHook(() => store.useSavedCourse(12, "자전거"));
 
     act(() => store.ensureSavedKeysLoaded());
-    await waitFor(() => expect(getSavedCourseKeys).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.loadStatus).toBe("error"));
 
     expect(result.current.saved).toBeUndefined();
     await act(async () => {
       await store.toggleSavedCourse(12, "자전거");
     });
     expect(addSavedCourse).not.toHaveBeenCalled();
+
+    await act(() => store.retrySavedKeys());
+
+    expect(getSavedCourseKeys).toHaveBeenCalledTimes(2);
+    expect(result.current.saved).toBe(true);
+    expect(result.current.loadStatus).toBe("ready");
+  });
+
+  it("키 목록 조회가 401이면 로컬 인증 세션을 만료시킨다", async () => {
+    const store = await loadStore();
+    const { HttpError } = await import("../../lib/http");
+    getSavedCourseKeys.mockRejectedValue(new HttpError(401, "expired"));
+    const { result } = renderHook(() => store.useSavedCourse(12, "자전거"));
+
+    act(() => store.ensureSavedKeysLoaded());
+
+    await waitFor(() => expect(result.current.loadStatus).toBe("error"));
+    expect(expireAuthSession).toHaveBeenCalledTimes(1);
   });
 });
