@@ -79,10 +79,10 @@ function loadSavedKeys(): Promise<void> {
       }
     })
     .catch((error: unknown) => {
-      if (requestedGeneration === generation) {
-        if (error instanceof HttpError && error.status === 401) expireAuthSession();
-        setState({ ...state, loadStatus: "error" });
-      }
+      // seed·로그아웃 뒤 도착한 구버전 오류는 현재 캐시나 화면 안내에 영향을 주지 않게 버린다.
+      if (requestedGeneration !== generation) return;
+      if (error instanceof HttpError && error.status === 401) expireAuthSession();
+      setState({ ...state, loadStatus: "error" });
       throw error;
     })
     .finally(() => {
@@ -100,6 +100,9 @@ function loadSavedKeys(): Promise<void> {
  * 키를 따로 받을 때까지 하트가 빈 상태로 보였다가 채워지는 깜빡임을 막는다.
  */
 export function seedSavedKeys(items: SavedCourseKey[]): void {
+  generation += 1;
+  loadingGeneration = null;
+  loadingPromise = null;
   setState({ ...state, keys: toKeySet(items), loadStatus: "ready" });
 }
 
@@ -135,6 +138,7 @@ export async function toggleSavedCourse(courseId: number, routeType: RouteType):
   } catch (error) {
     // 기다리는 사이 로그아웃했으면(keys가 null) 되돌릴 상태가 없다.
     if (state.keys !== null) setState({ ...state, keys: withKey(state.keys, key, wasSaved) });
+    if (error instanceof HttpError && error.status === 401) expireAuthSession();
     throw error;
   } finally {
     setState({ ...state, pending: withKey(state.pending, key, false) });

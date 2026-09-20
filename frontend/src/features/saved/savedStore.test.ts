@@ -130,6 +130,43 @@ describe("savedStore", () => {
 
     expect(result.current.saved).toBe(false);
     expect(result.current.busy).toBe(false);
+    expect(expireAuthSession).not.toHaveBeenCalled();
+  });
+
+  it("찜 추가가 401이면 상태를 되돌리고 로컬 인증 세션을 만료시킨다", async () => {
+    const store = await loadStore();
+    const { HttpError } = await import("../../lib/http");
+    const error = new HttpError(401, "expired");
+    addSavedCourse.mockRejectedValue(error);
+    const { result } = renderHook(() => store.useSavedCourse(3, "도보"));
+    act(() => store.seedSavedKeys([]));
+
+    await act(async () => {
+      await expect(store.toggleSavedCourse(3, "도보")).rejects.toBe(error);
+    });
+
+    expect(addSavedCourse).toHaveBeenCalledWith(3, "도보");
+    expect(result.current.saved).toBe(false);
+    expect(result.current.busy).toBe(false);
+    expect(expireAuthSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("찜 해제가 401이면 상태를 되돌리고 로컬 인증 세션을 만료시킨다", async () => {
+    const store = await loadStore();
+    const { HttpError } = await import("../../lib/http");
+    const error = new HttpError(401, "expired");
+    removeSavedCourse.mockRejectedValue(error);
+    const { result } = renderHook(() => store.useSavedCourse(12, "자전거"));
+    act(() => store.seedSavedKeys([{ courseId: 12, routeType: "자전거" }]));
+
+    await act(async () => {
+      await expect(store.toggleSavedCourse(12, "자전거")).rejects.toBe(error);
+    });
+
+    expect(removeSavedCourse).toHaveBeenCalledWith(12, "자전거");
+    expect(result.current.saved).toBe(true);
+    expect(result.current.busy).toBe(false);
+    expect(expireAuthSession).toHaveBeenCalledTimes(1);
   });
 
   it("보내는 중에는 같은 키를 다시 눌러도 요청이 늘지 않는다", async () => {
@@ -189,6 +226,44 @@ describe("savedStore", () => {
     act(() => store.ensureSavedKeysLoaded());
     await waitFor(() => expect(getSavedCourseKeys).toHaveBeenCalledTimes(2));
     expect(result.current.saved).toBe(false);
+  });
+
+  it("seed 뒤 늦게 도착한 키 조회 응답이 최신 캐시를 덮어쓰지 않는다", async () => {
+    let finishOldRequest!: (keys: { courseId: number; routeType: string }[]) => void;
+    getSavedCourseKeys.mockReturnValue(new Promise((resolve) => (finishOldRequest = resolve)));
+    const store = await loadStore();
+    const oldCourse = renderHook(() => store.useSavedCourse(12, "자전거"));
+    const seededCourse = renderHook(() => store.useSavedCourse(3, "도보"));
+
+    act(() => store.ensureSavedKeysLoaded());
+    act(() => store.seedSavedKeys([{ courseId: 3, routeType: "도보" }]));
+    await act(async () => {
+      finishOldRequest([{ courseId: 12, routeType: "자전거" }]);
+      await Promise.resolve();
+    });
+
+    expect(oldCourse.result.current.saved).toBe(false);
+    expect(seededCourse.result.current.saved).toBe(true);
+    expect(seededCourse.result.current.loadStatus).toBe("ready");
+  });
+
+  it("seed 뒤 늦게 도착한 키 조회 오류를 버린다", async () => {
+    let failOldRequest!: (error: unknown) => void;
+    getSavedCourseKeys.mockReturnValue(new Promise((_, reject) => (failOldRequest = reject)));
+    const store = await loadStore();
+    const { HttpError } = await import("../../lib/http");
+    const { result } = renderHook(() => store.useSavedCourse(3, "도보"));
+
+    act(() => store.ensureSavedKeysLoaded());
+    act(() => store.seedSavedKeys([{ courseId: 3, routeType: "도보" }]));
+    await act(async () => {
+      failOldRequest(new HttpError(401, "expired"));
+      await Promise.resolve();
+    });
+
+    expect(result.current.saved).toBe(true);
+    expect(result.current.loadStatus).toBe("ready");
+    expect(expireAuthSession).not.toHaveBeenCalled();
   });
 
   it("키 목록을 받지 못하면 현재 화면에서 다시 시도할 수 있다", async () => {
