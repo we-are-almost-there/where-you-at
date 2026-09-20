@@ -107,6 +107,9 @@ def create_card(body: RecordCardCreate, current_user: CurrentUser = Depends(get_
         # 연결 실패(503), insert·commit 예외 모두 카드 행이 없으니 옮겨 둔 이미지를 지우고 원래 오류를 그대로 올린다.
         _discard_promoted_image(image_key)
         raise
+    if row == crud.CARD_QUOTA_EXCEEDED:
+        _discard_promoted_image(image_key)
+        raise HTTPException(status_code=409, detail="저장할 수 있는 기록 카드 수를 넘었어요.")
     if row is None:
         # 확인과 저장 사이에 기록이 지워진 드문 경우.
         _discard_promoted_image(image_key)

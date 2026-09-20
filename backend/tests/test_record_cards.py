@@ -144,5 +144,19 @@ class CreateCardTest(unittest.TestCase):
         self.assertEqual(res.status_code, 503)
         delete.assert_called_once_with("record-cards/7/a.png")
 
+    def test_quota_exceeded_is_409_and_deletes_final_image(self):
+        with patch("app.api.routers.record_cards.crud") as crud, patch(
+            "app.api.routers.record_cards.storage.head", return_value=INFO
+        ), patch(
+            "app.api.routers.record_cards.storage.promote", return_value="record-cards/7/a.png"
+        ), patch("app.api.routers.record_cards.storage.delete") as delete:
+            crud.CARD_QUOTA_EXCEEDED = "quota_exceeded"
+            crud.record_exists.return_value = True
+            crud.create_card.return_value = "quota_exceeded"
+            res = self.post()
+        self.assertEqual(res.status_code, 409)
+        delete.assert_called_once_with("record-cards/7/a.png")
+
+
 if __name__ == "__main__":
     unittest.main()

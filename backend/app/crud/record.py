@@ -92,15 +92,25 @@ _CARD_COLUMNS = f"""
 """
 
 
-def create_card(conn, *, user_id: int, record_id: int, image_key: str) -> dict | None:
-    """기록 카드를 저장한다. 내 기록이 아니거나 없으면 None."""
-    # 남의 기록 id를 보내도 where의 user_id 조건에서 0행이 되어 카드가 만들어지지 않는다.
+# 사용자당 저장할 수 있는 기록 카드 수. 5MB 상한과 곱해 사용자별 최대 저장량이 정해진다.
+MAX_CARDS_PER_USER = 100
+
+CARD_QUOTA_EXCEEDED = "quota_exceeded"
+
+
+def create_card(conn, *, user_id: int, record_id: int, image_key: str) -> dict | str | None:
+    """기록 카드를 저장한다.
+
+    내 기록이 아니거나 없으면 None, 사용자당 상한을 넘으면 CARD_QUOTA_EXCEEDED.
+    같은 사용자의 저장을 advisory lock으로 직렬화해, 동시 요청이 함께 상한을 통과하지 못하게 한다.
+    """
     query = f"""
         with inserted as (
             insert into record_card (user_id, record_id, image_key)
             select %(user_id)s, r.id, %(image_key)s
             from run_record r
             where r.id = %(record_id)s and r.user_id = %(user_id)s
+              and (select count(*) from record_card where user_id = %(user_id)s) < %(max_cards)s
             returning *
         )
         select {_CARD_COLUMNS}
@@ -109,9 +119,22 @@ def create_card(conn, *, user_id: int, record_id: int, image_key: str) -> dict |
         join course c on c.id = r.course_id
     """
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(query, {"user_id": user_id, "record_id": record_id, "image_key": image_key})
+        # 트랜잭션이 끝나면 자동으로 풀린다. 락 키는 카드 저장 전용 네임스페이스(첫 인자)와 회원 id.
+        cur.execute("select pg_advisory_xact_lock(%(ns)s, %(user_id)s)", {"ns": 1201, "user_id": user_id})
+        cur.execute(
+            query,
+            {"user_id": user_id, "record_id": record_id, "image_key": image_key, "max_cards": MAX_CARDS_PER_USER},
+        )
         row = cur.fetchone()
+        if row is None:
+            # 0행이 "내 기록 아님"인지 "상한 초과"인지 구분한다.
+            cur.execute(
+                "select count(*) as n from record_card where user_id = %(user_id)s", {"user_id": user_id}
+            )
+            over = cur.fetchone()["n"] >= MAX_CARDS_PER_USER
     conn.commit()
+    if row is None:
+        return CARD_QUOTA_EXCEEDED if over else None
     return row
 
 
