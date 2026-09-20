@@ -12,10 +12,8 @@ import {
   NoticeList,
   PrivacyPage,
   PrivacyPolicy20260917Page,
-  PrivacyPolicy20260920Page,
   TermsPage,
   Terms20260917Page,
-  Terms20260920Page,
 } from "./features/help";
 import { NotFoundPage } from "./features/notFound";
 import { MyPage, RecordsPage, SavedCoursesPage } from "./features/mypage";
@@ -40,8 +38,6 @@ function App() {
       {/* 이전 버전. 방침 14번·약관 부칙에서 링크한다(features/help/legalInfo.ts PREVIOUS_VERSIONS). */}
       <Route path="/terms/2026-09-17" element={<Terms20260917Page />} />
       <Route path="/privacy/2026-09-17" element={<PrivacyPolicy20260917Page />} />
-      <Route path="/terms/2026-09-20" element={<Terms20260920Page />} />
-      <Route path="/privacy/2026-09-20" element={<PrivacyPolicy20260920Page />} />
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/bicycle-facilities" element={<BicycleExplore />} />
       <Route path="/mypage" element={<MyPage />} />

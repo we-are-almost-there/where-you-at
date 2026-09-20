@@ -47,23 +47,6 @@ class RunRecordListResponse(BaseModel):
     records: list[RunRecordOut]
 
 
-class RecordCardUploadRequest(BaseModel):
-    """기록 카드 이미지 업로드 URL 발급 요청."""
-
-    content_type: Literal["image/jpeg", "image/png", "image/webp"]
-
-
-class RecordCardUploadResponse(BaseModel):
-    # 브라우저가 upload_url로 PUT(같은 Content-Type 헤더)한 뒤, upload_key를 카드 저장 요청에 넣는다.
-    upload_key: str
-    upload_url: str
-
-
-class RecordCardCreate(BaseModel):
-    record_id: int
-    upload_key: str = Field(..., max_length=200)
-
-
 class RecordCardOut(BaseModel):
     id: int
     record: RunRecordOut

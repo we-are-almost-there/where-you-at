@@ -37,17 +37,14 @@ vi.mock("./features/map", () => ({
 vi.mock("./features/support", () => ({ Support: () => <main id="main-content" tabIndex={-1}><h1>방문 혜택 화면</h1></main> }));
 vi.mock("./features/race", () => ({ Race: () => <main id="main-content" tabIndex={-1}><h1>대회 행사 화면</h1></main> }));
 vi.mock("./features/bicycle", () => ({ BicycleExplore: () => <main id="main-content" tabIndex={-1}><h1>자전거 대여 화면</h1></main> }));
-vi.mock("./features/help", () => ({
+vi.mock("./features/help", async () => ({
+  ...(await import("./features/help/versions")),
   HelpPage: () => <main id="main-content" tabIndex={-1}><h1>고객지원 화면</h1></main>,
   NoticeList: () => <main id="main-content" tabIndex={-1}><h1>공지사항 화면</h1></main>,
   NoticeDetail: () => <main id="main-content" tabIndex={-1}><h1>공지사항 상세 화면</h1></main>,
   FaqPage: () => <main id="main-content" tabIndex={-1}><h1>자주 묻는 질문 화면</h1></main>,
   TermsPage: () => <main id="main-content" tabIndex={-1}><h1>이용약관 화면</h1></main>,
   PrivacyPage: () => <main id="main-content" tabIndex={-1}><h1>개인정보처리방침 화면</h1></main>,
-  PrivacyPolicy20260917Page: () => <main id="main-content" tabIndex={-1}><h1>이전 개인정보처리방침 화면</h1></main>,
-  Terms20260917Page: () => <main id="main-content" tabIndex={-1}><h1>이전 이용약관 화면</h1></main>,
-  PrivacyPolicy20260920Page: () => <main id="main-content" tabIndex={-1}><h1>이전 개인정보처리방침 화면 (2026-09-20)</h1></main>,
-  Terms20260920Page: () => <main id="main-content" tabIndex={-1}><h1>이전 이용약관 화면 (2026-09-20)</h1></main>,
   ContactPage: () => <main id="main-content" tabIndex={-1}><h1>1:1 문의 화면</h1></main>,
 }));
 // 실제 NotFoundPage는 유지하고, 라우팅과 무관한 헤더의 브라우저 API 사용만 제외한다.
@@ -209,18 +206,20 @@ describe("App Not Found 라우트", () => {
 
   it("이전 방침·약관 주소는 이전 버전 화면으로 연결된다", () => {
     renderAt("/privacy/2026-09-17");
-    expect(screen.getByRole("heading", { name: "이전 개인정보처리방침 화면" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "이전 개인정보처리방침" })).toBeTruthy();
+    expect(screen.getByText("2026년 9월 17일 ~ 2026년 9월 20일")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "현재 개인정보처리방침 보기" }).getAttribute("href")).toBe("/privacy");
     cleanup();
 
     renderAt("/terms/2026-09-17");
-    expect(screen.getByRole("heading", { name: "이전 이용약관 화면" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "이전 이용약관" })).toBeTruthy();
+    expect(screen.getByText("2026년 9월 17일 ~ 2026년 9월 20일")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "현재 이용약관 보기" }).getAttribute("href")).toBe("/terms");
     cleanup();
+  });
 
-    renderAt("/privacy/2026-09-20");
-    expect(screen.getByRole("heading", { name: "이전 개인정보처리방침 화면 (2026-09-20)" })).toBeTruthy();
-    cleanup();
-
-    renderAt("/terms/2026-09-20");
-    expect(screen.getByRole("heading", { name: "이전 이용약관 화면 (2026-09-20)" })).toBeTruthy();
+  it.each(["/privacy/2026-09-20", "/terms/2026-09-20"])("존재하지 않는 보관본 %s는 404 화면을 보여 준다", (path) => {
+    renderAt(path);
+    expect(screen.getByRole("heading", { name: "페이지를 찾을 수 없어요" })).toBeTruthy();
   });
 });

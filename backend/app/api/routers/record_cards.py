@@ -1,13 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from starlette.concurrency import run_in_threadpool
 
 from ...crud import record as crud
 from ...deps import CurrentUser, db_connection, get_current_user, require_record_features
 from ...schemas.record import (
-    RecordCardCreate,
     RecordCardListResponse,
     RecordCardOut,
-    RecordCardUploadRequest,
-    RecordCardUploadResponse,
     RunRecordOut,
 )
 from ...services import storage, record_card_notify
@@ -21,9 +19,8 @@ MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024
 # 한 번에 받을 수 있는 카드 수의 상한. 카드마다 presigned URL을 발급하므로 크게 열지 않는다.
 MAX_CARD_PAGE_SIZE = 50
 
-# 회원별 10분에 업로드 URL 30회, 카드 생성 30회. 정상 사용(완주 뒤 카드 몇 장)의 몇 배로 넉넉히 잡았다.
+# 회원별 10분에 카드 생성 30회. 정상 사용(완주 뒤 카드 몇 장)의 몇 배로 넉넉히 잡았다.
 # 메모리 기반이라 프로세스별로 센다(services/rate_limit.py 참고). 현재 배포는 인스턴스 1개, 워커 1개다.
-upload_url_limiter = SlidingWindowLimiter(max_requests=30, window_seconds=600)
 create_card_limiter = SlidingWindowLimiter(max_requests=30, window_seconds=600)
 
 
@@ -58,7 +55,7 @@ def _to_card_out(row: dict) -> RecordCardOut:
     )
 
 
-def _discard_promoted_image(image_key: str) -> None:
+def _discard_card_image(image_key: str) -> None:
     """DB에 카드를 남기지 못한 최종 이미지를 지운다. 실패해도 원래 오류를 가리지 않게 로그만 남긴다."""
     try:
         storage.delete(image_key)
@@ -84,71 +81,82 @@ def _card_was_committed(*, user_id: int, image_key: str) -> bool | None:
         return None
 
 
-@router.post("/upload-url", response_model=RecordCardUploadResponse)
-def create_upload_url(body: RecordCardUploadRequest, current_user: CurrentUser = Depends(get_current_user)):
-    """카드 이미지를 올릴 임시 URL을 발급한다. 브라우저가 이 URL로 PUT(같은 Content-Type)한다."""
-    _require_storage()
-    if not upload_url_limiter.allow(str(current_user.id)):
-        raise HTTPException(status_code=429, detail="요청이 너무 잦아요. 잠시 후 다시 시도해 주세요.")
-    with db_connection() as conn:
-        if crud.count_cards(conn, user_id=current_user.id) >= crud.MAX_CARDS_PER_USER:
-            raise HTTPException(status_code=409, detail="저장할 수 있는 기록 카드 수를 넘었어요.")
-    try:
-        upload_key = storage.new_key(storage.Folder.UPLOAD, current_user.id, body.content_type)
-        upload_url = storage.presign_upload(upload_key, body.content_type)
-    except storage.StorageError as e:
-        print(f"[ERROR] 기록 카드 업로드 URL 발급 실패: {e}")
-        raise HTTPException(status_code=502, detail="이미지 업로드를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.")
-    return {"upload_key": upload_key, "upload_url": upload_url}
+async def _card_body(request: Request) -> bytes:
+    """Content-Length가 없거나 틀려도 실제 수신 바이트를 제한한다."""
+    length = request.headers.get("content-length")
+    if length is not None:
+        try:
+            size = int(length)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="올바르지 않은 파일 크기입니다.")
+        if size < 0:
+            raise HTTPException(status_code=400, detail="올바르지 않은 파일 크기입니다.")
+        if size > MAX_CARD_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="기록 카드 이미지는 5MB 이하만 올릴 수 있습니다.")
+    data = bytearray()
+    async for chunk in request.stream():
+        if len(data) + len(chunk) > MAX_CARD_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="기록 카드 이미지는 5MB 이하만 올릴 수 있습니다.")
+        data.extend(chunk)
+    if not data:
+        raise HTTPException(status_code=400, detail="빈 파일은 올릴 수 없습니다.")
+    return bytes(data)
 
 
 @router.post("", response_model=RecordCardOut, status_code=201)
-def create_card(body: RecordCardCreate, current_user: CurrentUser = Depends(get_current_user)):
-    """올라간 이미지를 검증하고 최종 폴더로 옮긴 뒤 기록 카드로 저장한다."""
+async def create_card(
+    request: Request,
+    record_id: int = Query(..., gt=0),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """이미지 본문을 받아 검증한 뒤 저장한다. record_id는 쿼리로 전달한다."""
     _require_storage()
     if not create_card_limiter.allow(str(current_user.id)):
-        raise HTTPException(status_code=429, detail="요청이 너무 잦아요. 잠시 후 다시 시도해 주세요.")
-    # 남의 임시 키로 카드를 만들지 못하게 내 폴더의 키만 받는다.
-    if not body.upload_key.startswith(f"{storage.Folder.UPLOAD.value}/{current_user.id}/"):
-        raise HTTPException(status_code=400, detail="올바르지 않은 업로드 키입니다.")
+        raise HTTPException(status_code=429, detail="요청이 너무 많아요. 잠시 후 다시 시도해 주세요.")
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in storage.IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="JPG, PNG, WEBP 이미지만 올릴 수 있습니다.")
+    data = await _card_body(request)
+    return await run_in_threadpool(_store_card, record_id, current_user, data, content_type)
 
-    # 내 기록인지 먼저 확인해, 남의 기록에 붙이려는 요청이 R2 작업까지 가지 않게 한다.
+
+def _store_card(record_id: int, current_user: CurrentUser, data: bytes, content_type: str):
     with db_connection() as conn:
-        if not crud.record_exists(conn, user_id=current_user.id, record_id=body.record_id):
+        if not crud.record_exists(conn, user_id=current_user.id, record_id=record_id):
             raise HTTPException(status_code=404, detail="Record not found")
+        if crud.count_cards(conn, user_id=current_user.id) >= crud.MAX_CARDS_PER_USER:
+            raise HTTPException(status_code=409, detail="저장할 수 있는 기록 카드 수를 넘었어요.")
 
+    detected_type = storage.decoded_card_content_type(data)
+    if detected_type is None or detected_type != content_type:
+        raise HTTPException(status_code=400, detail="이미지 형식이나 해상도가 올바르지 않습니다.")
+    image_key = storage.new_key(storage.Folder.RECORD_CARD, current_user.id, detected_type)
     try:
-        info = storage.head(body.upload_key)
-        if info is None:
-            raise HTTPException(status_code=400, detail="업로드된 이미지를 찾을 수 없습니다.")
-        if info.content_type not in storage.IMAGE_EXTENSIONS or info.size > MAX_CARD_IMAGE_BYTES:
-            storage.delete(body.upload_key)
-            raise HTTPException(status_code=400, detail="이미지 형식이나 크기가 올바르지 않습니다.")
-        image_key = storage.promote(body.upload_key, storage.Folder.RECORD_CARD, info)
-    except storage.UploadChangedError:
-        raise HTTPException(status_code=409, detail="업로드한 이미지가 바뀌었습니다. 다시 시도해 주세요.")
+        storage.put(image_key, data, detected_type)
     except storage.StorageError as e:
-        print(f"[ERROR] 기록 카드 이미지 처리 실패: {e}")
+        # 타임아웃이어도 원격 저장은 완료됐을 수 있다.
+        _discard_card_image(image_key)
+        print(f"[ERROR] 기록 카드 이미지 저장 실패: {e}")
         raise HTTPException(status_code=502, detail="이미지를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.")
 
     try:
         with db_connection() as conn:
             row = crud.create_card(
-                conn, user_id=current_user.id, record_id=body.record_id, image_key=image_key
+                conn, user_id=current_user.id, record_id=record_id, image_key=image_key
             )
     except Exception:
         # 연결 실패나 insert 도중 예외는 대부분 커밋 전이라 이미지를 지워도 안전하다.
         # 다만 commit() 자체가 응답 직전에 끊긴 경우처럼 실제로는 커밋됐을 수 있어,
         # 확실히 "커밋 안 됨"으로 확인될 때만 지운다.
         if _card_was_committed(user_id=current_user.id, image_key=image_key) is False:
-            _discard_promoted_image(image_key)
+            _discard_card_image(image_key)
         raise
     if row == crud.CARD_QUOTA_EXCEEDED:
-        _discard_promoted_image(image_key)
+        _discard_card_image(image_key)
         raise HTTPException(status_code=409, detail="저장할 수 있는 기록 카드 수를 넘었어요.")
     if row is None:
         # 확인과 저장 사이에 기록이 지워진 드문 경우.
-        _discard_promoted_image(image_key)
+        _discard_card_image(image_key)
         raise HTTPException(status_code=404, detail="Record not found")
     return _to_card_out(row)
 
