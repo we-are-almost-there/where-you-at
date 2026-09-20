@@ -14,7 +14,8 @@ import SavedCourseRows from "./components/SavedCourseRows";
 import RecordRows from "./components/RecordRows";
 import StampBoard from "./components/StampBoard";
 import StampMapDialog from "./components/StampMapDialog";
-import { getRecords, getStamps } from "./mypageData";
+import { getStamps } from "./mypageData";
+import { useRunRecords } from "./useRunRecords";
 import { useSavedCourses } from "./useSavedCourses";
 import { PRIMARY_BUTTON } from "./buttonStyles";
 import { profileTags } from "./profileTags";
@@ -72,8 +73,8 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
   }, [hash, key]);
 
   const saved = useSavedCourses();
-  // API가 생기면 useSavedCourses처럼 불러오고 로딩·오류 상태를 둔다. 지금은 빈 값(또는 미리보기 예시)이다.
-  const [records] = useState(getRecords);
+  const recordsState = useRunRecords();
+  const records = recordsState.status === "ready" ? recordsState.records : [];
   const [stamps] = useState(getStamps);
   const [dialog, setDialog] = useState<"edit" | "withdraw" | "stampMap" | "signOut" | null>(null);
   const cancelSignOutRef = useRef<HTMLButtonElement>(null);
@@ -218,11 +219,22 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
           <SectionHeader
             id="mypage-records"
             title="내 기록"
-            count={String(records.length)}
+            count={recordsState.status === "ready" ? String(records.length) : undefined}
             moreTo={records.length > 0 ? "/mypage/records" : undefined}
           />
           <div className="mt-2">
-            {records.length === 0 ? (
+            {recordsState.status === "loading" ? (
+              <p role="status" className="py-12 text-center text-[14px] text-caption">
+                기록을 불러오는 중…
+              </p>
+            ) : recordsState.status === "error" ? (
+              <div className="py-12 text-center">
+                <p className="text-[14px] text-ink">{recordsState.error.title}</p>
+                <button type="button" onClick={recordsState.retry} className="mt-2 cursor-pointer text-[14px] font-bold text-accent hover:opacity-70">
+                  다시 시도
+                </button>
+              </div>
+            ) : records.length === 0 ? (
               <EmptyState
                 icon={<Footprints size={26} strokeWidth={1.75} />}
                 title="아직 완주한 기록이 없어요"

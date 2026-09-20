@@ -23,6 +23,7 @@ import {
   type Template,
   type TextColor,
 } from "../recordCardCanvas";
+import { saveRecordCard } from "../../mypage/recordsApi";
 
 // 한글 웹폰트는 유니코드 범위별로 100개 넘게 쪼개져 있어 정적으로 import하면
 // 그 @font-face 규칙이 전부 메인 CSS에 실린다(34kB → 809kB). 카드를 열 때만 받아온다.
@@ -108,6 +109,7 @@ export function RecordCard({
   record,
   routeType,
   routePoints,
+  recordId = null,
   onClose,
   onProtectionChange,
   navigationBlocked = false,
@@ -118,6 +120,8 @@ export function RecordCard({
   /** 따라간 종목. 페이스를 분/km로 쓸지 km/h로 쓸지 가른다. */
   routeType: RouteType;
   routePoints: LatLng[];
+  /** 서버에 저장된 완주 기록 id. 있으면 저장할 때 카드 이미지도 서버에 올린다. */
+  recordId?: number | null;
   onClose: () => void;
   onProtectionChange?: (protectedEdits: boolean) => void;
   navigationBlocked?: boolean;
@@ -142,6 +146,8 @@ export function RecordCard({
   // 캔버스와 저장용 이미지가 각각 어느 편집본인지 기록해 낡은 이미지 저장을 막는다.
   const renderedVersionRef = useRef<number | null>(null);
   const blobVersionRef = useRef<number | null>(null);
+  // 서버에 올린 blob. 같은 이미지를 저장 버튼을 여러 번 눌러도 카드가 중복으로 쌓이지 않게 한다.
+  const uploadedBlobRef = useRef<Blob | null>(null);
   const blobTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
   const dragTargetRef = useRef<"photo" | "route" | "stats" | null>(null);
@@ -495,6 +501,15 @@ export function RecordCard({
     // 실제 변환된 이미지의 버전으로 저장한다. 최신 편집본이 준비되지 않았으면 전달하지 않는다.
     if (!blob || savingVersion === null || savingVersion !== editVersionRef.current) return;
 
+    // 서버 업로드는 기다리지 않는다. 공유는 사용자 제스처 안에서 바로 불러야 iOS에서 막히지 않는다.
+    if (recordId != null && uploadedBlobRef.current !== blob) {
+      uploadedBlobRef.current = blob;
+      saveRecordCard(recordId, blob).catch((err) => {
+        uploadedBlobRef.current = null; // 실패하면 다음 저장에서 다시 시도한다
+        console.error("[RecordCard] card upload error:", err);
+      });
+    }
+
     const file = new File([blob], "record.png", { type: "image/png" });
 
     if (navigator.canShare?.({ files: [file] })) {
@@ -531,7 +546,7 @@ export function RecordCard({
     } catch {
       setErrorMessage("이미지를 저장하지 못했어요. 화면을 캡처해 주세요.");
     }
-  }, []);
+  }, [recordId]);
 
   // 열리면 포커스를 카드 안으로 들인다. 뒤쪽은 CourseDetail이 inert로 잠그므로 여기서 시작하지 않으면
   // 키보드로는 카드에 닿을 수 없다. 컨테이너를 잡아 aria-label("기록 카드")이 먼저 읽히게 한다.

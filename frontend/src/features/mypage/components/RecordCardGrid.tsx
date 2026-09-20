@@ -1,12 +1,14 @@
 import { useState } from "react";
+import { Download } from "lucide-react";
 import { formatDate } from "../format";
 import { formatDistance, formatDuration, paceStat } from "../../map/trackingRecord";
+import { saveCardImage } from "../saveCardImage";
 import type { SavedRecordCard } from "../types";
 
 /**
  * 저장한 기록 카드 모아보기. 기록 카드 기본 비율(피드 4:5)에 맞춘 격자다.
  * 이미지가 없거나 불러오지 못하면 기록 수치로 그린 기본 카드를 대신 보여 준다.
- * 누르면 크게 보기·다시 저장·공유를 여는 자리다(카드 저장 기능과 함께 붙인다).
+ * 이미지가 있는 카드에만 "이미지 저장" 버튼이 붙는다. 기본 카드는 저장할 이미지가 없다.
  */
 export default function RecordCardGrid({ cards }: { cards: SavedRecordCard[] }) {
   return (
@@ -22,16 +24,46 @@ export default function RecordCardGrid({ cards }: { cards: SavedRecordCard[] }) 
 
 function CardImage({ card }: { card: SavedRecordCard }) {
   const [failed, setFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const label = `${card.record.courseName} 기록 카드, ${formatDate(card.createdAt)}`;
 
   if (card.imageUrl && !failed) {
+    const imageUrl = card.imageUrl;
+    const save = async () => {
+      setSaving(true);
+      setSaveError(false);
+      try {
+        await saveCardImage(imageUrl);
+      } catch {
+        setSaveError(true);
+      } finally {
+        setSaving(false);
+      }
+    };
     return (
-      <img
-        src={card.imageUrl}
-        alt={label}
-        onError={() => setFailed(true)}
-        className="aspect-[4/5] w-full rounded-[10px] object-cover"
-      />
+      <div>
+        <img
+          src={imageUrl}
+          alt={label}
+          onError={() => setFailed(true)}
+          className="aspect-[4/5] w-full rounded-[10px] object-cover"
+        />
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="mt-1.5 flex h-9 w-full cursor-pointer items-center justify-center gap-1 rounded-[10px] bg-lavender text-[13px] font-bold text-accent disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download size={14} strokeWidth={2} aria-hidden />
+          {saving ? "저장 중…" : "이미지 저장"}
+        </button>
+        {saveError && (
+          <p role="alert" className="mt-1 text-center text-[12px] text-caption">
+            저장하지 못했어요. 다시 시도해 주세요.
+          </p>
+        )}
+      </div>
     );
   }
 

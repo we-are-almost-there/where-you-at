@@ -13,6 +13,8 @@ import type { NearbyHandle } from "../nearby";
 import type { NearbySpot } from "../nearby/types";
 import { isSavedRecord, readSession, writeSession } from "./trackingSession";
 import { useCourseTracking } from "./useCourseTracking";
+import { useAuth } from "../auth";
+import { saveMyRecord } from "../mypage/mypageData";
 import { WAKE_LOCK_FAILURE_LINES } from "./useWakeLock";
 import { advanceProgress, distanceToCourse, nearestPointOnCourse, type Direction } from "./courseProgress";
 import { announce, primeSpeech } from "./speech";
@@ -177,6 +179,7 @@ export function CourseDetail() {
 function CourseDetailSession() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const auth = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const courseId = Number(id);
   const sessionKey = `course-tracking:${courseId}`;
@@ -300,6 +303,8 @@ function CourseDetailSession() {
   const [record, setRecord] = useState<{ summary: TrackingRecord; routeType: RouteType; routePoints: LatLng[] } | null>(() =>
     isSavedRecord(restored?.record) ? restored.record : null,
   );
+  // 서버에 저장된 기록 id. 로그인하지 않았거나 서버 연결이 꺼져 있으면 null. 카드 이미지를 이 기록에 붙일 때 쓴다.
+  const [recordId, setRecordId] = useState<number | null>(null);
   const [viewStorageFailed, setViewStorageFailed] = useState(false);
   useEffect(() => {
     const hasPersistableState = sessionActive || record != null;
@@ -512,7 +517,23 @@ function CourseDetailSession() {
   // "너무 멂" 안내로도 추적이 멈추지만, 그건 따라가기를 마친 게 아니다.
   const handleStopTracking = () => {
     const summary = stopTracking();
-    if (summary && summary.distanceKm >= MIN_RECORD_KM) setRecord({ summary, routeType, routePoints: waypoints });
+    if (!summary || summary.distanceKm < MIN_RECORD_KM) return;
+    setRecord({ summary, routeType, routePoints: waypoints });
+    setRecordId(null);
+    if (auth.status !== "signedIn") return;
+    // 저장이 실패해도 기록 카드는 그대로 쓸 수 있어야 하므로 화면은 막지 않고 로그만 남긴다.
+    saveMyRecord({
+      courseId,
+      routeType,
+      distanceKm: summary.distanceKm,
+      durationMs: summary.durationMs,
+      paceSecPerKm: summary.paceSecPerKm,
+      finishedAt: new Date().toISOString(),
+    })
+      .then((saved) => {
+        if (saved) setRecordId(saved.id);
+      })
+      .catch((err) => console.error("[CourseDetail] record save error:", err));
   };
 
   // 안내를 닫을 때 추적을 정리한다(clearWatch는 부수효과라 렌더 중엔 못 부른다).
@@ -1110,6 +1131,7 @@ function CourseDetailSession() {
           record={record.summary}
           routeType={record.routeType}
           routePoints={record.routePoints}
+          recordId={recordId}
           onClose={() => setRecord(null)}
         />
       )}
