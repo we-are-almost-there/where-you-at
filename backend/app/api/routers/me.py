@@ -39,6 +39,14 @@ def _storage_unavailable() -> HTTPException:
     return HTTPException(status_code=503, detail="지금은 사진을 올릴 수 없습니다. 잠시 후 다시 시도해 주세요.")
 
 
+def _discard_avatar(avatar_key: str, user_id: int, *, reason: str) -> None:
+    """완료 여부가 불확실하거나 DB에 반영되지 않은 새 객체를 최선 노력으로 지운다."""
+    try:
+        storage.delete(avatar_key)
+    except storage.StorageError as exc:
+        print(f"[WARN] {reason}: user_id={user_id} key={avatar_key} {type(exc).__name__}")
+
+
 async def _avatar_body(request: Request) -> bytes:
     """요청 본문을 스트리밍으로 읽되 제한을 넘는 순간 중단한다."""
     content_length = request.headers.get("content-length")
@@ -94,6 +102,8 @@ def _store_avatar(user_id: int, data: bytes, declared_type: str) -> UserOut:
         # 아래 짧은 트랜잭션에서 회원 부재를 확인하고 방금 올린 객체를 되돌릴 수 있다.
         storage.put(avatar_key, data, detected_type)
     except storage.StorageError:
+        # 응답 타임아웃처럼 호출이 실패해도 원격 PUT은 완료됐을 수 있다.
+        _discard_avatar(avatar_key, user_id, reason="업로드 실패 후 프로필 사진 삭제 실패")
         raise _storage_unavailable()
 
     try:
@@ -109,10 +119,7 @@ def _store_avatar(user_id: int, data: bytes, declared_type: str) -> UserOut:
             conn.commit()
     except Exception:
         # 탈퇴가 먼저 끝났거나 DB 반영에 실패하면 새 최종 파일이 고아로 남지 않게 되돌린다.
-        try:
-            storage.delete(avatar_key)
-        except storage.StorageError as exc:
-            print(f"[WARN] 반영 실패한 프로필 사진 삭제 실패: user_id={user_id} {type(exc).__name__}")
+        _discard_avatar(avatar_key, user_id, reason="반영 실패한 프로필 사진 삭제 실패")
         raise
     if previous_key and previous_key != avatar_key:
         try:

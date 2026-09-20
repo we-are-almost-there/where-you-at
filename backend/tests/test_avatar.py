@@ -101,6 +101,37 @@ class AvatarApiTest(unittest.TestCase):
         mock_delete.assert_called_once_with(AVATAR_KEY)
         mock_set_avatar.assert_not_called()
 
+    def test_put_failure_best_effort_deletes_possibly_created_object(self):
+        with (
+            patch("app.api.routers.me.db_connection") as mock_db,
+            patch("app.services.storage.new_key", return_value=AVATAR_KEY),
+            patch("app.services.storage.put", side_effect=me.storage.StorageError("response timeout")),
+            patch("app.services.storage.delete") as mock_delete,
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                me._store_avatar(7, WEBP, "image/webp")
+
+        self.assertEqual(ctx.exception.status_code, 503)
+        mock_delete.assert_called_once_with(AVATAR_KEY)
+        mock_db.assert_not_called()
+
+    def test_put_failure_cleanup_error_does_not_mask_original_503(self):
+        with (
+            patch("app.api.routers.me.db_connection") as mock_db,
+            patch("app.services.storage.new_key", return_value=AVATAR_KEY),
+            patch("app.services.storage.put", side_effect=me.storage.StorageError("response timeout")),
+            patch("app.services.storage.delete", side_effect=me.storage.StorageError("delete failed")),
+            patch("builtins.print") as mock_print,
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                me._store_avatar(7, WEBP, "image/webp")
+
+        self.assertEqual(ctx.exception.status_code, 503)
+        log = mock_print.call_args.args[0]
+        self.assertIn("user_id=7", log)
+        self.assertIn(f"key={AVATAR_KEY}", log)
+        mock_db.assert_not_called()
+
     def test_opens_database_only_after_r2_put_finishes(self):
         conn = MagicMock()
         db_context = MagicMock()
