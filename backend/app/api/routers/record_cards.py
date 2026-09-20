@@ -56,11 +56,12 @@ def _to_card_out(row: dict) -> RecordCardOut:
 
 
 def _discard_card_image(image_key: str) -> None:
-    """DB에 카드를 남기지 못한 최종 이미지를 지운다. 실패해도 원래 오류를 가리지 않게 로그만 남긴다."""
+    """DB에 카드를 남기지 못한 최종 이미지를 지운다. 실패하면 로그와 운영 알림을 남긴다."""
     try:
         storage.delete(image_key)
     except storage.StorageError as e:
         print(f"[ERROR] 고아 기록 카드 이미지 삭제 실패(직접 삭제 필요): {image_key} {e}")
+        record_card_notify.notify_cleanup_failure()
 
 
 def _card_was_committed(*, user_id: int, image_key: str) -> bool | None:

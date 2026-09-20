@@ -6,6 +6,7 @@ crud와 storage를 mock으로 바꾸고 인증은 의존성 override로 건너�
     python -m unittest tests.test_record_cards
 """
 import unittest
+import json
 from io import BytesIO
 from PIL import Image
 from contextlib import contextmanager
@@ -83,6 +84,67 @@ class CreateCardTest(unittest.TestCase):
             res = self.post()
         self.assertEqual(res.status_code, 404)
         put.assert_not_called()
+
+    def test_cleanup_failure_notifies_and_preserves_original_error(self):
+        for cause, status in (("upload", 502), ("db", None), ("quota", 409), ("deleted", 404)):
+            for slack_fails in (False, True):
+                with self.subTest(cause=cause, slack_fails=slack_fails), patch(
+                    "app.api.routers.record_cards.crud"
+                ) as crud, patch("app.api.routers.record_cards.storage.put") as put, patch(
+                    "app.api.routers.record_cards.storage.delete", side_effect=storage.StorageError("delete failed")
+                ) as delete, patch(
+                    "app.services.record_card_notify.settings.inquiry_webhook_url",
+                    "https://hooks.slack.com/services/T000/B000/test",
+                ), patch("app.services.slack_notify.urlopen") as urlopen:
+                    crud.record_exists.return_value = True
+                    crud.count_cards.return_value = 0
+                    crud.MAX_CARDS_PER_USER = 100
+                    crud.CARD_QUOTA_EXCEEDED = "quota_exceeded"
+                    crud.card_exists_with_image.return_value = False
+                    original_error = RuntimeError("original DB error")
+                    if cause == "upload":
+                        put.side_effect = storage.StorageError("upload failed")
+                    elif cause == "db":
+                        crud.create_card.side_effect = original_error
+                    else:
+                        crud.create_card.return_value = "quota_exceeded" if cause == "quota" else None
+                    if slack_fails:
+                        urlopen.side_effect = TimeoutError("Slack unavailable")
+                    else:
+                        urlopen.return_value.__enter__.return_value.read.return_value = b"ok"
+
+                    if status is None:
+                        with self.assertRaises(RuntimeError) as raised:
+                            self.post()
+                        self.assertIs(raised.exception, original_error)
+                    else:
+                        self.assertEqual(self.post().status_code, status)
+
+                    delete.assert_called_once_with("record-cards/7/a.png")
+                    urlopen.assert_called_once()
+                    payload = json.loads(urlopen.call_args.args[0].data)
+                    message = "[어디까지왔니] 고아 기록 카드 이미지 삭제 실패, Render 로그 확인 필요"
+                    self.assertEqual(payload, {
+                        "text": message,
+                        "blocks": [{"type": "header", "text": {"type": "plain_text", "text": message}}],
+                    })
+
+    def test_cleanup_success_does_not_notify(self):
+        with patch("app.api.routers.record_cards.storage.delete") as delete, patch(
+            "app.api.routers.record_cards.record_card_notify.notify_cleanup_failure"
+        ) as notify:
+            record_cards_router._discard_card_image("record-cards/7/a.png")
+        delete.assert_called_once_with("record-cards/7/a.png")
+        notify.assert_not_called()
+
+    def test_cleanup_failure_without_webhook_does_not_send(self):
+        with patch(
+            "app.api.routers.record_cards.storage.delete", side_effect=storage.StorageError("delete failed")
+        ), patch("app.services.record_card_notify.settings.inquiry_webhook_url", ""), patch(
+            "app.services.slack_notify.urlopen"
+        ) as urlopen:
+            record_cards_router._discard_card_image("record-cards/7/a.png")
+        urlopen.assert_not_called()
 
     def test_invalid_images_never_reach_r2_or_card_insert(self):
         cases = [
