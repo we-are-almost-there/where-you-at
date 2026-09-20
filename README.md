@@ -99,6 +99,10 @@ npm run dev --prefix frontend
 `app_user.avatar_key` 칸을 추가합니다. 이 칸에는 만료되는 보기 URL이 아니라 비공개 R2의
 `avatars/` 객체 키만 저장됩니다.
 
+또한 프로필 사진 수집·R2 보관 내용을 반영한 개인정보처리방침과 이용약관을 기능보다 먼저 공개하고,
+`backend` 폴더에서 `python -m scripts.seed_help`를 실행해 변경 안내 공지를 갱신합니다. 운영 R2 버킷 위치는
+아시아·태평양(APAC) 기준으로 방침에 적혀 있으므로 버킷 위치나 관할을 바꾸면 국외 이전 안내도 함께 고칩니다.
+
 외부 API에서 데이터를 받아오는 스크립트는 `backend/scripts/`에 있습니다.
 `backend` 폴더에서 모듈로 실행해야 합니다. 파일 경로로 직접 실행하면
 `backend/scripts`가 import 경로에 잡혀 `No module named 'app'` 오류가 납니다.
