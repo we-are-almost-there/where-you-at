@@ -4,7 +4,7 @@ from starlette.concurrency import run_in_threadpool
 from ...crud import user as user_crud
 from ...deps import CurrentUser, db_connection, get_current_user, unauthorized_error
 from ...schemas.user import UserOut, UserUpdate
-from ...services import kakao_oauth, profile, storage
+from ...services import account_deletion, kakao_oauth, profile, slack_notify, storage
 from ...services.rate_limit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -139,13 +139,14 @@ def delete_avatar(current_user: CurrentUser = Depends(get_current_user)):
 
 @router.delete("", status_code=204)
 def delete_me(current_user: CurrentUser = Depends(get_current_user)):
-    """회원 탈퇴. 카카오 연결을 해제한 뒤 회원 행을 지운다. 회원에 딸린 데이터는 on delete cascade로 함께 지워진다.
+    """회원 탈퇴. 카카오 연결 해제 뒤 R2 객체를 지우고, 마지막에 회원 행을 지운다.
 
     - 카카오 연결 해제가 실패하면 행을 남기고 502를 돌려준다. 다시 요청하면 처음부터 진행된다.
     - 다만 휴면이거나 없는 계정(-103)은 다시 요청해도 해제되지 않는다. 이때는 경고만 남기고 행을 지운다.
       개인정보 보유 기간을 "탈퇴 시까지"로 안내하므로, 해제할 수 없는 카카오 연결 때문에 우리 데이터 삭제까지
       막지는 않는다.
     - 연결 해제 뒤 행 삭제가 실패해도, 다시 요청하면 카카오가 "이미 해제됨"(-101)을 돌려줘 삭제까지 진행된다.
+    - R2 정리가 실패하면 회원 행과 세션을 남기고 502를 돌려줘 같은 user_id로 다시 정리할 수 있게 한다.
     - 카카오 응답을 기다리는 동안 DB 연결을 붙잡지 않도록, 조회와 삭제 때만 따로 연결한다.
     - 회원 행이 삭제되면 로그인 세션도 함께 삭제되어, 이미 지운 회원의 토큰은 모든 인증 API에서 401이다.
     """
@@ -161,12 +162,17 @@ def delete_me(current_user: CurrentUser = Depends(get_current_user)):
         print(f"[ERROR] 카카오 연결 해제 실패: {e}")
         raise HTTPException(status_code=502, detail="탈퇴를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")
 
-    with db_connection() as conn:
-        user_crud.delete_user(conn, current_user.id)
-
-    if storage.is_configured():
-        try:
-            storage.delete_user_objects(current_user.id)
-        except storage.StorageError as exc:
-            # 회원 행과 세션 삭제는 끝났다. 탈퇴 자체를 실패로 되돌릴 수 없으므로 운영 로그로 후속 정리한다.
-            print(f"[ERROR] 탈퇴 회원 R2 파일 삭제 실패(직접 삭제 필요): user_id={current_user.id} {type(exc).__name__}")
+    try:
+        account_deletion.delete_account(current_user.id)
+    except account_deletion.ObjectCleanupError as exc:
+        prefixes = ", ".join(storage.user_prefixes(current_user.id))
+        print(
+            f"[ERROR] 수동 탈퇴 R2 정리 실패(회원 유지): user_id={current_user.id} "
+            f"prefixes={prefixes} {type(exc.__cause__ or exc).__name__}"
+        )
+        slack_notify.notify_account_deletion_failure(
+            current_user.id,
+            source="수동 탈퇴",
+            stage="R2 객체 정리",
+        )
+        raise HTTPException(status_code=502, detail="탈퇴 파일 정리를 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.")

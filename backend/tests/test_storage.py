@@ -259,6 +259,12 @@ class DeleteTest(StorageTestCase):
         with self.assertRaises(storage.StorageError):
             storage.delete_user_objects(7)
 
+    def test_user_prefixes_include_every_folder(self):
+        self.assertEqual(
+            storage.user_prefixes(7),
+            ("uploads/7/", "avatars/7/", "record-cards/7/"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

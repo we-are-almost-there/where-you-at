@@ -53,11 +53,14 @@ describe("PrivacyPolicyContent", () => {
 
     const outsourcing = screen.getByRole("region", { name: /개인정보 처리업무의 위탁/ });
     expect(outsourcing.textContent).toContain("Slack Technologies Limited");
-    expect(outsourcing.textContent).toContain("새 1:1 문의 접수 알림 전송 및 보관");
+    expect(outsourcing.textContent).toContain("새 1:1 문의 접수 및 회원 탈퇴 처리 실패 알림 전송·보관");
 
     const overseas = screen.getByRole("region", { name: /개인정보의 국외 수집 및 이전/ });
+    expect(overseas.textContent).toContain("탈퇴 처리에 실패한 회원의 내부 회원 번호, 실패 단계");
+    expect(overseas.textContent).toContain("회원 탈퇴 처리에 실패할 때 Incoming Webhook을 통해 전송");
     expect(overseas.textContent).toContain("아일랜드 (처리 주체), 미국 (기본 데이터 저장 위치)");
-    expect(overseas.textContent).toContain("이메일, 문의 유형, 문의 내용, 알림 전송 일시");
+    expect(overseas.textContent).toContain("1:1 문의의 이메일·문의 유형·문의 내용");
+    expect(overseas.textContent).toContain("알림 전송 일시");
     expect(overseas.textContent).toContain("전송 후 90일");
   });
 
@@ -132,6 +135,6 @@ describe("PrivacyPolicyContent", () => {
     const link = changes.querySelector("a");
     expect(link?.getAttribute("href")).toBe("/privacy/2026-09-17");
     expect(link?.getAttribute("target")).toBe("_blank");
-    expect(link?.textContent).toContain("2026년 9월 17일 ~ 2026년 9월 19일 적용");
+    expect(link?.textContent).toContain("2026년 9월 17일 ~ 2026년 9월 20일 적용");
   });
 });

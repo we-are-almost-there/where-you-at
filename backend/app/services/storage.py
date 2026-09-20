@@ -213,8 +213,7 @@ def delete_user_objects(user_id: int) -> None:
     """회원 탈퇴 때 모든 폴더에서 그 사용자의 파일을 지운다."""
     try:
         paginator = _client().get_paginator("list_objects_v2")
-        for folder in Folder:
-            prefix = f"{folder.value}/{user_id}/"
+        for prefix in user_prefixes(user_id):
             for page in paginator.paginate(Bucket=settings.r2_bucket, Prefix=prefix):
                 objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
                 if not objects:
@@ -226,3 +225,8 @@ def delete_user_objects(user_id: int) -> None:
                     raise StorageError(f"일부 파일 삭제 실패 ({len(res['Errors'])}건)")
     except (BotoCoreError, ClientError) as exc:
         raise StorageError("사용자 파일 삭제 실패") from exc
+
+
+def user_prefixes(user_id: int) -> tuple[str, ...]:
+    """회원별 객체를 찾거나 수동 정리할 때 사용하는 모든 prefix."""
+    return tuple(f"{folder.value}/{user_id}/" for folder in Folder)

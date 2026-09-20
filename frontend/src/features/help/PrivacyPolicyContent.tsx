@@ -285,7 +285,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             ["Vercel Inc.", "웹사이트 호스팅 (웹사이트 전송 과정에서 서버 접속 기록 처리)"],
             ["Render Services, Inc.", "API 서버 운영 (회원 정보, 1:1 문의 정보, 서버 접속 기록 처리)"],
             ["Cloudflare, Inc.", "회원이 올린 프로필 사진을 비공개 객체 저장소(R2)에 저장·전송하고 삭제"],
-            ["Slack Technologies Limited", "새 1:1 문의 접수 알림 전송 및 보관"],
+            ["Slack Technologies Limited", "새 1:1 문의 접수 및 회원 탈퇴 처리 실패 알림 전송·보관"],
           ]}
         />
         <P>위탁하는 업무의 내용이나 수탁자가 바뀌면 지체 없이 이 개인정보처리방침을 통해 알리겠습니다.</P>
@@ -345,9 +345,9 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             [
               "Slack Technologies Limited (privacy@slack.com / dpo@slack.com)",
               "아일랜드 (처리 주체), 미국 (기본 데이터 저장 위치)",
-              "이메일, 문의 유형, 문의 내용, 알림 전송 일시",
-              "새 1:1 문의가 접수될 때 Incoming Webhook을 통해 전송",
-              "새 문의 접수 알림",
+              "1:1 문의의 이메일·문의 유형·문의 내용, 탈퇴 처리에 실패한 회원의 내부 회원 번호, 실패 단계, 알림 전송 일시",
+              "새 1:1 문의가 접수되거나 회원 탈퇴 처리에 실패할 때 Incoming Webhook을 통해 전송",
+              "새 문의 접수 및 회원 탈퇴 처리 실패 알림",
               "전송 후 90일 (Slack 워크스페이스 보존 설정)",
             ],
           ]}
