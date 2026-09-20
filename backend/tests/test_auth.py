@@ -10,10 +10,13 @@
 실행 (backend/ 에서):
     python -m unittest tests.test_auth
 """
+import asyncio
 import io
+import threading
 import unittest
 from contextlib import redirect_stdout
-from unittest.mock import MagicMock, patch
+from concurrent.futures import ThreadPoolExecutor, wait
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import httpx
@@ -56,12 +59,18 @@ def _kakao_error(status_code, error, error_code):
 
 
 @patch("app.crud.user.upsert_kakao_user", return_value=SAVED_USER)
-@patch("app.services.kakao_oauth.httpx.get")
-@patch("app.services.kakao_oauth.httpx.post")
+@patch("app.services.kakao_oauth.httpx.AsyncClient.get", new_callable=AsyncMock)
+@patch("app.services.kakao_oauth.httpx.AsyncClient.post", new_callable=AsyncMock)
 class TestKakaoLogin(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.client = TestClient(app)
+        # lifespan에서 로그인용 AsyncClient와 동시 실행 제한기를 만든다.
+        cls.client_context = TestClient(app)
+        cls.client = cls.client_context.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client_context.__exit__(None, None, None)
 
     def setUp(self):
         # 제한 기록은 모듈 전역이라 테스트끼리 섞이지 않게 매번 비운다.
@@ -192,6 +201,19 @@ class TestKakaoLogin(unittest.TestCase):
                 self.assertEqual(self._login().status_code, 502)
         self.connect.assert_not_called()
 
+    def test_error_log_omits_authorization_code_and_kakao_token(self, mock_post, mock_get, mock_upsert):
+        mock_post.return_value = _response(200, {"access_token": "do-not-log-token"})
+        mock_get.side_effect = httpx.ReadTimeout("request failed with do-not-log-token")
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            res = self._login(code="do-not-log-code")
+
+        self.assertEqual(res.status_code, 502)
+        self.assertNotIn("do-not-log-code", output.getvalue())
+        self.assertNotIn("do-not-log-token", output.getvalue())
+        self.connect.assert_not_called()
+
     def test_missing_settings_return_503_without_calling_kakao(self, mock_post, mock_get, mock_upsert):
         cases = {
             "client_id 없음": {"kakao_login_client_id": ""},
@@ -234,12 +256,16 @@ class TestKakaoLogin(unittest.TestCase):
             for _ in range(auth_router.login_limiter.max_requests):
                 self.client.post("/api/auth/kakao", json={"code": "auth-code"}, headers=headers)
 
-            blocked = self.client.post("/api/auth/kakao", json={"code": "auth-code"}, headers=headers)
+            blocked = [
+                self.client.post("/api/auth/kakao", json={"code": "auth-code"}, headers=headers)
+                for _ in range(auth_router.kakao_oauth.LOGIN_CONCURRENCY_LIMIT)
+            ]
             other = self.client.post(
                 "/api/auth/kakao", json={"code": "auth-code"}, headers={"CF-Connecting-IP": "198.51.100.7"}
             )
 
-        self.assertEqual(blocked.status_code, 429)
+        # 429 경로에서 슬롯이 누수되면 다른 IP의 요청이 503으로 막힌다.
+        self.assertEqual({response.status_code for response in blocked}, {429})
         self.assertEqual(other.status_code, 200)
 
     def test_unverified_client_is_not_limited(self, mock_post, mock_get, mock_upsert):
@@ -267,6 +293,107 @@ class TestKakaoLogin(unittest.TestCase):
                 self.client.post("/api/auth/kakao", json={"code": "auth-code"})
 
         self.assertEqual(output.getvalue().count("로그인 요청 제한을 건너뜁니다"), 1)
+
+    def test_concurrent_logins_are_limited_without_blocking_general_api(self, mock_post, mock_get, mock_upsert):
+        limit = auth_router.kakao_oauth.LOGIN_CONCURRENCY_LIMIT
+        overflow_count = auth_router.login_limiter.max_requests - limit
+        release = threading.Event()
+        all_slots_used = threading.Event()
+        lock = threading.Lock()
+        active = 0
+        peak = 0
+
+        async def delayed_token_exchange(*args, **kwargs):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+                if active == limit:
+                    all_slots_used.set()
+            await asyncio.to_thread(release.wait)
+            with lock:
+                active -= 1
+            return _token_ok()
+
+        mock_post.side_effect = delayed_token_exchange
+        mock_get.return_value = _response(200, KAKAO_USER)
+
+        with ThreadPoolExecutor(max_workers=auth_router.login_limiter.max_requests) as executor:
+            active_requests = [executor.submit(self._login, f"active-{index}") for index in range(limit)]
+            try:
+                self.assertTrue(all_slots_used.wait(timeout=3))
+
+                rejected_requests = [
+                    executor.submit(self._login, f"rejected-{index}") for index in range(overflow_count)
+                ]
+                completed, pending = wait(rejected_requests, timeout=3)
+                self.assertFalse(pending)
+                rejected = [future.result() for future in completed]
+                self.assertEqual(len(rejected), overflow_count)
+                self.assertEqual({response.status_code for response in rejected}, {503})
+                self.assertEqual({response.headers["Retry-After"] for response in rejected}, {"3"})
+
+                # 카카오 응답을 기다리는 동안에도 동기 일반 API가 공용 스레드에서 실행된다.
+                with patch("app.main.get_db_connection", return_value=MagicMock()):
+                    self.assertEqual(self.client.get("/health/ready").status_code, 200)
+            finally:
+                # 앞선 검증이 실패해도 작업 스레드가 테스트 종료를 영원히 기다리지 않게 한다.
+                release.set()
+            responses = [future.result(timeout=3) for future in active_requests]
+
+        self.assertEqual({response.status_code for response in responses}, {200})
+        # 슬롯을 얻은 요청만 횟수 제한에 기록됐으므로, 503을 받은 요청 뒤에도 같은 IP로 재시도할 수 있다.
+        self.assertEqual(self._login("retry-after-503").status_code, 200)
+        self.assertEqual(peak, limit)
+        self.assertEqual(mock_post.await_count, limit + 1)
+        self.assertEqual(self.connect.call_count, limit + 1)
+
+    def test_database_work_is_limited_without_blocking_readiness(self, mock_post, mock_get, mock_upsert):
+        limit = auth_router.kakao_oauth.LOGIN_CONCURRENCY_LIMIT
+        all_db_started = threading.Event()
+        release_db = threading.Event()
+        lock = threading.Lock()
+        active = 0
+        peak = 0
+
+        def blocking_upsert(*args, **kwargs):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+                if active == limit:
+                    all_db_started.set()
+            release_db.wait()
+            with lock:
+                active -= 1
+            return SAVED_USER
+
+        mock_post.return_value = _token_ok()
+        mock_get.return_value = _response(200, KAKAO_USER)
+        mock_upsert.side_effect = blocking_upsert
+
+        with ThreadPoolExecutor(max_workers=limit + 1) as executor:
+            logins = [executor.submit(self._login, f"db-{index}") for index in range(limit)]
+            try:
+                self.assertTrue(all_db_started.wait(timeout=3))
+
+                rejected = executor.submit(self._login, "db-overflow").result(timeout=3)
+                self.assertEqual(rejected.status_code, 503)
+                self.assertEqual(rejected.headers["Retry-After"], "3")
+                self.assertEqual(mock_post.await_count, limit)
+
+                # 로그인 DB 작업은 동시성 한도로 제한되므로 공용 스레드풀에 readiness 실행 여유가 남는다.
+                with patch("app.main.get_db_connection", return_value=MagicMock()):
+                    self.assertEqual(self.client.get("/health/ready").status_code, 200)
+            finally:
+                # 회귀로 DB 작업이 제한되지 않아도 대기 중인 요청을 풀어 테스트를 끝낸다.
+                release_db.set()
+            responses = [future.result(timeout=3) for future in logins]
+
+        self.assertEqual({response.status_code for response in responses}, {200})
+        self.assertEqual(peak, limit)
+        # DB 작업이 끝나면 슬롯이 복구되어 다음 로그인도 정상 처리된다.
+        self.assertEqual(self._login("after-db").status_code, 200)
 
 
 if __name__ == "__main__":

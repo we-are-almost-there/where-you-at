@@ -62,5 +62,41 @@ class TestUpdateProfile(unittest.TestCase):
         self.assertIsNone(user_crud.update_profile(conn, 7, {"bio": None}))
 
 
+class TestSetAvatar(unittest.TestCase):
+    def test_returns_updated_user_and_previous_key(self):
+        conn, cursor = _conn(None)
+        cursor.fetchone.side_effect = [
+            {"avatar_key": "avatars/7/old.webp"},
+            {"id": 7, "nickname": "길손", "bio": None, "avatar_key": "avatars/7/new.webp"},
+        ]
+
+        user, previous = user_crud.set_avatar(conn, 7, "avatars/7/new.webp")
+
+        self.assertEqual(previous, "avatars/7/old.webp")
+        self.assertEqual(user["avatar_key"], "avatars/7/new.webp")
+        self.assertIn("for update", cursor.execute.call_args_list[0].args[0])
+        self.assertEqual(cursor.execute.call_args_list[1].args[1], {"id": 7, "avatar_key": "avatars/7/new.webp"})
+        conn.commit.assert_called_once()
+
+    def test_missing_user_rolls_back(self):
+        conn, cursor = _conn(None)
+
+        self.assertEqual(user_crud.set_avatar(conn, 7, "avatars/7/new.webp"), (None, None))
+        self.assertEqual(cursor.execute.call_count, 1)
+        conn.rollback.assert_called_once()
+
+
+class TestUserLock(unittest.TestCase):
+    def test_locks_user_row_for_upload_and_account_deletion(self):
+        conn, cursor = _conn({"id": 7, "avatar_key": None})
+
+        row = user_crud.lock_user_for_update(conn, 7)
+
+        query, params = cursor.execute.call_args.args
+        self.assertIn("for update", query.lower())
+        self.assertEqual(params, {"id": 7})
+        self.assertEqual(row["id"], 7)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,3 +1,6 @@
+from contextlib import asynccontextmanager
+
+from anyio import CapacityLimiter
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -6,8 +9,19 @@ from fastapi.exceptions import RequestValidationError
 
 from .api.router import api_router
 from .db.supabase import get_db_connection
+from .services import kakao_oauth
 
-app = FastAPI(title="어디까지왔니 API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """카카오 로그인 연결과 동시 실행 제한을 애플리케이션 수명에 맞춰 관리한다."""
+    async with kakao_oauth.create_login_client() as client:
+        app.state.kakao_login_http = client
+        app.state.kakao_login_limiter = CapacityLimiter(kakao_oauth.LOGIN_CONCURRENCY_LIMIT)
+        yield
+
+
+app = FastAPI(title="어디까지왔니 API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

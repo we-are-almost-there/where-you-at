@@ -6,10 +6,12 @@
     python -m unittest tests.test_storage
 """
 import unittest
+from io import BytesIO
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from botocore.stub import Stubber
+from PIL import Image
 
 from app.core.config import settings
 from app.services import storage
@@ -22,6 +24,12 @@ R2_SETTINGS = {
     "r2_secret_access_key": "test-secret-key",
     "r2_bucket": "test-uploads",
 }
+
+
+def _image_bytes(format_name: str, size: tuple[int, int] = (512, 512)) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", size, "purple").save(output, format=format_name)
+    return output.getvalue()
 
 
 class StorageTestCase(unittest.TestCase):
@@ -61,6 +69,28 @@ class NewKeyTest(unittest.TestCase):
         for content_type in ("image/svg+xml", "image/gif", "text/html", ""):
             with self.assertRaises(ValueError, msg=content_type):
                 storage.new_key(Folder.AVATAR, 7, content_type)
+
+
+class DecodedImageContentTypeTest(unittest.TestCase):
+    def test_decodes_supported_images(self):
+        self.assertEqual(storage.decoded_image_content_type(_image_bytes("JPEG")), "image/jpeg")
+        self.assertEqual(storage.decoded_image_content_type(_image_bytes("PNG")), "image/png")
+        self.assertEqual(storage.decoded_image_content_type(_image_bytes("WEBP")), "image/webp")
+
+    def test_rejects_arbitrary_signature_only_and_truncated_files(self):
+        files = (
+            b"",
+            b"<script>bad</script>",
+            b"\xff\xd8\xffnot a jpeg",
+            b"\x89PNG\r\n\x1a\nnot a png",
+            b"RIFF\x10\x00\x00\x00WEBPVP8 not a webp",
+            _image_bytes("PNG")[:20],
+        )
+        for data in files:
+            self.assertIsNone(storage.decoded_image_content_type(data), data[:20])
+
+    def test_rejects_dimensions_other_than_crop_output_before_decoding_pixels(self):
+        self.assertIsNone(storage.decoded_image_content_type(_image_bytes("PNG", (513, 512))))
 
 
 class CheckR2Test(unittest.TestCase):
@@ -122,6 +152,28 @@ class HeadTest(StorageTestCase):
         self.stubber.add_client_error("head_object", service_error_code="403", http_status_code=403)
         with self.assertRaises(storage.StorageError):
             storage.head("avatars/7/a.webp")
+
+
+class PutTest(StorageTestCase):
+    def test_puts_validated_bytes_with_content_type(self):
+        self.stubber.add_response(
+            "put_object",
+            {},
+            {
+                "Bucket": "test-uploads",
+                "Key": "avatars/7/a.webp",
+                "Body": b"image",
+                "ContentType": "image/webp",
+            },
+        )
+
+        storage.put("avatars/7/a.webp", b"image", "image/webp")
+        self.stubber.assert_no_pending_responses()
+
+    def test_put_error_raises_storage_error(self):
+        self.stubber.add_client_error("put_object", service_error_code="AccessDenied", http_status_code=403)
+        with self.assertRaises(storage.StorageError):
+            storage.put("avatars/7/a.webp", b"image", "image/webp")
 
 
 class PromoteTest(StorageTestCase):
@@ -209,6 +261,12 @@ class DeleteTest(StorageTestCase):
         )
         with self.assertRaises(storage.StorageError):
             storage.delete_user_objects(7)
+
+    def test_user_prefixes_include_every_folder(self):
+        self.assertEqual(
+            storage.user_prefixes(7),
+            ("uploads/7/", "avatars/7/", "record-cards/7/"),
+        )
 
 
 if __name__ == "__main__":

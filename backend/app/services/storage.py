@@ -5,12 +5,12 @@ Cloudflare R2 이미지 저장소 (S3 호환 API)
 링크만 알면 누구나 볼 수 있는 공개 버킷은 쓰지 않는다. 둘 다 비공개이고 같은 서버가 다루므로
 버킷을 나눠도 얻는 것이 없다.
 
-파일은 서버를 거치지 않는다.
-  올리기: 서버가 임시 키(uploads/)의 사전 서명 PUT URL을 발급 → 브라우저가 R2에 바로 올림
-          → 서버가 head()로 크기·형식을 확인 → promote()로 검증한 파일만 최종 키에 복사
+프로필 사진은 서버를 거쳐 올린다.
+  올리기: 서버가 요청 본문 크기와 실제 파일 시그니처를 확인 → avatars/에 저장
   보기:   서버가 짧게 유효한 사전 서명 GET URL을 응답에 넣어 줌
-R2는 사전 서명 POST(업로드 크기 제한 정책)를 지원하지 않아, 크기는 올린 뒤 head()로 확인하고
-기준을 넘으면 지운다.
+
+presign_upload(), head(), promote()는 배포 설정을 점검하는 check_r2 스크립트와 앞으로의 다른 이미지
+기능을 위해 남겨 둔다. 프로필 사진 API는 크기를 R2 전송 전에 강제해야 하므로 이 경로를 쓰지 않는다.
 
 사전 서명 URL은 만료 전까지 여러 번 쓸 수 있다. 올린 키를 그대로 저장하면 검증한 뒤에도 같은 URL로
 덮어쓸 수 있으므로, 업로드 URL은 임시 키에만 발급하고 최종 키에는 서버만 쓴다. 복사할 때 head()로 읽은
@@ -25,14 +25,16 @@ import uuid
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
+from io import BytesIO
 
 import boto3
 from botocore.client import Config
 from botocore.exceptions import BotoCoreError, ClientError
+from PIL import Image, UnidentifiedImageError
 
 from ..core.config import settings
 
-# 브라우저가 올릴 수 있는 이미지 형식과 저장할 확장자.
+# 올릴 수 있는 이미지 형식과 저장할 확장자.
 IMAGE_EXTENSIONS = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -43,6 +45,8 @@ IMAGE_EXTENSIONS = {
 UPLOAD_URL_EXPIRES_SECONDS = 5 * 60
 # 보기 URL은 페이지를 켜 둔 동안 이미지가 깨지지 않을 만큼 둔다. 만료되면 화면이 기본 이미지로 대체한다.
 DOWNLOAD_URL_EXPIRES_SECONDS = 60 * 60
+# 브라우저 자르기 결과와 같은 크기만 받아, 작은 압축 파일이 디코딩 때 큰 메모리를 차지하지 못하게 한다.
+AVATAR_IMAGE_SIZE = (512, 512)
 
 
 class Folder(Enum):
@@ -100,6 +104,32 @@ def new_key(folder: Folder, user_id: int, content_type: str) -> str:
     if ext is None:
         raise ValueError(f"허용하지 않는 이미지 형식: {content_type}")
     return f"{folder.value}/{user_id}/{uuid.uuid4().hex}.{ext}"
+
+
+def decoded_image_content_type(data: bytes) -> str | None:
+    """전체 픽셀을 실제로 디코딩해 유효한 지원 이미지의 MIME 타입을 돌려준다.
+
+    요청 Content-Type이나 파일 시그니처만으로 판정하지 않는다. 헤더 뒤에 임의 데이터를 붙인 파일,
+    잘린 파일, 지나치게 큰 압축 이미지는 R2에 저장하기 전에 거부한다.
+    """
+    formats = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
+    try:
+        with Image.open(BytesIO(data)) as image:
+            content_type = formats.get(image.format or "")
+            if content_type is None or image.size != AVATAR_IMAGE_SIZE:
+                return None
+            image.load()
+            return content_type
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError, SyntaxError, ValueError):
+        return None
+
+
+def put(key: str, data: bytes, content_type: str) -> None:
+    """서버에서 검증한 파일을 비공개 버킷에 저장한다."""
+    try:
+        _client().put_object(Bucket=settings.r2_bucket, Key=key, Body=data, ContentType=content_type)
+    except (BotoCoreError, ClientError) as exc:
+        raise StorageError("파일 저장 실패") from exc
 
 
 def presign_upload(key: str, content_type: str) -> str:
@@ -181,8 +211,7 @@ def delete_user_objects(user_id: int) -> None:
     """회원 탈퇴 때 모든 폴더에서 그 사용자의 파일을 지운다."""
     try:
         paginator = _client().get_paginator("list_objects_v2")
-        for folder in Folder:
-            prefix = f"{folder.value}/{user_id}/"
+        for prefix in user_prefixes(user_id):
             for page in paginator.paginate(Bucket=settings.r2_bucket, Prefix=prefix):
                 objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
                 if not objects:
@@ -194,3 +223,8 @@ def delete_user_objects(user_id: int) -> None:
                     raise StorageError(f"일부 파일 삭제 실패 ({len(res['Errors'])}건)")
     except (BotoCoreError, ClientError) as exc:
         raise StorageError("사용자 파일 삭제 실패") from exc
+
+
+def user_prefixes(user_id: int) -> tuple[str, ...]:
+    """회원별 객체를 찾거나 수동 정리할 때 사용하는 모든 prefix."""
+    return tuple(f"{folder.value}/{user_id}/" for folder in Folder)

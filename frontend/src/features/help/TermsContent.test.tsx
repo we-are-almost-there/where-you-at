@@ -61,11 +61,23 @@ describe("TermsContent", () => {
     expect(document.body.textContent).not.toContain("회원가입 없이");
   });
 
+  it("프로필 사진의 등록·삭제와 이용자 책임·운영팀 조치를 안내한다", () => {
+    renderTerms();
+
+    const profile = screen.getByRole("region", { name: "제11조의3(프로필)" });
+    expect(profile.textContent).toContain("프로필 사진을 등록·변경·삭제");
+    expect(profile.textContent).toContain("다른 사람의 초상권·저작권·명예 등 권리를 침해");
+    expect(profile.textContent).toContain("지우고 기본값으로 바꿀 수 있습니다");
+
+    const membership = screen.getByRole("region", { name: "제11조의2(회원 가입과 탈퇴)" });
+    expect(membership.textContent).toContain("프로필 사진을 포함한 회원 정보");
+  });
+
   it("부칙에서 이전 약관을 적용 기간과 함께 연결한다", () => {
     renderTerms();
 
     const addendum = screen.getByRole("region", { name: "부칙" });
-    const link = within(addendum).getByRole("link", { name: "2026년 9월 17일 ~ 2026년 9월 19일 적용" });
+    const link = within(addendum).getByRole("link", { name: "2026년 9월 17일 ~ 2026년 9월 20일 적용" });
     expect(link.getAttribute("href")).toBe("/terms/2026-09-17");
   });
 });

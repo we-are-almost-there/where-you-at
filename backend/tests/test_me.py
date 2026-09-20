@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
-from app.services import auth_token
+from app.services import auth_token, storage
 
 SECRET = "s" * 32
 SESSION_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -297,6 +297,15 @@ class TestDeleteMe(AuthTestCase):
         admin_patcher = patch.object(settings, "kakao_login_admin_key", ADMIN_KEY)
         admin_patcher.start()
         self.addCleanup(admin_patcher.stop)
+        configured_patcher = patch("app.services.storage.is_configured", return_value=True)
+        configured_patcher.start()
+        self.addCleanup(configured_patcher.stop)
+        cleanup_patcher = patch("app.services.storage.delete_user_objects")
+        self.cleanup = cleanup_patcher.start()
+        self.addCleanup(cleanup_patcher.stop)
+        notify_patcher = patch("app.services.slack_notify.notify_account_deletion_failure")
+        self.notify_cleanup = notify_patcher.start()
+        self.addCleanup(notify_patcher.stop)
 
     def _delete(self, token=None):
         return self.client.delete("/api/me", headers=_bearer(token or _token()))
@@ -304,13 +313,14 @@ class TestDeleteMe(AuthTestCase):
     def test_unlinks_kakao_then_deletes_user(self, mock_get_authenticated_user, mock_delete, mock_post):
         calls = []
         mock_post.side_effect = lambda *a, **kw: calls.append("unlink") or httpx.Response(200, json={"id": 4321})
+        self.cleanup.side_effect = lambda *a, **kw: calls.append("r2")
         mock_delete.side_effect = lambda *a, **kw: calls.append("delete")
 
         res = self._delete()
 
         self.assertEqual(res.status_code, 204)
         self.assertEqual(res.content, b"")
-        self.assertEqual(calls, ["unlink", "delete"])
+        self.assertEqual(calls, ["unlink", "r2", "delete"])
         self.assertEqual(mock_delete.call_args.args[1], 7)
         self.assertEqual(mock_post.call_args.args[0], "https://kapi.kakao.com/v1/user/unlink")
         self.assertEqual(mock_post.call_args.kwargs["headers"], {"Authorization": "KakaoAK admin-key"})
@@ -353,6 +363,16 @@ class TestDeleteMe(AuthTestCase):
 
                 self.assertEqual(self._delete().status_code, 502)
         mock_delete.assert_not_called()
+
+    def test_r2_failure_returns_502_and_keeps_user_for_retry(self, mock_get_authenticated_user, mock_delete, mock_post):
+        mock_post.return_value = httpx.Response(200, json={"id": 4321})
+        self.cleanup.side_effect = storage.StorageError("boom")
+
+        res = self._delete()
+
+        self.assertEqual(res.status_code, 502)
+        mock_delete.assert_not_called()
+        self.notify_cleanup.assert_called_once_with(7, source="수동 탈퇴", stage="R2 객체 정리")
 
     def test_missing_admin_key_returns_503_without_unlink(self, mock_get_authenticated_user, mock_delete, mock_post):
         with patch.object(settings, "kakao_login_admin_key", ""):

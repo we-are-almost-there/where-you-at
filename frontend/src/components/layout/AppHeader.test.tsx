@@ -98,6 +98,20 @@ describe("AppHeader", () => {
     expect(screen.queryByRole("button", { name: "로그인" })).toBeNull();
   });
 
+  it("프로필 사진이 있으면 헤더 아바타에 표시하고, 불러오기 실패 시 기본 아이콘으로 돌아간다", () => {
+    const view = renderHeader({
+      status: "signedIn",
+      user: { id: 1, nickname: "달리는채은", avatar_url: "https://view.example/avatar.webp" },
+    });
+    const image = view.container.querySelector('img[src="https://view.example/avatar.webp"]');
+    expect(image).toBeTruthy();
+
+    fireEvent.error(image as HTMLImageElement);
+
+    expect(view.container.querySelector('img[src="https://view.example/avatar.webp"]')).toBeNull();
+    expect(view.container.querySelector("svg")).toBeTruthy();
+  });
+
   it("닉네임이 없으면 대신 '회원'을 보여준다", () => {
     renderHeader({ status: "signedIn", user: { id: 1, nickname: null } });
 

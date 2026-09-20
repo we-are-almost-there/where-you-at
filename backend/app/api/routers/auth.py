@@ -2,22 +2,24 @@ import hmac
 import json
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl
-from uuid import uuid4
+from uuid import UUID, uuid4
 
+from anyio import WouldBlock
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 
 from ...core.config import settings
 from ...crud import user as user_crud
 from ...deps import CurrentUser, db_connection, get_current_user
-from ...schemas.user import KakaoLoginRequest, LoginResponse, UserOut
-from ...services import auth_token, kakao_oauth, slack_notify
+from ...schemas.user import KakaoLoginRequest, LoginResponse
+from ...services import account_deletion, auth_token, kakao_oauth, profile, slack_notify, storage
 from ...services.rate_limit import SlidingWindowLimiter, client_key
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # 같은 IP에서 10분에 20회까지. 한 번의 로그인은 한 번 호출하므로 공용 IP(학교, 회사, 모바일 캐리어 NAT)
-# 뒤에 여러 사람이 있어도 걸리지 않고, 단일 IP가 한 번에 몰아 보낼 수 있는 양을 동기 라우터가 함께 쓰는
-# 스레드풀(기본 40)보다 작게 둔다. 동시 실행 수 자체는 제한하지 않는다(#150 후속).
+# 뒤에 여러 사람이 있어도 걸리지 않게 둔다. 외부 호출의 동시 실행 수는 아래 로그인 라우터에서
+# 별도로 제한한다. 횟수 제한은 반복 요청을, 동시 실행 제한은 카카오와 서버 자원을 보호한다.
 # 메모리 기반이라 서버 재시작 시 초기화된다 (services/rate_limit.py 참고).
 login_limiter = SlidingWindowLimiter(max_requests=20, window_seconds=600)
 
@@ -29,35 +31,62 @@ _ADMIN_KEY_PREFIX = "KakaoAK "
 
 
 @router.post("/kakao", response_model=LoginResponse)
-def login_with_kakao(body: KakaoLoginRequest, request: Request):
+async def login_with_kakao(body: KakaoLoginRequest, request: Request):
     """카카오 인가 코드로 로그인한다. 처음 로그인하면 회원을 만든다."""
     if not (kakao_oauth.is_configured() and auth_token.is_configured()):
         print("[ERROR] 카카오 로그인 설정이 비어 있거나 JWT_SECRET이 32바이트보다 짧습니다.")
         raise HTTPException(status_code=503, detail="지금은 로그인할 수 없습니다. 잠시 후 다시 시도해 주세요.")
 
-    # 카카오 토큰 교환 전에 한도를 확인해, 한도를 넘은 반복 요청이 외부 호출로 이어지지 않게 한다.
-    key = client_key(request)
-    if key is None:
-        # 이용자 IP를 확인하지 못한 요청은 제한하지 않는다(fail open). 문의와 달리 한 키로 묶으면
-        # 헤더 검증이 깨진 동안 전체 이용자가 로그인하지 못한다. 설정이 깨진 신호이므로 로그를 남긴다.
-        # 요청마다 같은 줄이 쌓이지 않게 10분에 한 번만 남긴다.
-        if unverified_log_limiter.allow("login-unverified-client"):
-            print("[ERROR] 로그인 요청 제한을 건너뜁니다: 이용자 IP를 확인하지 못했습니다(CF-Connecting-IP 확인 필요).")
-    elif not login_limiter.allow(key):
-        raise HTTPException(status_code=429, detail="로그인을 너무 자주 시도했어요. 잠시 후 다시 시도해 주세요.")
+    limiter = request.app.state.kakao_login_limiter
+    try:
+        limiter.acquire_nowait()
+    except WouldBlock:
+        # 기다리는 요청을 쌓지 않는다. 아직 카카오에 인가 코드를 보내지 않았으므로 사용자는
+        # 잠시 뒤 처음부터 다시 로그인할 수 있다.
+        raise HTTPException(
+            status_code=503,
+            detail="지금은 로그인할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+            headers={"Retry-After": "3"},
+        )
 
     try:
-        kakao_token = kakao_oauth.exchange_code(body.code)
-        kakao_user = kakao_oauth.fetch_user(kakao_token)
-    except kakao_oauth.KakaoAuthError:
-        raise HTTPException(status_code=401, detail="로그인 요청이 만료되었습니다. 다시 로그인해 주세요.")
-    except kakao_oauth.KakaoUpstreamError as e:
-        print(f"[ERROR] 카카오 로그인 실패: {e}")
-        raise HTTPException(status_code=502, detail="카카오 로그인을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+        # 슬롯을 얻은 요청만 횟수 제한에 기록한다. 동시성 초과로 503을 받은 요청은
+        # Retry-After 안내에 따라 재시도할 수 있어야 한다.
+        key = client_key(request)
+        if key is None:
+            # 이용자 IP를 확인하지 못한 요청은 제한하지 않는다(fail open). 문의와 달리 한 키로 묶으면
+            # 헤더 검증이 깨진 동안 전체 이용자가 로그인하지 못한다. 설정이 깨진 신호이므로 로그를 남긴다.
+            # 요청마다 같은 줄이 쌓이지 않게 10분에 한 번만 남긴다.
+            if unverified_log_limiter.allow("login-unverified-client"):
+                print("[ERROR] 로그인 요청 제한을 건너뜁니다: 이용자 IP를 확인하지 못했습니다(CF-Connecting-IP 확인 필요).")
+        elif not login_limiter.allow(key):
+            raise HTTPException(status_code=429, detail="로그인을 너무 자주 시도했어요. 잠시 후 다시 시도해 주세요.")
 
-    # 카카오 확인이 끝난 요청만 DB에 연결한다(inquiries.py와 같은 이유).
-    now = datetime.now(timezone.utc)
-    session_id = uuid4()
+        try:
+            client = request.app.state.kakao_login_http
+            kakao_token = await kakao_oauth.exchange_code(client, body.code)
+            kakao_user = await kakao_oauth.fetch_user(client, kakao_token)
+        except kakao_oauth.KakaoAuthError:
+            raise HTTPException(status_code=401, detail="로그인 요청이 만료되었습니다. 다시 로그인해 주세요.")
+        except kakao_oauth.KakaoUpstreamError as e:
+            print(f"[ERROR] 카카오 로그인 실패: {e}")
+            raise HTTPException(status_code=502, detail="카카오 로그인을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+
+        # 카카오 확인이 끝난 요청만 DB에 연결한다(inquiries.py와 같은 이유). DB 작업까지 슬롯을
+        # 유지해 느린 DB가 로그인 작업으로 공용 스레드풀을 고갈시키지 않게 한다.
+        now = datetime.now(timezone.utc)
+        session_id = uuid4()
+        user = await run_in_threadpool(_save_login, kakao_user, session_id, now)
+        return LoginResponse(
+            access_token=auth_token.create_access_token(user["id"], session_id, now=now),
+            user=profile.user_out(user),
+        )
+    finally:
+        limiter.release()
+
+
+def _save_login(kakao_user: kakao_oauth.KakaoUser, session_id: UUID, now: datetime):
+    """동기 psycopg2 작업 전체를 이벤트 루프 밖의 같은 스레드에서 실행한다."""
     with db_connection() as conn:
         user = user_crud.upsert_kakao_user(conn, kakao_id=kakao_user.kakao_id, nickname=kakao_user.nickname)
         user_crud.create_session(
@@ -66,10 +95,7 @@ def login_with_kakao(body: KakaoLoginRequest, request: Request):
             session_id=session_id,
             expires_at=now + auth_token.ACCESS_TOKEN_TTL,
         )
-    return LoginResponse(
-        access_token=auth_token.create_access_token(user["id"], session_id, now=now),
-        user=UserOut(**user),
-    )
+    return user
 
 
 @router.post("/logout", status_code=204)
@@ -88,8 +114,8 @@ async def kakao_unlink_callback(request: Request, background_tasks: BackgroundTa
     카카오톡의 연결된 앱 관리에서 사용자가 직접 끊었을 때만 온다.
 
     카카오는 3초 안에 200을 기대하고, 재전송은 계정 상태 변경 웹훅에서만 지원해 연결 해제 웹훅은
-    다시 보내지 않는다. 그래서 회원을 못 찾거나 삭제가 실패해도 200을 돌려주고, 놓친 삭제는
-    Slack 알림과 [ERROR] 로그로 찾아 직접 지운다(README 참고).
+    다시 보내지 않는다. 그래서 회원을 못 찾거나 삭제가 실패해도 200을 돌려주고, 실패하면 회원 행과
+    내부 user_id를 가능한 한 남겨 Slack 알림과 [ERROR] 로그로 찾아 직접 정리한다(README 참고).
     200이 아닌 응답은 검증에 실패한 요청(401)에만 쓴다. 이때의 401은 카카오가 아닌 요청이거나
     우리가 가진 키가 대표 어드민 키가 아니라는 신호다.
 
@@ -154,18 +180,34 @@ def _body_params(request: Request, body: bytes) -> dict[str, str]:
 
 
 def _delete_user_by_kakao_id(kakao_id: int) -> None:
-    """회원 행을 지운다. 카카오에 200을 돌려줘야 하므로 실패해도 예외를 올리지 않고 로그만 남긴다.
+    """R2 객체와 회원 행을 지운다. 카카오에는 이미 200을 돌려줬으므로 실패를 Slack과 로그에 남긴다.
 
-    탈퇴 API와 같은 delete_user를 쓴다. 회원에 딸린 정리가 늘어날 때 한쪽에만 들어가지 않게 한다.
+    수동 탈퇴와 같은 공통 서비스를 써 R2가 실패하면 회원 행과 내부 user_id를 복구 기준으로 남긴다.
     """
+    user_id = None
     try:
         with db_connection() as conn:
             user_id = user_crud.get_user_id_by_kakao_id(conn, kakao_id)
             if user_id is None:
                 return
-            user_crud.delete_user(conn, user_id)
+        account_deletion.delete_account(user_id)
     except Exception as e:
-        # DB 연결 실패(503)까지 여기서 삼킨다. 로그의 회원번호로 직접 지워야 한다.
-        print(f"[ERROR] 연결 끊기 웹훅 회원 삭제 실패(직접 삭제 필요): kakao_id={kakao_id} {type(e).__name__}")
+        # DB 연결 실패(503)까지 여기서 삼킨다. 웹훅은 재전송되지 않으므로 Slack과 로그로 직접 복구한다.
+        cleanup = ""
+        if user_id is not None:
+            prefixes = ", ".join(storage.user_prefixes(user_id))
+            cleanup = f" user_id={user_id} prefixes={prefixes}"
+        print(
+            f"[ERROR] 연결 끊기 웹훅 회원 삭제 실패(직접 삭제 필요): "
+            f"kakao_id={kakao_id}{cleanup} {type(e).__name__}"
+        )
         # 로그만으로는 7일 안에 아무도 보지 않으면 놓친다. 알림 전송이 실패해도 로그는 이미 남았다.
-        slack_notify.notify_unlink_failure()
+        if user_id is None:
+            slack_notify.notify_unlink_failure()
+        else:
+            stage = "R2 객체 정리" if isinstance(e, account_deletion.ObjectCleanupError) else "DB 회원 삭제"
+            slack_notify.notify_account_deletion_failure(
+                user_id,
+                source="카카오 연결 끊기 웹훅",
+                stage=stage,
+            )
