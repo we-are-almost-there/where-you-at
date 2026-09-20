@@ -365,3 +365,38 @@ it("이전 편집본의 이미지 변환이 늦게 끝나도 최신 이미지를
   expect(createObjectURL).toHaveBeenCalledWith(latest);
   expect(unloadAllowed()).toBe(true);
 });
+
+it("공유 중 카드를 제거하면 뒤늦은 성공이 보호를 다시 켜지 않는다", async () => {
+  const onProtectionChange = vi.fn();
+  let complete!: () => void;
+  share.mockImplementation(() => new Promise<void>((resolve) => { complete = resolve; }));
+  const view = render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} onProtectionChange={onProtectionChange} />);
+  editFont();
+  await save();
+  view.unmount();
+  expect(onProtectionChange).toHaveBeenLastCalledWith(false);
+  const calls = onProtectionChange.mock.calls.length;
+  await act(async () => { complete(); });
+  expect(onProtectionChange).toHaveBeenCalledTimes(calls);
+  expect(onProtectionChange).toHaveBeenLastCalledWith(false);
+});
+
+it("공유 중 카드를 제거하면 뒤늦은 실패가 다운로드나 보호 알림을 일으키지 않는다", async () => {
+  const onProtectionChange = vi.fn();
+  let fail!: (error: Error) => void;
+  share.mockImplementation(() => new Promise<void>((_, reject) => { fail = reject; }));
+  const createObjectURL = vi.fn(() => "blob:test");
+  vi.stubGlobal("URL", { createObjectURL, revokeObjectURL: vi.fn() });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const view = render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} onProtectionChange={onProtectionChange} />);
+  editFont();
+  await save();
+  view.unmount();
+  const calls = onProtectionChange.mock.calls.length;
+  await act(async () => { fail(new Error("공유 불가")); });
+  expect(createObjectURL).not.toHaveBeenCalled();
+  expect(click).not.toHaveBeenCalled();
+  expect(onProtectionChange).toHaveBeenCalledTimes(calls);
+});

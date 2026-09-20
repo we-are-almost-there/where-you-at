@@ -129,6 +129,16 @@ export function RecordCard({
   // 공유는 사용자 제스처 안에서 동기적으로 불러야 iOS에서 막히지 않는다.
   // 조작이 멎으면 미리 만들어 두고, 버튼에서는 그대로 넘긴다.
   const blobRef = useRef<Blob | null>(null);
+  // 공유 같은 비동기 작업이 끝났을 때 카드가 아직 열려 있는지 확인한다.
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // 캔버스와 저장용 이미지가 각각 어느 편집본인지 기록해 낡은 이미지 저장을 막는다.
   const renderedVersionRef = useRef<number | null>(null);
   const blobVersionRef = useRef<number | null>(null);
@@ -490,10 +500,14 @@ export function RecordCard({
     if (navigator.canShare?.({ files: [file] })) {
       try {
         await navigator.share({ files: [file] });
+        // 공유 중 카드가 닫혔으면 저장 상태·보호 콜백을 건드리지 않는다.
+        if (!mountedRef.current) return;
         savedVersionRef.current = savingVersion;
         protectionCallbackRef.current?.(hasEditedRef.current && savingVersion !== editVersionRef.current);
         return;
       } catch (e) {
+        // 닫힌 카드는 다운로드 폴백도, 오류 상태 갱신도 하지 않는다.
+        if (!mountedRef.current) return;
         // 사용자가 공유 시트를 닫은 것뿐이면 조용히 끝낸다.
         if (e instanceof DOMException && e.name === "AbortError") return;
         // 그 밖의 실패(제스처 요건 등)는 아래 다운로드로 떨어진다.
