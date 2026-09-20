@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { toUserError, type UserError } from "../../components/error/userError";
+import type { UserError } from "../../components/error/userError";
+import { toRecordUserError } from "./recordsErrors";
 import { fetchMyRecords } from "./mypageData";
 import type { RunRecord } from "./types";
 
@@ -21,7 +22,7 @@ export function useRunRecords(): RunRecordsState {
         if (!cancelled) setRecords(result);
       },
       (err: unknown) => {
-        if (!cancelled) setError(toUserError(err, "기록을 불러오지 못했어요"));
+        if (!cancelled) setError(toRecordUserError(err, "기록을 불러오지 못했어요"));
       },
     );
     return () => {

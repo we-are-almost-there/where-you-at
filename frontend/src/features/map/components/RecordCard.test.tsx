@@ -5,6 +5,7 @@ import { RecordCard } from "./RecordCard";
 import { StrictMode } from "react";
 import { draw } from "../recordCardCanvas";
 import { saveRecordCard, ServerSaveUnconfirmedError } from "../../mypage/recordsApi";
+import { RecordApiError } from "../../mypage/recordsErrors";
 
 vi.mock("@fontsource/do-hyeon", () => ({}));
 vi.mock("@fontsource/black-han-sans", () => ({}));
@@ -73,6 +74,25 @@ function editFont() {
   fireEvent.click(screen.getByRole("button", { name: "글꼴" }));
   fireEvent.click(screen.getByRole("button", { name: "Do Hyeon" }));
 }
+
+it.each([
+  [409, "저장할 수 있는 기록 카드 수를 넘었어요.", "기록 카드 수", 1],
+  [409, "업로드한 이미지가 바뀌었습니다. 다시 시도해 주세요.", "이미지가 바뀌었어요", 2],
+  [429, "요청이 너무 잦아요.", "잠시 후", 2],
+  [503, "아직 제공하지 않는 기능입니다.", "아직 제공하지 않는 기능", 1],
+  [422, [], "기기 시각", 1],
+] as const)("카드 저장 거절 %s를 안내하고 허용된 경우에만 재시도한다", async (status, detail, message, attempts) => {
+  const saveToServer = vi.fn().mockRejectedValue(new RecordApiError(status, detail));
+  share.mockResolvedValue(undefined);
+  render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} saveToServer={saveToServer} />);
+  await save();
+  expect(screen.getByRole("alert").textContent).toContain(message);
+  expect(screen.getByRole("alert").textContent).not.toContain("저장 여부");
+  await save();
+  expect(saveToServer).toHaveBeenCalledTimes(attempts);
+  expect(share).toHaveBeenCalledTimes(2);
+});
 
 it("같은 편집 버전의 저장 버튼을 연속으로 눌러도 saveRecordCard와 최종 POST는 한 번만 실행한다", async () => {
   let finishPost!: (response: Response) => void;

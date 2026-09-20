@@ -11,6 +11,7 @@ import type { LatLng } from "./types";
 import { useAuth } from "../auth";
 import { saveMyRecord } from "../mypage/mypageData";
 import { saveRecordCard } from "../mypage/recordsApi";
+import { RecordApiError } from "../mypage/recordsErrors";
 import { clearAccessToken, writeAccessToken } from "../../lib/authToken";
 
 vi.mock("../auth", async (original) => ({
@@ -132,6 +133,20 @@ it("완주 POST 성공으로 얻은 ID를 카드에 연결하고 복원 데이�
   const image = new Blob(["png"], { type: "image/png" });
   await cardState.props!.saveToServer!(image, () => true);
   expect(saveRecordCard).toHaveBeenCalledWith(42, image);
+});
+
+it.each([
+  [503, "아직 제공하지 않는 기능입니다.", "아직 제공하지 않는 기능"],
+  [422, [{ loc: ["body", "duration_ms"] }], "허용 범위"],
+] as const)("완주 저장 거절 %s를 표시해도 기록 POST를 다시 보내지는 않는다", async (status, detail, message) => {
+  const error = new RecordApiError(status, detail);
+  vi.mocked(saveMyRecord).mockRejectedValue(error);
+  await finishRecord();
+  expect(cardState.props!.serverMessage).toContain(message);
+  expect(cardState.props!.serverMessage).not.toContain("저장 여부");
+  await expect(cardState.props!.saveToServer!(new Blob(), () => true)).rejects.toBe(error);
+  expect(saveMyRecord).toHaveBeenCalledTimes(1);
+  expect(saveRecordCard).not.toHaveBeenCalled();
 });
 
 it("ID가 없을 때 이미지 저장을 요청하면 진행 중인 POST를 기다려 연결한다", async () => {

@@ -25,6 +25,14 @@ export interface SavedRecordCard {
   createdAt: string;
 }
 
+/** 서버가 반환한 기록 카드 한 페이지. 전체 개수는 현재 페이지의 카드 수와 다르다. */
+export interface RecordCardPage {
+  totalCount: number;
+  page: number;
+  size: number;
+  cards: SavedRecordCard[];
+}
+
 /** 시군구 스탬프 하나. 그 시군구의 코스를 처음 완주한 날 받는다. */
 export interface Stamp {
   /** 시군구 코드(5자리). 지도 도형 파일(korea-all-regions.json)의 sgg_code와 같은 체계다. */

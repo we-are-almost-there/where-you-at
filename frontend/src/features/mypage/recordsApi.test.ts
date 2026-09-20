@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createRecord, fetchRecords, fetchRecordCards, saveRecordCard, ServerSaveUnconfirmedError } from "./recordsApi";
 import { HttpError, NetworkError } from "../../lib/http";
+import { RecordApiError } from "./recordsErrors";
 
 const session = vi.hoisted(() => ({ token: "test-token" }));
 vi.mock("../../lib/authToken", () => ({ readAccessToken: () => session.token }));
@@ -25,9 +26,11 @@ it.each([["도보", "trail"], ["자전거", "bicycle"]] as const)("%s 기록을 
 
 it("목록 응답과 중첩 record 및 null 이미지 URL을 매핑한다", async () => {
   fetchMock.mockResolvedValueOnce(json({ total_count: 1, records: [dto] }))
-    .mockResolvedValueOnce(json({ total_count: 1, cards: [{ ...card, image_url: null }] }));
+    .mockResolvedValueOnce(json({ total_count: 25, page: 3, size: 12, cards: [{ ...card, image_url: null }] }));
   expect(await fetchRecords()).toEqual([expect.objectContaining({ id: 42, routeType: "자전거" })]);
-  expect(await fetchRecordCards()).toEqual([expect.objectContaining({ imageUrl: null, record: expect.objectContaining({ id: 42 }) })]);
+  expect(await fetchRecordCards(3, 12)).toEqual({ totalCount: 25, page: 3, size: 12,
+    cards: [expect.objectContaining({ imageUrl: null, record: expect.objectContaining({ id: 42 }) })] });
+  expect(fetchMock.mock.calls[1][0]).toMatch(/\/api\/record-cards\?page=3&size=12$/);
 });
 
 it("인증 헤더 없이 PNG를 R2에 PUT한 뒤 upload_key를 record.id에 연결한다", async () => {
@@ -77,3 +80,26 @@ it("네트워크 오류와 인증 오류를 호출자에게 전달한다", async
   await expect(fetchRecords()).rejects.toBeInstanceOf(NetworkError);
   await expect(fetchRecordCards()).rejects.toMatchObject({ status: 401 });
 });
+
+it.each([
+  [409, "저장할 수 있는 기록 카드 수를 넘었어요."],
+  [409, "업로드한 이미지가 바뀌었습니다. 다시 시도해 주세요."],
+  [429, "요청이 너무 잦아요. 잠시 후 다시 시도해 주세요."],
+  [503, "아직 제공하지 않는 기능입니다."],
+  [422, [{ loc: ["body", "record_id"], msg: "입력 오류", type: "int_parsing" }]],
+])("최종 카드 POST의 명확한 거절 응답 %s는 detail을 보존한다", async (status, detail) => {
+  fetchMock.mockResolvedValueOnce(upload()).mockResolvedValueOnce(new Response(null))
+    .mockResolvedValueOnce(json({ detail }, status as number));
+  const error = await saveRecordCard(42, image()).catch((error: unknown) => error);
+  expect(error).toBeInstanceOf(RecordApiError);
+  expect(error).not.toBeInstanceOf(ServerSaveUnconfirmedError);
+  expect(error).toMatchObject({ status, detail });
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+});
+
+it.each([json({ detail: "데이터베이스에 연결할 수 없습니다." }, 503), new Response("프록시 오류", { status: 503 })])(
+  "최종 카드 POST의 일반 503은 명확한 기능 비활성화와 구분한다", async (response) => {
+    fetchMock.mockResolvedValueOnce(upload()).mockResolvedValueOnce(new Response(null)).mockResolvedValueOnce(response);
+    await expect(saveRecordCard(42, image())).rejects.toBeInstanceOf(ServerSaveUnconfirmedError);
+  },
+);

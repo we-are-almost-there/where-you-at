@@ -24,6 +24,7 @@ import {
   type TextColor,
 } from "../recordCardCanvas";
 import { ServerSaveUnconfirmedError } from "../../mypage/recordsApi";
+import { canRetryCardUpload, toRecordUserError } from "../../mypage/recordsErrors";
 
 // 한글 웹폰트는 유니코드 범위별로 100개 넘게 쪼개져 있어 정적으로 import하면
 // 그 @font-face 규칙이 전부 메인 CSS에 실린다(34kB → 809kB). 카드를 열 때만 받아온다.
@@ -525,9 +526,9 @@ export function RecordCard({
         savedVersionRef.current = Math.max(savedVersionRef.current ?? 0, savingVersion);
       }).catch((error: unknown) => {
         if (!mountedRef.current) return;
-        uploadUnconfirmedRef.current = error instanceof ServerSaveUnconfirmedError;
+        uploadUnconfirmedRef.current = error instanceof ServerSaveUnconfirmedError || !canRetryCardUpload(error);
         setServerError(error instanceof ServerSaveUnconfirmedError ? error.message
-          : "카드 업로드에 실패했어요. 이미지 저장을 다시 누르면 재시도해요.");
+          : toRecordUserError(error, "카드 업로드에 실패했어요. 이미지 저장을 다시 누르면 재시도해요.").title);
       }).finally(() => {
         uploadPendingRef.current = false;
         if (!mountedRef.current) return;

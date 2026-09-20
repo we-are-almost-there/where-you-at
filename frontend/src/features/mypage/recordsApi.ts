@@ -5,7 +5,8 @@
 import { authHeaders, fetchOrNetworkError, HttpError } from "../../lib/http";
 import { readAccessToken } from "../../lib/authToken";
 import type { RouteType } from "../map/types";
-import type { RunRecord, SavedRecordCard } from "./types";
+import type { RecordCardPage, RunRecord, SavedRecordCard } from "./types";
+import { isRecordRequestRejected, recordApiError } from "./recordsErrors";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
@@ -87,22 +88,23 @@ export async function createRecord(input: CreateRecordInput): Promise<RunRecord>
       finished_at: input.finishedAt,
     }),
   });
-  if (!res.ok) throw new HttpError(res.status, `기록 저장 실패 (${res.status})`);
+  if (!res.ok) throw await recordApiError(res);
   return toRunRecord(await res.json());
 }
 
 export async function fetchRecords(): Promise<RunRecord[]> {
   const res = await fetchOrNetworkError(`${API_BASE}/api/records`, { headers: authHeaders() });
-  if (!res.ok) throw new HttpError(res.status, `기록 조회 실패 (${res.status})`);
+  if (!res.ok) throw await recordApiError(res);
   const data: { records: RunRecordDto[] } = await res.json();
   return data.records.map(toRunRecord);
 }
 
-export async function fetchRecordCards(): Promise<SavedRecordCard[]> {
-  const res = await fetchOrNetworkError(`${API_BASE}/api/record-cards`, { headers: authHeaders() });
-  if (!res.ok) throw new HttpError(res.status, `기록 카드 조회 실패 (${res.status})`);
-  const data: { cards: RecordCardDto[] } = await res.json();
-  return data.cards.map(toSavedRecordCard);
+export async function fetchRecordCards(page = 1, size = 12): Promise<RecordCardPage> {
+  const query = new URLSearchParams({ page: String(page), size: String(size) });
+  const res = await fetchOrNetworkError(`${API_BASE}/api/record-cards?${query}`, { headers: authHeaders() });
+  if (!res.ok) throw await recordApiError(res);
+  const data: { total_count: number; page: number; size: number; cards: RecordCardDto[] } = await res.json();
+  return { totalCount: data.total_count, page: data.page, size: data.size, cards: data.cards.map(toSavedRecordCard) };
 }
 
 /**
@@ -125,7 +127,7 @@ export async function saveRecordCard(recordId: number, image: Blob): Promise<Sav
     headers,
     body: JSON.stringify({ content_type: contentType }),
   });
-  if (!urlRes.ok) throw new HttpError(urlRes.status, `업로드 URL 발급 실패 (${urlRes.status})`);
+  if (!urlRes.ok) throw await recordApiError(urlRes);
   const { upload_key, upload_url }: { upload_key: string; upload_url: string } = await urlRes.json();
   checkSession();
 
@@ -142,9 +144,10 @@ export async function saveRecordCard(recordId: number, image: Blob): Promise<Sav
       method: "POST", headers,
       body: JSON.stringify({ record_id: recordId, upload_key }),
     });
-    if (!saveRes.ok) throw new HttpError(saveRes.status, `기록 카드 저장 실패 (${saveRes.status})`);
+    if (!saveRes.ok) throw await recordApiError(saveRes);
     return toSavedRecordCard(await saveRes.json());
   } catch (cause) {
+    if (isRecordRequestRejected(cause)) throw cause;
     // 서버가 INSERT 후 응답 생성에 실패했을 수도 있다. 새 upload_key로 재전송하면 중복 카드가 된다.
     throw new ServerSaveUnconfirmedError("카드 저장 여부를 확인하지 못했어요. 중복 방지를 위해 다시 전송하지 않아요. 내 기록을 확인해 주세요.", { cause });
   }

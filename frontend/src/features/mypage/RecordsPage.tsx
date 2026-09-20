@@ -10,7 +10,7 @@ import RecordCardGrid from "./components/RecordCardGrid";
 import { formatTotalDuration } from "./format";
 import { paginate, usePageParam } from "./usePageParam";
 import { useRecords } from "./useRecords";
-import type { RunRecord, SavedRecordCard } from "./types";
+import type { RecordCardPage, RunRecord } from "./types";
 
 type Tab = "records" | "cards";
 
@@ -28,7 +28,7 @@ const PER_PAGE: Record<Tab, number> = { records: 10, cards: 12 };
 export default function RecordsPage() {
   return (
     <MyPageLayout title="내 기록" back={{ to: "/mypage", label: "마이페이지" }}>
-      {() => <Records />}
+      {(user) => <Records key={user.id} />}
     </MyPageLayout>
   );
 }
@@ -37,7 +37,7 @@ function Records() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab: Tab = searchParams.get("tab") === "cards" ? "cards" : "records";
   const [page, goToPage] = usePageParam();
-  const state = useRecords();
+  const state = useRecords(tab === "cards" ? page : 1, PER_PAGE.cards);
 
   // 탭을 바꾸면 페이지는 1로 돌아간다. 두 목록의 페이지 수가 달라 이어 쓰면 빈 페이지가 나올 수 있다.
   // replace로 바꾸는 것은 의도다. 탭은 다른 화면으로 이동하는 것이 아니라 같은 목록의 보기를 바꾸는 것이라
@@ -62,8 +62,8 @@ function Records() {
     );
   }
 
-  const { records, cards } = state;
-  const counts: Record<Tab, number> = { records: records.length, cards: cards.length };
+  const { records, cardPage } = state;
+  const counts: Record<Tab, number> = { records: records.length, cards: cardPage.totalCount };
   const activeIndex = TABS.findIndex((item) => item.value === tab);
 
   return (
@@ -87,7 +87,7 @@ function Records() {
         )}
       />
       <div {...tabPanelProps(TAB_ID_BASE, activeIndex)} className="mt-2">
-        {tab === "records" ? <RecordList records={records} page={page} onPage={goToPage} /> : <CardList cards={cards} page={page} onPage={goToPage} />}
+        {tab === "records" ? <RecordList records={records} page={page} onPage={goToPage} /> : <CardList data={cardPage} onPage={goToPage} />}
       </div>
     </>
   );
@@ -136,8 +136,8 @@ function RecordList({ records, page, onPage }: { records: RunRecord[]; page: num
   );
 }
 
-function CardList({ cards, page, onPage }: { cards: SavedRecordCard[]; page: number; onPage: (page: number) => void }) {
-  if (cards.length === 0) {
+function CardList({ data, onPage }: { data: RecordCardPage; onPage: (page: number) => void }) {
+  if (data.totalCount === 0) {
     return (
       <div className="mt-4">
         <EmptyState
@@ -148,11 +148,11 @@ function CardList({ cards, page, onPage }: { cards: SavedRecordCard[]; page: num
       </div>
     );
   }
-  const { current, totalPages, items } = paginate(cards, page, PER_PAGE.cards);
+  const totalPages = Math.max(1, Math.ceil(data.totalCount / data.size));
   return (
     <div className="mt-4">
-      <RecordCardGrid cards={items} />
-      <Pagination page={current} totalPages={totalPages} onChange={onPage} />
+      <RecordCardGrid cards={data.cards} />
+      <Pagination page={data.page} totalPages={totalPages} onChange={onPage} />
     </div>
   );
 }

@@ -16,6 +16,7 @@ import { useCourseTracking } from "./useCourseTracking";
 import { useAuth } from "../auth";
 import { saveMyRecord } from "../mypage/mypageData";
 import { saveRecordCard, ServerSaveUnconfirmedError } from "../mypage/recordsApi";
+import { isRecordRequestRejected, toRecordUserError } from "../mypage/recordsErrors";
 import { readAccessToken } from "../../lib/authToken";
 import { WAKE_LOCK_FAILURE_LINES } from "./useWakeLock";
 import { advanceProgress, distanceToCourse, nearestPointOnCourse, type Direction } from "./courseProgress";
@@ -307,7 +308,7 @@ function CourseDetailSession() {
   );
   // 종료 시 한 번 보낸 POST의 결과를 공유한다. 실패한 Promise도 보존해 이미지 저장이 재POST하지 않게 한다.
   const recordRequestRef = useRef<{ record: SavedRecord; result: Promise<number> } | null>(null);
-  const [recordRequestState, setRecordRequestState] = useState<{ record: SavedRecord; failed: boolean } | null>(null);
+  const [recordRequestState, setRecordRequestState] = useState<{ record: SavedRecord; failed: boolean; message?: string } | null>(null);
   const saveCardForRecord = async (image: Blob, isActive: () => boolean) => {
     if (!record || auth.status !== "signedIn" || record.ownerId !== auth.user.id) {
       throw new ServerSaveUnconfirmedError("기록을 저장한 계정으로 로그인해 주세요.");
@@ -553,11 +554,14 @@ function CourseDetailSession() {
         return saved.id;
       })
       .catch((cause) => {
+        if (isRecordRequestRejected(cause)) throw cause;
         throw new ServerSaveUnconfirmedError("완주 기록 저장 여부를 확인하지 못했어요. 중복 방지를 위해 다시 전송하지 않아요. 내 기록을 확인해 주세요.", { cause });
       });
     recordRequestRef.current = { record: next, result };
     // 카드 저장 전에 실패해도 unhandled rejection이 되지 않는다. 원본 Promise는 계속 실패 상태다.
-    void result.catch(() => setRecordRequestState((current) => current?.record === next ? { record: next, failed: true } : current));
+    void result.catch((error: unknown) => setRecordRequestState((current) => current?.record === next
+      ? { record: next, failed: true, message: error instanceof ServerSaveUnconfirmedError ? error.message
+        : toRecordUserError(error, "완주 기록을 저장하지 못했어요.").title } : current));
   };
 
   // 안내를 닫을 때 추적을 정리한다(clearWatch는 부수효과라 렌더 중엔 못 부른다).
@@ -1159,7 +1163,9 @@ function CourseDetailSession() {
           serverMessage={record.ownerId !== undefined && !record.serverId
             ? recordRequestState?.record.summary === record.summary && !recordRequestState.failed
               ? "완주 기록 저장 중… 이미지 저장을 누르면 완료 후 카드도 이어서 저장해요."
-              : "완주 기록 저장 여부를 확인하지 못했어요. 중복 방지를 위해 다시 전송하지 않아요. 내 기록을 확인해 주세요."
+              : recordRequestState?.record.summary === record.summary && recordRequestState.message
+                ? recordRequestState.message
+                : "완주 기록 저장 여부를 확인하지 못했어요. 중복 방지를 위해 다시 전송하지 않아요. 내 기록을 확인해 주세요."
             : undefined}
           onClose={() => setRecord(null)}
         />

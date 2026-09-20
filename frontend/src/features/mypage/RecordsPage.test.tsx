@@ -48,7 +48,10 @@ const loaded = () => screen.findByRole("tab", { selected: true });
 beforeEach(() => {
   vi.mocked(useAuth).mockReturnValue({ status: "signedIn", user: { id: 7, nickname: "길손" } });
   vi.mocked(fetchMyRecords).mockResolvedValue(Array.from({ length: 23 }, (_, i) => record(i + 1)));
-  vi.mocked(fetchMyRecordCards).mockResolvedValue(Array.from({ length: 14 }, (_, i) => card(i + 1)));
+  vi.mocked(fetchMyRecordCards).mockImplementation(async (page = 1, size = 12) => ({
+    totalCount: 14, page, size,
+    cards: Array.from({ length: 14 }, (_, i) => card(i + 1)).slice((page - 1) * size, page * size),
+  }));
   window.scrollTo = vi.fn();
 });
 
@@ -77,6 +80,8 @@ describe("RecordsPage", () => {
     expect((await loaded()).textContent).toBe("기록 카드14");
     // 12개씩이라 2쪽에는 2장이 남는다.
     expect(within(panel()).getAllByRole("img")).toHaveLength(2);
+    expect(fetchMyRecordCards).toHaveBeenCalledWith(2, 12);
+    expect(within(panel()).getByRole("img", { name: /코스 13 기록 카드/ })).toBeTruthy();
   });
 
   it("탭을 바꾸면 1쪽으로 돌아간다", async () => {
@@ -98,7 +103,7 @@ describe("RecordsPage", () => {
 
   it("기록이 없으면 빈 안내를 보여 준다", async () => {
     vi.mocked(fetchMyRecords).mockResolvedValue([]);
-    vi.mocked(fetchMyRecordCards).mockResolvedValue([]);
+    vi.mocked(fetchMyRecordCards).mockResolvedValue({ totalCount: 0, page: 1, size: 12, cards: [] });
     renderPage();
 
     expect(await screen.findByText("아직 완주한 기록이 없어요")).toBeTruthy();
@@ -120,5 +125,34 @@ describe("RecordsPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "다시 시도" }));
 
     expect((await loaded()).textContent).toBe("기록23");
+  });
+
+  it("카드 다음 페이지는 서버에서 조회하고 전체 개수를 유지한다", async () => {
+    renderPage("/mypage/records?tab=cards");
+    expect((await loaded()).textContent).toBe("기록 카드14");
+    fireEvent.click(screen.getByRole("button", { name: "2" }));
+    expect((await loaded()).textContent).toBe("기록 카드14");
+    expect(within(panel()).getAllByRole("img")).toHaveLength(2);
+    expect(fetchMyRecordCards).toHaveBeenLastCalledWith(2, 12);
+    expect(screen.getByTestId("location").textContent).toBe("?tab=cards&page=2");
+  });
+
+  it("카드 페이지 범위를 넘으면 서버에서 마지막 페이지를 다시 조회한다", async () => {
+    renderPage("/mypage/records?tab=cards&page=99");
+    await loaded();
+    expect(fetchMyRecordCards).toHaveBeenNthCalledWith(1, 99, 12);
+    expect(fetchMyRecordCards).toHaveBeenNthCalledWith(2, 2, 12);
+    expect(within(panel()).getAllByRole("img")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "2" }).getAttribute("aria-current")).toBe("page");
+  });
+
+  it("카드 조회 재시도는 실패한 페이지를 다시 요청한다", async () => {
+    vi.mocked(fetchMyRecordCards).mockRejectedValueOnce(new Error("조회 실패"));
+    renderPage("/mypage/records?tab=cards&page=2");
+    fireEvent.click(await screen.findByRole("button", { name: "다시 시도" }));
+    await loaded();
+    expect(fetchMyRecordCards).toHaveBeenCalledTimes(2);
+    expect(fetchMyRecordCards).toHaveBeenLastCalledWith(2, 12);
+    expect(within(panel()).getAllByRole("img")).toHaveLength(2);
   });
 });
