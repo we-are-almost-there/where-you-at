@@ -8,6 +8,22 @@ import { CourseDetail } from "./CourseDetail";
 import { announce, primeSpeech } from "./speech";
 import { getCourseGpx } from "./coursesApi";
 import type { LatLng } from "./types";
+import { useAuth } from "../auth";
+import { saveMyRecord } from "../mypage/mypageData";
+import { saveRecordCard } from "../mypage/recordsApi";
+import { clearAccessToken, writeAccessToken } from "../../lib/authToken";
+
+vi.mock("../auth", async (original) => ({
+  ...await original<typeof import("../auth")>(), useAuth: vi.fn(),
+}));
+vi.mock("../mypage/mypageData", async (original) => ({
+  ...await original<typeof import("../mypage/mypageData")>(),
+  saveMyRecord: vi.fn(), fetchMyRecords: async () => [], fetchSavedCourses: async () => [],
+}));
+vi.mock("../mypage/recordsApi", async (original) => ({
+  ...await original<typeof import("../mypage/recordsApi")>(), saveRecordCard: vi.fn(),
+}));
+const cardState = vi.hoisted(() => ({ props: null as ComponentProps<typeof RecordCard> | null }));
 
 const tracking = vi.hoisted(() => ({
   status: "paused" as "idle" | "tracking" | "paused",
@@ -22,7 +38,10 @@ const tracking = vi.hoisted(() => ({
 vi.mock("./useCourseTracking", () => ({ useCourseTracking: () => tracking }));
 vi.mock("./speech", () => ({ announce: vi.fn(), primeSpeech: vi.fn() }));
 vi.mock("./components/RecordCard", () => ({
-  RecordCard: ({ record, onClose, onProtectionChange, navigationBlocked, onCancelNavigation, onConfirmNavigation }: ComponentProps<typeof RecordCard>) => (
+  RecordCard: (props: ComponentProps<typeof RecordCard>) => {
+    cardState.props = props;
+    const { record, onClose, onProtectionChange, navigationBlocked, onCancelNavigation, onConfirmNavigation } = props;
+    return (
     <div role="dialog" aria-label="restored record">
       <span>{record.distanceKm}</span><button onClick={onClose}>close record</button>
       <button onClick={() => onProtectionChange?.(true)}>카드 편집</button>
@@ -32,7 +51,8 @@ vi.mock("./components/RecordCard", () => ({
         <button onClick={onConfirmNavigation}>저장하지 않고 나가기</button>
       </div>}
     </div>
-  ),
+    );
+  },
 }));
 vi.mock("./KakaoMap", () => ({ KakaoMap: () => null }));
 vi.mock("./endpointAddress", () => ({
@@ -53,8 +73,13 @@ const COURSE = { id: 1, title: "테스트 코스", description: "", image_url: "
 beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
+  vi.mocked(useAuth).mockReturnValue({ status: "signedOut", user: null });
+  vi.mocked(saveMyRecord).mockReset();
+  vi.mocked(saveRecordCard).mockReset().mockResolvedValue({} as Awaited<ReturnType<typeof saveRecordCard>>);
+  cardState.props = null;
   courseApi.getCourseDetail.mockImplementation(async () => COURSE);
   tracking.status = "paused";
+  tracking.stopTracking.mockReset();
   tracking.currentLocation = null;
   tracking.storageFailed = false;
   vi.mocked(getCourseGpx).mockResolvedValue([]);
@@ -81,6 +106,98 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  clearAccessToken();
+});
+
+const SAVED = { id: 42, courseId: 1, courseName: "테스트 코스", routeType: "도보" as const,
+  distanceKm: 3, durationMs: 60000, paceSecPerKm: 20, finishedAt: "2026-09-20T01:02:03Z" };
+function login(id = 7) {
+  vi.mocked(useAuth).mockReturnValue({ status: "signedIn", user: { id, nickname: "길손" } });
+  writeAccessToken(`token-${id}`);
+}
+async function finishRecord() {
+  login();
+  tracking.stopTracking.mockReturnValue({ distanceKm: 3, durationMs: 60000.4, paceSecPerKm: 20 });
+  await mount();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "■ 종료" })));
+}
+
+it("완주 POST 성공으로 얻은 ID를 카드에 연결하고 복원 데이터에 보존한다", async () => {
+  vi.mocked(saveMyRecord).mockResolvedValue(SAVED);
+  await finishRecord();
+  expect(saveMyRecord).toHaveBeenCalledTimes(1);
+  expect(saveMyRecord).toHaveBeenCalledWith(expect.objectContaining({ courseId: 1, routeType: "도보",
+    distanceKm: 3, durationMs: 60000.4, paceSecPerKm: 20, finishedAt: expect.any(String) }));
+  expect(JSON.parse(sessionStorage.getItem("course-tracking:1:view")!).record).toMatchObject({ serverId: 42, ownerId: 7 });
+  const image = new Blob(["png"], { type: "image/png" });
+  await cardState.props!.saveToServer!(image, () => true);
+  expect(saveRecordCard).toHaveBeenCalledWith(42, image);
+});
+
+it("ID가 없을 때 이미지 저장을 요청하면 진행 중인 POST를 기다려 연결한다", async () => {
+  let resolve!: (value: typeof SAVED) => void;
+  vi.mocked(saveMyRecord).mockReturnValue(new Promise((done) => { resolve = done; }));
+  await finishRecord();
+  const image = new Blob(["png"], { type: "image/png" });
+  const saving = cardState.props!.saveToServer!(image, () => true);
+  expect(saveRecordCard).not.toHaveBeenCalled();
+  await act(async () => { resolve(SAVED); await saving; });
+  expect(saveMyRecord).toHaveBeenCalledTimes(1);
+  expect(saveRecordCard).toHaveBeenCalledWith(42, image);
+});
+
+it.each(["API 실패", "서버 INSERT 성공 후 응답 유실"])("%s 후 이미지 저장을 반복해도 완주 POST를 재전송하지 않는다", async (scenario) => {
+  const serverRows: typeof SAVED[] = [];
+  vi.mocked(saveMyRecord).mockImplementation(async () => {
+    if (scenario === "서버 INSERT 성공 후 응답 유실") serverRows.push(SAVED);
+    throw new TypeError("response lost");
+  });
+  await finishRecord();
+  expect(cardState.props!.serverMessage).toContain("중복 방지");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await expect(cardState.props!.saveToServer!(new Blob(), () => true)).rejects.toThrow("중복 방지");
+  }
+  expect(saveMyRecord).toHaveBeenCalledTimes(1);
+  expect(serverRows).toHaveLength(scenario === "서버 INSERT 성공 후 응답 유실" ? 1 : 0);
+  expect(saveRecordCard).not.toHaveBeenCalled();
+});
+
+it.each([42, undefined])("새로고침 후 serverId=%s를 복원하며 새 기록 POST를 보내지 않는다", async (serverId) => {
+  login();
+  tracking.status = "idle";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({ record: {
+    summary: { distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }, routeType: "도보", routePoints: [], ownerId: 7, serverId,
+  } }));
+  await mount();
+  const saving = cardState.props!.saveToServer!(new Blob(), () => true);
+  if (serverId) { await saving; expect(saveRecordCard).toHaveBeenCalledWith(42, expect.any(Blob)); }
+  else { await expect(saving).rejects.toThrow("중복 방지"); expect(saveRecordCard).not.toHaveBeenCalled(); }
+  expect(saveMyRecord).not.toHaveBeenCalled();
+});
+
+it("다른 사용자로 로그인하면 복원된 이전 사용자 recordId를 재사용하지 않는다", async () => {
+  login(8);
+  tracking.status = "idle";
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({ record: {
+    summary: { distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }, routeType: "도보", routePoints: [], ownerId: 7, serverId: 42,
+  } }));
+  await mount();
+  await expect(cardState.props!.saveToServer!(new Blob(), () => true)).rejects.toThrow("계정");
+  expect(saveMyRecord).not.toHaveBeenCalled();
+  expect(saveRecordCard).not.toHaveBeenCalled();
+});
+
+it.each(["계정 변경", "카드 닫기"])("기록 응답 대기 중 %s 시 지연된 업로드를 시작하지 않는다", async (reason) => {
+  let resolve!: (value: typeof SAVED) => void;
+  vi.mocked(saveMyRecord).mockReturnValue(new Promise((done) => { resolve = done; }));
+  await finishRecord();
+  let active = true;
+  const saving = cardState.props!.saveToServer!(new Blob(), () => active);
+  const settled = saving.catch(() => undefined);
+  if (reason === "계정 변경") writeAccessToken("token-8");
+  else active = false;
+  await act(async () => { resolve(SAVED); await settled; });
+  expect(saveRecordCard).not.toHaveBeenCalled();
 });
 
 async function mount() {

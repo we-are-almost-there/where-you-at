@@ -4,7 +4,8 @@ import { createRecord, fetchRecordCards, fetchRecords, type CreateRecordInput } 
 import type { RunRecord, SavedRecordCard, Stamp } from "./types";
 
 // 마이페이지의 찜·기록·기록 카드·스탬프 데이터.
-// 찜은 서버에서 받아 온다. 기록·기록 카드는 서버 API(recordsApi.ts)가 있지만 VITE_MYPAGE_API=true일 때만 부른다.
+// 찜은 서버에서 받아 온다. 기록·기록 카드 목록은 VITE_MYPAGE_API=true일 때만 조회한다.
+// 이 표시 플래그는 완주 기록 저장에는 적용하지 않는다.
 // 서버 테이블(run_record, record_card)이 적용되기 전에 배포돼도 화면이 에러 대신 빈 목록을 보여 주게 하려는 것이다.
 // 스탬프는 아직 서버 API가 없어 빈 목록을 돌려준다.
 // 개발 서버에서 VITE_MYPAGE_PREVIEW=true면 예시 데이터로 채워
@@ -52,9 +53,8 @@ export function getStamps(): Stamp[] {
   return USE_PREVIEW ? previewStamps : [];
 }
 
-/** 완주 기록을 서버에 저장한다. 서버 연결이 꺼져 있거나 미리보기면 저장하지 않고 null. */
-export async function saveMyRecord(input: CreateRecordInput): Promise<RunRecord | null> {
-  if (USE_PREVIEW || !USE_API) return null;
+/** 완주 저장은 마이페이지 목록의 표시 플래그와 무관하다. 비멱등 POST이므로 호출자가 재시도하지 않는다. */
+export async function saveMyRecord(input: CreateRecordInput): Promise<RunRecord> {
   // 서버 duration_ms가 정수라 소수는 반올림한다.
   return createRecord({ ...input, durationMs: Math.round(input.durationMs) });
 }

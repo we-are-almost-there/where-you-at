@@ -1,12 +1,16 @@
 // 완주 기록·기록 카드 API
-// - authApi.ts와 같이 사용자 문구로 바꾸지 않고 HttpError만 던진다.
+// - HTTP 오류와 재전송하면 안 되는 최종 저장 오류를 구분한다.
 // - 서버는 snake_case, route_type은 "trail"/"bicycle"로 주므로 여기서 화면용 타입(RunRecord, SavedRecordCard)으로 바꾼다.
 
 import { authHeaders, fetchOrNetworkError, HttpError } from "../../lib/http";
+import { readAccessToken } from "../../lib/authToken";
 import type { RouteType } from "../map/types";
 import type { RunRecord, SavedRecordCard } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+/** 비멱등 POST의 결과가 불명확하면 같은 작업을 다시 전송하지 않는다. */
+export class ServerSaveUnconfirmedError extends Error {}
 
 type ServerRouteType = "trail" | "bicycle";
 
@@ -106,15 +110,24 @@ export async function fetchRecordCards(): Promise<SavedRecordCard[]> {
  * 1) 임시 업로드 URL 발급 → 2) 그 URL로 R2에 바로 PUT → 3) 서버가 검증·저장
  */
 export async function saveRecordCard(recordId: number, image: Blob): Promise<SavedRecordCard> {
+  if (image.size > 5 * 1024 * 1024 || !["image/png", "image/jpeg", "image/webp"].includes(image.type)) {
+    throw new Error("카드 이미지는 PNG, JPEG, WebP 형식의 5MB 이하 파일이어야 해요.");
+  }
+  const token = readAccessToken();
+  const headers = { ...authHeaders(), "Content-Type": "application/json" };
+  const checkSession = () => {
+    if (readAccessToken() !== token) throw new ServerSaveUnconfirmedError("로그인 정보가 바뀌어 카드 저장을 중단했어요.");
+  };
   const contentType = image.type; // Canvas toBlob("image/png")면 "image/png"
 
   const urlRes = await fetchOrNetworkError(`${API_BASE}/api/record-cards/upload-url`, {
     method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ content_type: contentType }),
   });
   if (!urlRes.ok) throw new HttpError(urlRes.status, `업로드 URL 발급 실패 (${urlRes.status})`);
   const { upload_key, upload_url }: { upload_key: string; upload_url: string } = await urlRes.json();
+  checkSession();
 
   // 서명에 Content-Type이 들어 있어 같은 헤더를 보내야 한다. 우리 서버가 아니라 R2로 가므로 authHeaders는 붙이지 않는다.
   const putRes = await fetchOrNetworkError(upload_url, {
@@ -123,12 +136,16 @@ export async function saveRecordCard(recordId: number, image: Blob): Promise<Sav
     body: image,
   });
   if (!putRes.ok) throw new HttpError(putRes.status, `이미지 업로드 실패 (${putRes.status})`);
-
-  const saveRes = await fetchOrNetworkError(`${API_BASE}/api/record-cards`, {
-    method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ record_id: recordId, upload_key }),
-  });
-  if (!saveRes.ok) throw new HttpError(saveRes.status, `기록 카드 저장 실패 (${saveRes.status})`);
-  return toSavedRecordCard(await saveRes.json());
+  checkSession();
+  try {
+    const saveRes = await fetchOrNetworkError(`${API_BASE}/api/record-cards`, {
+      method: "POST", headers,
+      body: JSON.stringify({ record_id: recordId, upload_key }),
+    });
+    if (!saveRes.ok) throw new HttpError(saveRes.status, `기록 카드 저장 실패 (${saveRes.status})`);
+    return toSavedRecordCard(await saveRes.json());
+  } catch (cause) {
+    // 서버가 INSERT 후 응답 생성에 실패했을 수도 있다. 새 upload_key로 재전송하면 중복 카드가 된다.
+    throw new ServerSaveUnconfirmedError("카드 저장 여부를 확인하지 못했어요. 중복 방지를 위해 다시 전송하지 않아요. 내 기록을 확인해 주세요.", { cause });
+  }
 }

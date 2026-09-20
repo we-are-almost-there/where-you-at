@@ -23,7 +23,7 @@ import {
   type Template,
   type TextColor,
 } from "../recordCardCanvas";
-import { saveRecordCard } from "../../mypage/recordsApi";
+import { ServerSaveUnconfirmedError } from "../../mypage/recordsApi";
 
 // 한글 웹폰트는 유니코드 범위별로 100개 넘게 쪼개져 있어 정적으로 import하면
 // 그 @font-face 규칙이 전부 메인 CSS에 실린다(34kB → 809kB). 카드를 열 때만 받아온다.
@@ -109,7 +109,8 @@ export function RecordCard({
   record,
   routeType,
   routePoints,
-  recordId = null,
+  saveToServer,
+  serverMessage,
   onClose,
   onProtectionChange,
   navigationBlocked = false,
@@ -120,8 +121,9 @@ export function RecordCard({
   /** 따라간 종목. 페이스를 분/km로 쓸지 km/h로 쓸지 가른다. */
   routeType: RouteType;
   routePoints: LatLng[];
-  /** 서버에 저장된 완주 기록 id. 있으면 저장할 때 카드 이미지도 서버에 올린다. */
-  recordId?: number | null;
+  /** 기록 저장 응답을 기다린 뒤 그 ID에 이미지를 연결한다. 로컬 공유와는 병렬로 실행한다. */
+  saveToServer?: (image: Blob, isActive: () => boolean) => Promise<unknown>;
+  serverMessage?: string;
   onClose: () => void;
   onProtectionChange?: (protectedEdits: boolean) => void;
   navigationBlocked?: boolean;
@@ -146,8 +148,13 @@ export function RecordCard({
   // 캔버스와 저장용 이미지가 각각 어느 편집본인지 기록해 낡은 이미지 저장을 막는다.
   const renderedVersionRef = useRef<number | null>(null);
   const blobVersionRef = useRef<number | null>(null);
-  // 서버에 올린 blob. 같은 이미지를 저장 버튼을 여러 번 눌러도 카드가 중복으로 쌓이지 않게 한다.
-  const uploadedBlobRef = useRef<Blob | null>(null);
+  // 편집 버전 단위로 중복을 막는다. 업로드 실패 시에만 같은 버전으로 다시 시도할 수 있다.
+  const uploadedVersionsRef = useRef(new Set<number>());
+  const uploadPendingRef = useRef(false);
+  const uploadUnconfirmedRef = useRef(false);
+  const serverUnsavedRef = useRef(false);
+  const [uploadPending, setUploadPending] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
   const blobTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
   const dragTargetRef = useRef<"photo" | "route" | "stats" | null>(null);
@@ -192,13 +199,13 @@ export function RecordCard({
   // 콜백 교체는 편집이 아니다. 최신 수신자에게 현재 상태만 전달한다.
   useLayoutEffect(() => {
     protectionCallbackRef.current = onProtectionChange;
-    onProtectionChange?.(hasEditedRef.current && savedVersionRef.current !== editVersionRef.current);
+    onProtectionChange?.(serverUnsavedRef.current || (hasEditedRef.current && savedVersionRef.current !== editVersionRef.current));
   }, [onProtectionChange]);
   const previousEditRef = useRef(editSnapshot);
   const [closeConfirmationOpen, setCloseConfirmationOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const requestClose = () => {
-    if (savedVersionRef.current === editVersionRef.current) onClose();
+    if (!serverUnsavedRef.current && savedVersionRef.current === editVersionRef.current) onClose();
     else setCloseConfirmationOpen(true);
   };
   // 저장 후 다시 편집하면 보호를 재개한다. 도구 탭이나 미리보기 크기 변경은 제외한다.
@@ -217,7 +224,7 @@ export function RecordCard({
     }
     previousEditRef.current = editSnapshot;
     editVersionRef.current += 1;
-    protectionCallbackRef.current?.(hasEditedRef.current && savedVersionRef.current !== editVersionRef.current);
+    protectionCallbackRef.current?.(serverUnsavedRef.current || (hasEditedRef.current && savedVersionRef.current !== editVersionRef.current));
     currentSnapshotRef.current = editSnapshot;
     // 글꼴 로딩이나 그리기를 기다리지 않고 편집 즉시 이전 이미지를 무효화한다.
     blobRef.current = null;
@@ -231,6 +238,7 @@ export function RecordCard({
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (serverUnsavedRef.current) { event.preventDefault(); event.returnValue = true; return; }
       if (!hasEditedRef.current) return;
       if (savedVersionRef.current === editVersionRef.current) return;
       event.preventDefault();
@@ -501,12 +509,30 @@ export function RecordCard({
     // 실제 변환된 이미지의 버전으로 저장한다. 최신 편집본이 준비되지 않았으면 전달하지 않는다.
     if (!blob || savingVersion === null || savingVersion !== editVersionRef.current) return;
 
-    // 서버 업로드는 기다리지 않는다. 공유는 사용자 제스처 안에서 바로 불러야 iOS에서 막히지 않는다.
-    if (recordId != null && uploadedBlobRef.current !== blob) {
-      uploadedBlobRef.current = blob;
-      saveRecordCard(recordId, blob).catch((err) => {
-        uploadedBlobRef.current = null; // 실패하면 다음 저장에서 다시 시도한다
-        console.error("[RecordCard] card upload error:", err);
+    // 기다리는 것은 서버 저장만이다. navigator.share는 아래에서 사용자 제스처 안에 즉시 호출한다.
+    if (saveToServer && !uploadPendingRef.current && !uploadUnconfirmedRef.current
+      && !uploadedVersionsRef.current.has(savingVersion)) {
+      uploadPendingRef.current = true;
+      serverUnsavedRef.current = true;
+      setUploadPending(true);
+      setServerError(null);
+      protectionCallbackRef.current?.(true);
+      void saveToServer(blob, () => mountedRef.current).then(() => {
+        if (!mountedRef.current) return;
+        uploadedVersionsRef.current.add(savingVersion);
+        serverUnsavedRef.current = false;
+        // 새 편집본을 이전 업로드 완료로 저장 처리하지 않는다.
+        savedVersionRef.current = Math.max(savedVersionRef.current ?? 0, savingVersion);
+      }).catch((error: unknown) => {
+        if (!mountedRef.current) return;
+        uploadUnconfirmedRef.current = error instanceof ServerSaveUnconfirmedError;
+        setServerError(error instanceof ServerSaveUnconfirmedError ? error.message
+          : "카드 업로드에 실패했어요. 이미지 저장을 다시 누르면 재시도해요.");
+      }).finally(() => {
+        uploadPendingRef.current = false;
+        if (!mountedRef.current) return;
+        setUploadPending(false);
+        protectionCallbackRef.current?.(serverUnsavedRef.current || (hasEditedRef.current && savedVersionRef.current !== editVersionRef.current));
       });
     }
 
@@ -517,8 +543,8 @@ export function RecordCard({
         await navigator.share({ files: [file] });
         // 공유 중 카드가 닫혔으면 저장 상태·보호 콜백을 건드리지 않는다.
         if (!mountedRef.current) return;
-        savedVersionRef.current = savingVersion;
-        protectionCallbackRef.current?.(hasEditedRef.current && savingVersion !== editVersionRef.current);
+        savedVersionRef.current = Math.max(savedVersionRef.current ?? 0, savingVersion);
+        protectionCallbackRef.current?.(serverUnsavedRef.current || (hasEditedRef.current && savedVersionRef.current !== editVersionRef.current));
         return;
       } catch (e) {
         // 닫힌 카드는 다운로드 폴백도, 오류 상태 갱신도 하지 않는다.
@@ -539,14 +565,14 @@ export function RecordCard({
       link.click();
       link.remove();
       // 다운로드의 실제 완료는 알 수 없으므로 브라우저에 전달한 시점을 기준으로 한다.
-      savedVersionRef.current = savingVersion;
-      protectionCallbackRef.current?.(hasEditedRef.current && savingVersion !== editVersionRef.current);
+      savedVersionRef.current = Math.max(savedVersionRef.current ?? 0, savingVersion);
+      protectionCallbackRef.current?.(serverUnsavedRef.current || (hasEditedRef.current && savedVersionRef.current !== editVersionRef.current));
       // 클릭 직후 동기적으로 해제하면 다운로드가 시작되기 전에 URL이 죽을 수 있다.
       setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
     } catch {
       setErrorMessage("이미지를 저장하지 못했어요. 화면을 캡처해 주세요.");
     }
-  }, [recordId]);
+  }, [saveToServer]);
 
   // 열리면 포커스를 카드 안으로 들인다. 뒤쪽은 CourseDetail이 inert로 잠그므로 여기서 시작하지 않으면
   // 키보드로는 카드에 닿을 수 없다. 컨테이너를 잡아 aria-label("기록 카드")이 먼저 읽히게 한다.
@@ -592,6 +618,9 @@ export function RecordCard({
         </div>
       </div>
 
+      {serverMessage && <p role="status" className="px-5 pb-2 text-center text-[13px] text-white">{serverMessage}</p>}
+      {uploadPending && <p role="status" className="px-5 pb-2 text-center text-[13px] text-white">기록 카드 서버 저장 중…</p>}
+      {serverError && <p role="alert" className="px-5 pb-2 text-center text-[13px] text-white">{serverError}</p>}
       {(preparationFailed || errorMessage) && (
         <p role="alert" className="px-5 pb-2 text-center text-[13px] text-white">
           {preparationFailed ? "이미지를 만들지 못했어요. 다시 시도해 주세요. 계속 실패하면 화면을 캡처해 주세요." : errorMessage}
@@ -791,7 +820,7 @@ export function RecordCard({
         <button
           type="button"
           onClick={preparationFailed ? retryPreparation : save}
-          disabled={!imageReady && !preparationFailed}
+          disabled={uploadPending || (!imageReady && !preparationFailed)}
           className="h-14 flex-[2] cursor-pointer rounded-[14px] bg-accent text-[15px] font-bold text-white disabled:cursor-wait disabled:opacity-60"
         >
           {preparationFailed ? "다시 시도" : imageReady ? "이미지 저장" : "이미지 준비 중…"}

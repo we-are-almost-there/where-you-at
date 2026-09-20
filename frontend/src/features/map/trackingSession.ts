@@ -2,6 +2,9 @@ import type { TrackingRecord } from "./trackingRecord";
 import type { LatLng, RouteType } from "./types";
 
 export interface SavedRecord {
+  /** 확인된 서버 ID만 보존한다. 소유자 없이 ID만 복원해서는 안 된다. */
+  serverId?: number;
+  ownerId?: number;
   summary: TrackingRecord;
   routeType: RouteType;
   routePoints: LatLng[];
@@ -11,6 +14,9 @@ export interface SavedRecord {
 export function isSavedRecord(value: unknown): value is SavedRecord {
   if (!value || typeof value !== "object") return false;
   const { summary, routeType, routePoints } = value as Partial<SavedRecord>;
+  const { serverId, ownerId } = value as Partial<SavedRecord>;
+  if (ownerId !== undefined && (!Number.isSafeInteger(ownerId) || ownerId <= 0)) return false;
+  if (serverId !== undefined && (!Number.isSafeInteger(serverId) || serverId <= 0 || ownerId === undefined)) return false;
   return !!summary && typeof summary === "object"
     && Number.isFinite(summary.distanceKm) && summary.distanceKm >= 0
     && Number.isFinite(summary.durationMs) && summary.durationMs >= 0

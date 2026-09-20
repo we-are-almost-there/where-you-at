@@ -11,10 +11,12 @@ import { Nearby } from "../nearby";
 import { SaveHeartButton } from "../saved";
 import type { NearbyHandle } from "../nearby";
 import type { NearbySpot } from "../nearby/types";
-import { isSavedRecord, readSession, writeSession } from "./trackingSession";
+import { isSavedRecord, readSession, writeSession, type SavedRecord } from "./trackingSession";
 import { useCourseTracking } from "./useCourseTracking";
 import { useAuth } from "../auth";
 import { saveMyRecord } from "../mypage/mypageData";
+import { saveRecordCard, ServerSaveUnconfirmedError } from "../mypage/recordsApi";
+import { readAccessToken } from "../../lib/authToken";
 import { WAKE_LOCK_FAILURE_LINES } from "./useWakeLock";
 import { advanceProgress, distanceToCourse, nearestPointOnCourse, type Direction } from "./courseProgress";
 import { announce, primeSpeech } from "./speech";
@@ -22,7 +24,7 @@ import { useEndpointAddresses } from "./endpointAddress";
 import { DirectionSelector } from "./components/DirectionSelector";
 import { TrackingStats } from "./components/TrackingStats";
 import { RecordCard } from "./components/RecordCard";
-import { paceStat, type TrackingRecord } from "./trackingRecord";
+import { paceStat } from "./trackingRecord";
 import SidebarDrawer from "../../components/layout/SidebarDrawer";
 import AppHeader from "../../components/layout/AppHeader";
 import { Tabs } from "../../components/common/Tabs";
@@ -186,7 +188,7 @@ function CourseDetailSession() {
   const viewKey = `${sessionKey}:view`;
   const [restored] = useState(() => readSession<{
     direction: Direction; progress: number; startChecked: boolean; tooFarMeters?: number | null;
-    record: { summary: TrackingRecord; routeType: RouteType; routePoints: LatLng[] } | null;
+    record: SavedRecord | null;
   }>(viewKey));
 
   const [detail, setDetail] = useState<CourseDetailData | null>(null);
@@ -300,11 +302,24 @@ function CourseDetailSession() {
   const wasOffCourseRef = useRef(false); // 이탈 진입 순간(아님→이탈)에만 음성이 나가도록 직전 상태 보관
   const wasFinishedRef = useRef(isFinished); // 복원된 완주는 새 완주로 안내하지 않는다
   // null이 아니면 종료 후 기록 카드. 카드가 열린 뒤 종목을 바꿔도 같은 기록이 달라지지 않게 종료 시점의 종목·경로를 함께 붙잡아 둔다.
-  const [record, setRecord] = useState<{ summary: TrackingRecord; routeType: RouteType; routePoints: LatLng[] } | null>(() =>
+  const [record, setRecord] = useState<SavedRecord | null>(() =>
     isSavedRecord(restored?.record) ? restored.record : null,
   );
-  // 서버에 저장된 기록 id. 로그인하지 않았거나 서버 연결이 꺼져 있으면 null. 카드 이미지를 이 기록에 붙일 때 쓴다.
-  const [recordId, setRecordId] = useState<number | null>(null);
+  // 종료 시 한 번 보낸 POST의 결과를 공유한다. 실패한 Promise도 보존해 이미지 저장이 재POST하지 않게 한다.
+  const recordRequestRef = useRef<{ record: SavedRecord; result: Promise<number> } | null>(null);
+  const [recordRequestState, setRecordRequestState] = useState<{ record: SavedRecord; failed: boolean } | null>(null);
+  const saveCardForRecord = async (image: Blob, isActive: () => boolean) => {
+    if (!record || auth.status !== "signedIn" || record.ownerId !== auth.user.id) {
+      throw new ServerSaveUnconfirmedError("기록을 저장한 계정으로 로그인해 주세요.");
+    }
+    const token = readAccessToken();
+    const request = recordRequestRef.current;
+    const id = record.serverId ?? (request?.record.summary === record.summary ? await request.result : null);
+    if (!isActive()) return;
+    if (id == null) throw new ServerSaveUnconfirmedError("완주 기록 저장 여부를 확인하지 못했어요. 중복 방지를 위해 다시 전송하지 않아요. 내 기록을 확인해 주세요.");
+    if (readAccessToken() !== token) throw new ServerSaveUnconfirmedError("로그인 정보가 바뀌어 카드 저장을 중단했어요.");
+    return saveRecordCard(id, image);
+  };
   const [viewStorageFailed, setViewStorageFailed] = useState(false);
   useEffect(() => {
     const hasPersistableState = sessionActive || record != null;
@@ -518,11 +533,14 @@ function CourseDetailSession() {
   const handleStopTracking = () => {
     const summary = stopTracking();
     if (!summary || summary.distanceKm < MIN_RECORD_KM) return;
-    setRecord({ summary, routeType, routePoints: waypoints });
-    setRecordId(null);
+    const next: SavedRecord = { summary, routeType, routePoints: waypoints,
+      ...(auth.status === "signedIn" ? { ownerId: auth.user.id } : {}) };
+    setRecord(next);
+    recordRequestRef.current = null;
+    setRecordRequestState(null);
     if (auth.status !== "signedIn") return;
-    // 저장이 실패해도 기록 카드는 그대로 쓸 수 있어야 하므로 화면은 막지 않고 로그만 남긴다.
-    saveMyRecord({
+    setRecordRequestState({ record: next, failed: false });
+    const result = saveMyRecord({
       courseId,
       routeType,
       distanceKm: summary.distanceKm,
@@ -531,9 +549,15 @@ function CourseDetailSession() {
       finishedAt: new Date().toISOString(),
     })
       .then((saved) => {
-        if (saved) setRecordId(saved.id);
+        setRecord((current) => current?.summary === summary ? { ...current, serverId: saved.id } : current);
+        return saved.id;
       })
-      .catch((err) => console.error("[CourseDetail] record save error:", err));
+      .catch((cause) => {
+        throw new ServerSaveUnconfirmedError("완주 기록 저장 여부를 확인하지 못했어요. 중복 방지를 위해 다시 전송하지 않아요. 내 기록을 확인해 주세요.", { cause });
+      });
+    recordRequestRef.current = { record: next, result };
+    // 카드 저장 전에 실패해도 unhandled rejection이 되지 않는다. 원본 Promise는 계속 실패 상태다.
+    void result.catch(() => setRecordRequestState((current) => current?.record === next ? { record: next, failed: true } : current));
   };
 
   // 안내를 닫을 때 추적을 정리한다(clearWatch는 부수효과라 렌더 중엔 못 부른다).
@@ -1131,7 +1155,12 @@ function CourseDetailSession() {
           record={record.summary}
           routeType={record.routeType}
           routePoints={record.routePoints}
-          recordId={recordId}
+          saveToServer={record.ownerId !== undefined ? saveCardForRecord : undefined}
+          serverMessage={record.ownerId !== undefined && !record.serverId
+            ? recordRequestState?.record.summary === record.summary && !recordRequestState.failed
+              ? "완주 기록 저장 중… 이미지 저장을 누르면 완료 후 카드도 이어서 저장해요."
+              : "완주 기록 저장 여부를 확인하지 못했어요. 중복 방지를 위해 다시 전송하지 않아요. 내 기록을 확인해 주세요."
+            : undefined}
           onClose={() => setRecord(null)}
         />
       )}
