@@ -12,6 +12,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
 from app.deps import CurrentUser, get_current_user
 from app.main import app
@@ -111,6 +112,37 @@ class CreateCardTest(unittest.TestCase):
         self.assertEqual(res.status_code, 201)
         self.assertEqual(res.json()["image_url"], "https://r2/x")
 
+    def test_db_failure_after_promote_deletes_final_image(self):
+        with patch("app.api.routers.record_cards.crud") as crud, patch(
+            "app.api.routers.record_cards.storage.head", return_value=INFO
+        ), patch(
+            "app.api.routers.record_cards.storage.promote", return_value="record-cards/7/a.png"
+        ), patch("app.api.routers.record_cards.storage.delete") as delete:
+            crud.record_exists.return_value = True
+            crud.create_card.side_effect = RuntimeError("commit failed")
+            with self.assertRaises(RuntimeError):
+                self.post()
+        delete.assert_called_once_with("record-cards/7/a.png")
+
+    def test_db_connection_failure_after_promote_deletes_final_image(self):
+        calls = {"n": 0}
+
+        @contextmanager
+        def flaky_db():
+            calls["n"] += 1
+            if calls["n"] == 2:  # 첫 호출은 소유권 확인, 두 번째가 저장
+                raise HTTPException(status_code=503, detail="db down")
+            yield object()
+
+        with patch("app.api.routers.record_cards.db_connection", flaky_db), patch(
+            "app.api.routers.record_cards.crud"
+        ) as crud, patch("app.api.routers.record_cards.storage.head", return_value=INFO), patch(
+            "app.api.routers.record_cards.storage.promote", return_value="record-cards/7/a.png"
+        ), patch("app.api.routers.record_cards.storage.delete") as delete:
+            crud.record_exists.return_value = True
+            res = self.post()
+        self.assertEqual(res.status_code, 503)
+        delete.assert_called_once_with("record-cards/7/a.png")
 
 if __name__ == "__main__":
     unittest.main()

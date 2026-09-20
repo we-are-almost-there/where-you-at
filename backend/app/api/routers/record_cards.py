@@ -49,6 +49,14 @@ def _to_card_out(row: dict) -> RecordCardOut:
     )
 
 
+def _discard_promoted_image(image_key: str) -> None:
+    """DB에 카드를 남기지 못한 최종 이미지를 지운다. 실패해도 원래 오류를 가리지 않게 로그만 남긴다."""
+    try:
+        storage.delete(image_key)
+    except storage.StorageError as e:
+        print(f"[ERROR] 고아 기록 카드 이미지 삭제 실패(직접 삭제 필요): {image_key} {e}")
+
+
 @router.post("/upload-url", response_model=RecordCardUploadResponse)
 def create_upload_url(body: RecordCardUploadRequest, current_user: CurrentUser = Depends(get_current_user)):
     """카드 이미지를 올릴 임시 URL을 발급한다. 브라우저가 이 URL로 PUT(같은 Content-Type)한다."""
@@ -90,16 +98,18 @@ def create_card(body: RecordCardCreate, current_user: CurrentUser = Depends(get_
         print(f"[ERROR] 기록 카드 이미지 처리 실패: {e}")
         raise HTTPException(status_code=502, detail="이미지를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.")
 
-    with db_connection() as conn:
-        row = crud.create_card(
-            conn, user_id=current_user.id, record_id=body.record_id, image_key=image_key
-        )
+    try:
+        with db_connection() as conn:
+            row = crud.create_card(
+                conn, user_id=current_user.id, record_id=body.record_id, image_key=image_key
+            )
+    except BaseException:
+        # 연결 실패(503), insert·commit 예외 모두 카드 행이 없으니 옮겨 둔 이미지를 지우고 원래 오류를 그대로 올린다.
+        _discard_promoted_image(image_key)
+        raise
     if row is None:
-        # 확인과 저장 사이에 기록이 지워진 드문 경우. 옮겨 둔 이미지는 고아가 되므로 지운다.
-        try:
-            storage.delete(image_key)
-        except storage.StorageError as e:
-            print(f"[ERROR] 고아 기록 카드 이미지 삭제 실패(직접 삭제 필요): {image_key} {e}")
+        # 확인과 저장 사이에 기록이 지워진 드문 경우.
+        _discard_promoted_image(image_key)
         raise HTTPException(status_code=404, detail="Record not found")
     return _to_card_out(row)
 
