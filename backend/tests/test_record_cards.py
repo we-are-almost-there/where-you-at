@@ -17,6 +17,7 @@ from fastapi import HTTPException
 from app.deps import CurrentUser, get_current_user
 from app.main import app
 from app.services import storage
+from app.api.routers import record_cards as record_cards_router
 
 USER = CurrentUser(id=7, nickname="길손", bio=None, kakao_id=1, session_id=uuid4())
 INFO = storage.ObjectInfo(size=1000, content_type="image/png", etag='"abc"')
@@ -54,6 +55,8 @@ class CreateCardTest(unittest.TestCase):
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
+        record_cards_router.upload_url_limiter.reset()
+        record_cards_router.create_card_limiter.reset()
         self.addCleanup(app.dependency_overrides.clear)
 
     def post(self, upload_key="uploads/7/a.png"):
@@ -156,6 +159,23 @@ class CreateCardTest(unittest.TestCase):
             res = self.post()
         self.assertEqual(res.status_code, 409)
         delete.assert_called_once_with("record-cards/7/a.png")
+
+    def test_create_card_rate_limited_is_429(self):
+        with patch("app.api.routers.record_cards.crud") as crud:
+            crud.record_exists.return_value = False
+            codes = [self.post().status_code for _ in range(31)]
+        self.assertEqual(codes[-1], 429)
+        self.assertEqual(set(codes[:-1]), {404})
+
+    def test_upload_url_rejected_when_quota_full(self):
+        with patch("app.api.routers.record_cards.crud") as crud, patch(
+            "app.api.routers.record_cards.storage.new_key"
+        ) as new_key:
+            crud.MAX_CARDS_PER_USER = 100
+            crud.count_cards.return_value = 100
+            res = self.client.post("/api/record-cards/upload-url", json={"content_type": "image/png"})
+        self.assertEqual(res.status_code, 409)
+        new_key.assert_not_called()
 
 
 if __name__ == "__main__":

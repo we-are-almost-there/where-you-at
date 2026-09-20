@@ -162,3 +162,9 @@ def record_exists(conn, *, user_id: int, record_id: int) -> bool:
             {"record_id": record_id, "user_id": user_id},
         )
         return cur.fetchone() is not None
+
+    
+def count_cards(conn, *, user_id: int) -> int:
+    with conn.cursor() as cur:
+        cur.execute("select count(*) from record_card where user_id = %(user_id)s", {"user_id": user_id})
+        return cur.fetchone()[0]

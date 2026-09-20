@@ -11,12 +11,17 @@ from ...schemas.record import (
     RunRecordOut,
 )
 from ...services import storage
+from ...services.rate_limit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api/record-cards", tags=["record-cards"])
 
 # 카드 이미지는 Canvas PNG라 보통 수백 KB다. 넉넉히 5MB까지만 받는다.
 MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024
 
+# 회원별 10분에 업로드 URL 30회, 카드 생성 30회. 정상 사용(완주 뒤 카드 몇 장)의 몇 배로 넉넉히 잡았다.
+# 메모리 기반이라 프로세스별로 센다(services/rate_limit.py 참고). 현재 배포는 인스턴스 1개, 워커 1개다.
+upload_url_limiter = SlidingWindowLimiter(max_requests=30, window_seconds=600)
+create_card_limiter = SlidingWindowLimiter(max_requests=30, window_seconds=600)
 
 def _require_storage() -> None:
     if not storage.is_configured():
@@ -61,6 +66,11 @@ def _discard_promoted_image(image_key: str) -> None:
 def create_upload_url(body: RecordCardUploadRequest, current_user: CurrentUser = Depends(get_current_user)):
     """카드 이미지를 올릴 임시 URL을 발급한다. 브라우저가 이 URL로 PUT(같은 Content-Type)한다."""
     _require_storage()
+    if not upload_url_limiter.allow(str(current_user.id)):
+        raise HTTPException(status_code=429, detail="요청이 너무 잦아요. 잠시 후 다시 시도해 주세요.")
+    with db_connection() as conn:
+        if crud.count_cards(conn, user_id=current_user.id) >= crud.MAX_CARDS_PER_USER:
+            raise HTTPException(status_code=409, detail="저장할 수 있는 기록 카드 수를 넘었어요.")
     try:
         upload_key = storage.new_key(storage.Folder.UPLOAD, current_user.id, body.content_type)
         upload_url = storage.presign_upload(upload_key, body.content_type)
@@ -74,7 +84,8 @@ def create_upload_url(body: RecordCardUploadRequest, current_user: CurrentUser =
 def create_card(body: RecordCardCreate, current_user: CurrentUser = Depends(get_current_user)):
     """올라간 이미지를 검증하고 최종 폴더로 옮긴 뒤 기록 카드로 저장한다."""
     _require_storage()
-
+    if not create_card_limiter.allow(str(current_user.id)):
+        raise HTTPException(status_code=429, detail="요청이 너무 잦아요. 잠시 후 다시 시도해 주세요.")
     # 남의 임시 키로 카드를 만들지 못하게 내 폴더의 키만 받는다.
     if not body.upload_key.startswith(f"{storage.Folder.UPLOAD.value}/{current_user.id}/"):
         raise HTTPException(status_code=400, detail="올바르지 않은 업로드 키입니다.")
