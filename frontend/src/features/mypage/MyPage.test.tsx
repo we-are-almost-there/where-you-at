@@ -170,12 +170,24 @@ describe("MyPage", () => {
     expect(screen.getByRole("dialog", { name: "스탬프 지도" })).toBeTruthy();
   });
 
-  it("로그아웃 버튼은 저장소의 signOut을 부른다", async () => {
+  it("로그아웃 확인창에서 확인해야 signOut을 부른다", async () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
 
+    expect(signOut).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "로그아웃하시겠어요?" });
+    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "취소" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "로그아웃" }));
     await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
+  });
+
+  it("로그아웃 확인을 취소하면 로그인 상태를 유지한다", () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(signOut).not.toHaveBeenCalled();
   });
 
   it("로그아웃에 실패하면 로그인 상태를 유지하고 다시 시도하라고 알린다", async () => {
@@ -183,9 +195,11 @@ describe("MyPage", () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
+    const dialog = screen.getByRole("dialog", { name: "로그아웃하시겠어요?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "로그아웃" }));
 
     expect(await screen.findByText("로그아웃하지 못했어요. 잠시 후 다시 시도해 주세요.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "로그아웃" }).hasAttribute("disabled")).toBe(false);
+    expect(within(dialog).getByRole("button", { name: "로그아웃" }).hasAttribute("disabled")).toBe(false);
   });
 });
 
