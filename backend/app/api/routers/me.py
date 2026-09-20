@@ -89,30 +89,30 @@ def _store_avatar(user_id: int, data: bytes, declared_type: str) -> UserOut:
         raise HTTPException(status_code=400, detail="파일 형식과 확장자가 맞는 JPG, PNG, WEBP 사진만 올려 주세요.")
 
     avatar_key = storage.new_key(storage.Folder.AVATAR, user_id, detected_type)
-    previous_key = None
-    uploaded = False
+    try:
+        # 외부 R2 호출 중에는 DB 연결이나 행 잠금을 보유하지 않는다. 탈퇴가 먼저 끝나더라도
+        # 아래 짧은 트랜잭션에서 회원 부재를 확인하고 방금 올린 객체를 되돌릴 수 있다.
+        storage.put(avatar_key, data, detected_type)
+    except storage.StorageError:
+        raise _storage_unavailable()
+
     try:
         with db_connection() as conn:
-            # 탈퇴도 같은 잠금을 R2 정리부터 DB 삭제까지 유지한다. 먼저 끝난 작업에 따라 새 사진을
-            # 탈퇴가 함께 지우거나, 탈퇴한 회원의 업로드를 R2 쓰기 전에 거부한다.
+            # 탈퇴는 같은 잠금을 R2 정리부터 DB 삭제까지 유지한다. 업로드가 먼저 잠그면 탈퇴가
+            # 새 객체까지 지우고, 탈퇴가 먼저 끝나면 여기서 회원 부재를 확인해 새 객체를 되돌린다.
             locked_user = user_crud.lock_user_for_update(conn, user_id)
             if locked_user is None:
                 conn.rollback()
                 raise unauthorized_error()
             previous_key = locked_user["avatar_key"]
-            storage.put(avatar_key, data, detected_type)
-            uploaded = True
             user = user_crud.set_avatar_locked(conn, user_id, avatar_key)
             conn.commit()
-    except storage.StorageError:
-        raise _storage_unavailable()
     except Exception:
-        # DB에 연결하지 못했다면 새 최종 파일이 고아로 남지 않게 되돌린다.
-        if uploaded:
-            try:
-                storage.delete(avatar_key)
-            except storage.StorageError:
-                pass
+        # 탈퇴가 먼저 끝났거나 DB 반영에 실패하면 새 최종 파일이 고아로 남지 않게 되돌린다.
+        try:
+            storage.delete(avatar_key)
+        except storage.StorageError as exc:
+            print(f"[WARN] 반영 실패한 프로필 사진 삭제 실패: user_id={user_id} {type(exc).__name__}")
         raise
     if previous_key and previous_key != avatar_key:
         try:

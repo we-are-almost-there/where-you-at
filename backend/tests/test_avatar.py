@@ -66,6 +66,12 @@ class AvatarApiTest(unittest.TestCase):
     def test_validates_and_uploads_image_then_deletes_previous_avatar(
         self, _configured, mock_new_key, mock_put, _presign, mock_delete, mock_lock, mock_set_avatar
     ):
+        calls = []
+        mock_put.side_effect = lambda *args: calls.append("r2")
+        mock_lock.side_effect = lambda *args: calls.append("lock") or {
+            "id": 7,
+            "avatar_key": "avatars/7/old.webp",
+        }
         mock_set_avatar.return_value = {"id": 7, "nickname": "길손", "bio": None, "avatar_key": AVATAR_KEY}
 
         res = self.client.put("/api/me/avatar", headers=_headers("image/webp"), content=WEBP)
@@ -75,20 +81,46 @@ class AvatarApiTest(unittest.TestCase):
         mock_new_key.assert_called_once_with(me.storage.Folder.AVATAR, 7, "image/webp")
         mock_lock.assert_called_once()
         mock_put.assert_called_once_with(AVATAR_KEY, WEBP, "image/webp")
+        self.assertEqual(calls, ["r2", "lock"])
         self.assertEqual(mock_set_avatar.call_args.args[1:], (7, AVATAR_KEY))
         mock_delete.assert_called_once_with("avatars/7/old.webp")
 
     @patch("app.crud.user.set_avatar_locked")
     @patch("app.crud.user.lock_user_for_update", return_value=None)
+    @patch("app.services.storage.delete")
     @patch("app.services.storage.put")
     @patch("app.services.storage.new_key", return_value=AVATAR_KEY)
-    def test_does_not_write_r2_after_account_deletion(self, _new_key, mock_put, _lock, mock_set_avatar):
+    def test_deletes_new_r2_object_when_account_deletion_finishes_first(
+        self, _new_key, mock_put, mock_delete, _lock, mock_set_avatar
+    ):
         with self.assertRaises(HTTPException) as ctx:
             me._store_avatar(7, WEBP, "image/webp")
 
         self.assertEqual(ctx.exception.status_code, 401)
-        mock_put.assert_not_called()
+        mock_put.assert_called_once_with(AVATAR_KEY, WEBP, "image/webp")
+        mock_delete.assert_called_once_with(AVATAR_KEY)
         mock_set_avatar.assert_not_called()
+
+    def test_opens_database_only_after_r2_put_finishes(self):
+        conn = MagicMock()
+        db_context = MagicMock()
+        db_context.__enter__.return_value = conn
+        user = {"id": 7, "nickname": "길손", "bio": None, "avatar_key": AVATAR_KEY}
+
+        with (
+            patch("app.api.routers.me.db_connection", return_value=db_context) as mock_db,
+            patch("app.services.storage.new_key", return_value=AVATAR_KEY),
+            patch("app.services.storage.put") as mock_put,
+            patch("app.crud.user.lock_user_for_update", return_value={"id": 7, "avatar_key": None}),
+            patch("app.crud.user.set_avatar_locked", return_value=user),
+            patch("app.api.routers.me.profile.user_out", return_value=user),
+        ):
+            mock_put.side_effect = lambda *args: mock_db.assert_not_called()
+
+            self.assertEqual(me._store_avatar(7, WEBP, "image/webp"), user)
+
+        mock_put.assert_called_once_with(AVATAR_KEY, WEBP, "image/webp")
+        mock_db.assert_called_once_with()
 
     @patch("app.api.routers.me.run_in_threadpool", new_callable=AsyncMock)
     @patch("app.services.storage.is_configured", return_value=True)
