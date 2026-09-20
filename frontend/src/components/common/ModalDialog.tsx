@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 
 interface Props {
   title: string;
+  titleAlign?: "left" | "center";
   onClose: () => void;
   /** 열릴 때 초점을 받을 요소. 없으면 닫기 버튼. */
   initialFocusRef?: RefObject<HTMLElement | null>;
@@ -21,7 +22,16 @@ interface Props {
  * 배경 잠금(스크롤·#root inert)과 초점 처리는 개인정보처리방침 팝업(help/PrivacyPolicyDialog)과 같다.
  * 닫힌 뒤에는 열 때 초점이 있던 버튼으로 돌려준다.
  */
-export default function ModalDialog({ title, onClose, initialFocusRef, busy = false, size = "sm", panelClassName = "", children }: Props) {
+export default function ModalDialog({
+  title,
+  titleAlign = "left",
+  onClose,
+  initialFocusRef,
+  busy = false,
+  size = "sm",
+  panelClassName = "",
+  children,
+}: Props) {
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const busyRef = useRef(busy);
@@ -75,8 +85,8 @@ export default function ModalDialog({ title, onClose, initialFocusRef, busy = fa
           size === "lg" ? "max-w-[720px]" : "max-w-[400px]"
         } ${panelClassName}`}
       >
-        <header className="flex h-14 shrink-0 items-center justify-between gap-3 pl-5 pr-4">
-          <h2 id={titleId} className="text-[17px] font-bold text-ink">
+        <header className={`relative flex h-14 shrink-0 items-center gap-3 ${titleAlign === "center" ? "justify-center px-12" : "justify-between pl-5 pr-4"}`}>
+          <h2 id={titleId} className={`text-[17px] font-bold text-ink ${titleAlign === "center" ? "text-center" : ""}`}>
             {title}
           </h2>
           <button
@@ -85,7 +95,7 @@ export default function ModalDialog({ title, onClose, initialFocusRef, busy = fa
             onClick={requestClose}
             disabled={busy}
             aria-label="닫기"
-            className="cursor-pointer text-ink disabled:cursor-default disabled:opacity-40"
+            className={`cursor-pointer text-ink disabled:cursor-default disabled:opacity-40 ${titleAlign === "center" ? "absolute right-4 top-1/2 -translate-y-1/2" : ""}`}
           >
             <X size={22} strokeWidth={1.75} aria-hidden="true" />
           </button>

@@ -3,7 +3,8 @@
 // 마이페이지가 로그인 상태에 따라 알맞은 화면을 보여 주고, 프로필 수정·로그아웃·탈퇴가
 // 로그인 저장소(features/auth)의 함수로 이어지는지 본다. 저장소 동작 자체는 auth/useAuth.test.ts가 맡는다.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { Link, MemoryRouter, Route, Routes } from "react-router";
+import ScrollToTop from "../../components/layout/ScrollToTop";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../../lib/http";
 import { removeAvatar, signOut, startKakaoLogin, updateAvatar, updateProfile, useAuth, withdraw, type AuthState } from "../auth";
@@ -100,6 +101,36 @@ afterEach(() => {
 });
 
 describe("MyPage", () => {
+  it("다른 페이지에서 스탬프 링크로 진입하거나 같은 링크를 다시 눌러도 제목까지 이동한다", async () => {
+    const scroll = vi.fn();
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scroll });
+    const scrollTop = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    try {
+      render(
+        <MemoryRouter initialEntries={["/courses"]}>
+          <ScrollToTop />
+          <Link to="/mypage#mypage-stamps">스탬프 바로가기</Link>
+          <Routes>
+            <Route path="/courses" element={<div>코스</div>} />
+            <Route path="/mypage" element={<MyPage />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      fireEvent.click(screen.getByRole("link", { name: "스탬프 바로가기" }));
+      await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+      const heading = document.getElementById("mypage-stamps");
+      expect(scroll.mock.instances[0]).toBe(heading);
+      expect(document.activeElement).toBe(heading);
+      fireEvent.click(screen.getByRole("link", { name: "스탬프 바로가기" }));
+      await waitFor(() => expect(scroll).toHaveBeenCalledTimes(2));
+    } finally {
+      scrollTop.mockRestore();
+      if (original) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", original);
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+    }
+  });
+
   it("로그아웃 상태면 로그인 안내를 보여 주고, 로그인 뒤 마이페이지로 돌아오게 한다", () => {
     mockedUseAuth.mockReturnValue({ status: "signedOut", user: null });
     renderPage();
@@ -181,12 +212,24 @@ describe("MyPage", () => {
     expect(screen.getByRole("dialog", { name: "스탬프 지도" })).toBeTruthy();
   });
 
-  it("로그아웃 버튼은 저장소의 signOut을 부른다", async () => {
+  it("로그아웃 확인창에서 확인해야 signOut을 부른다", async () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
 
+    expect(signOut).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "로그아웃하시겠어요?" });
+    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "취소" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "로그아웃" }));
     await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
+  });
+
+  it("로그아웃 확인을 취소하면 로그인 상태를 유지한다", () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(signOut).not.toHaveBeenCalled();
   });
 
   it("로그아웃에 실패하면 로그인 상태를 유지하고 다시 시도하라고 알린다", async () => {
@@ -194,9 +237,11 @@ describe("MyPage", () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
+    const dialog = screen.getByRole("dialog", { name: "로그아웃하시겠어요?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "로그아웃" }));
 
     expect(await screen.findByText("로그아웃하지 못했어요. 잠시 후 다시 시도해 주세요.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "로그아웃" }).hasAttribute("disabled")).toBe(false);
+    expect(within(dialog).getByRole("button", { name: "로그아웃" }).hasAttribute("disabled")).toBe(false);
   });
 });
 

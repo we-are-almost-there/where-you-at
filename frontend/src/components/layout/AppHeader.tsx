@@ -109,7 +109,7 @@ export default function AppHeader({
               type="button"
               onClick={() => setIsSidebarOpen(true)}
               aria-label="메뉴"
-              className="cursor-pointer text-[20px] leading-none text-ink md:hidden"
+              className="cursor-pointer text-[24px] leading-none text-ink md:hidden"
             >
               ☰
             </button>
