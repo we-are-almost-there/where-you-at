@@ -2,9 +2,11 @@ import hmac
 import json
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl
-from uuid import uuid4
+from uuid import UUID, uuid4
 
+from anyio import WouldBlock
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 
 from ...core.config import settings
 from ...crud import user as user_crud
@@ -16,8 +18,8 @@ from ...services.rate_limit import SlidingWindowLimiter, client_key
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # 같은 IP에서 10분에 20회까지. 한 번의 로그인은 한 번 호출하므로 공용 IP(학교, 회사, 모바일 캐리어 NAT)
-# 뒤에 여러 사람이 있어도 걸리지 않고, 단일 IP가 한 번에 몰아 보낼 수 있는 양을 동기 라우터가 함께 쓰는
-# 스레드풀(기본 40)보다 작게 둔다. 동시 실행 수 자체는 제한하지 않는다(#150 후속).
+# 뒤에 여러 사람이 있어도 걸리지 않게 둔다. 외부 호출의 동시 실행 수는 아래 로그인 라우터에서
+# 별도로 제한한다. 횟수 제한은 반복 요청을, 동시 실행 제한은 카카오와 서버 자원을 보호한다.
 # 메모리 기반이라 서버 재시작 시 초기화된다 (services/rate_limit.py 참고).
 login_limiter = SlidingWindowLimiter(max_requests=20, window_seconds=600)
 
@@ -29,7 +31,7 @@ _ADMIN_KEY_PREFIX = "KakaoAK "
 
 
 @router.post("/kakao", response_model=LoginResponse)
-def login_with_kakao(body: KakaoLoginRequest, request: Request):
+async def login_with_kakao(body: KakaoLoginRequest, request: Request):
     """카카오 인가 코드로 로그인한다. 처음 로그인하면 회원을 만든다."""
     if not (kakao_oauth.is_configured() and auth_token.is_configured()):
         print("[ERROR] 카카오 로그인 설정이 비어 있거나 JWT_SECRET이 32바이트보다 짧습니다.")
@@ -46,18 +48,43 @@ def login_with_kakao(body: KakaoLoginRequest, request: Request):
     elif not login_limiter.allow(key):
         raise HTTPException(status_code=429, detail="로그인을 너무 자주 시도했어요. 잠시 후 다시 시도해 주세요.")
 
+    limiter = request.app.state.kakao_login_limiter
     try:
-        kakao_token = kakao_oauth.exchange_code(body.code)
-        kakao_user = kakao_oauth.fetch_user(kakao_token)
-    except kakao_oauth.KakaoAuthError:
-        raise HTTPException(status_code=401, detail="로그인 요청이 만료되었습니다. 다시 로그인해 주세요.")
-    except kakao_oauth.KakaoUpstreamError as e:
-        print(f"[ERROR] 카카오 로그인 실패: {e}")
-        raise HTTPException(status_code=502, detail="카카오 로그인을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+        limiter.acquire_nowait()
+    except WouldBlock:
+        # 기다리는 요청을 쌓지 않는다. 아직 카카오에 인가 코드를 보내지 않았으므로 사용자는
+        # 잠시 뒤 처음부터 다시 로그인할 수 있다.
+        raise HTTPException(
+            status_code=503,
+            detail="지금은 로그인할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+            headers={"Retry-After": "3"},
+        )
+
+    try:
+        try:
+            client = request.app.state.kakao_login_http
+            kakao_token = await kakao_oauth.exchange_code(client, body.code)
+            kakao_user = await kakao_oauth.fetch_user(client, kakao_token)
+        except kakao_oauth.KakaoAuthError:
+            raise HTTPException(status_code=401, detail="로그인 요청이 만료되었습니다. 다시 로그인해 주세요.")
+        except kakao_oauth.KakaoUpstreamError as e:
+            print(f"[ERROR] 카카오 로그인 실패: {e}")
+            raise HTTPException(status_code=502, detail="카카오 로그인을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+    finally:
+        limiter.release()
 
     # 카카오 확인이 끝난 요청만 DB에 연결한다(inquiries.py와 같은 이유).
     now = datetime.now(timezone.utc)
     session_id = uuid4()
+    user = await run_in_threadpool(_save_login, kakao_user, session_id, now)
+    return LoginResponse(
+        access_token=auth_token.create_access_token(user["id"], session_id, now=now),
+        user=UserOut(**user),
+    )
+
+
+def _save_login(kakao_user: kakao_oauth.KakaoUser, session_id: UUID, now: datetime):
+    """동기 psycopg2 작업 전체를 이벤트 루프 밖의 같은 스레드에서 실행한다."""
     with db_connection() as conn:
         user = user_crud.upsert_kakao_user(conn, kakao_id=kakao_user.kakao_id, nickname=kakao_user.nickname)
         user_crud.create_session(
@@ -66,10 +93,7 @@ def login_with_kakao(body: KakaoLoginRequest, request: Request):
             session_id=session_id,
             expires_at=now + auth_token.ACCESS_TOKEN_TTL,
         )
-    return LoginResponse(
-        access_token=auth_token.create_access_token(user["id"], session_id, now=now),
-        user=UserOut(**user),
-    )
+    return user
 
 
 @router.post("/logout", status_code=204)

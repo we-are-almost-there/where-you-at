@@ -24,12 +24,18 @@ const TOO_MANY_ATTEMPTS_ERROR: UserError = {
   title: "로그인을 너무 자주 시도했어요",
   description: "잠시 후 다시 시도해 주세요.",
 };
+const LOGIN_UNAVAILABLE_ERROR: UserError = {
+  title: "지금은 로그인할 수 없어요",
+  description: "잠시 후 다시 시도해 주세요.",
+};
 
 function toLoginError(err: unknown): UserError {
   if (err instanceof HttpError) {
     if (err.status === 401) return EXPIRED_ERROR;
     // 서버가 같은 IP에서 온 반복 요청을 막은 경우다. 한도는 서버가 정한다.
     if (err.status === 429) return TOO_MANY_ATTEMPTS_ERROR;
+    // 서버 설정 누락, DB 연결 실패, 로그인 동시 처리 한도 초과를 같은 문구로 안내한다.
+    if (err.status === 503) return LOGIN_UNAVAILABLE_ERROR;
   }
   return toUserError(err, LOGIN_FAILED_TITLE);
 }
