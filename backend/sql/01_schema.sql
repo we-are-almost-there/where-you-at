@@ -132,7 +132,7 @@ create table course_waypoint (
   lat              double precision not null check (lat between -90 and 90),
   lng              double precision not null check (lng between -180 and 180),
   sequence_order   int not null,
-  created_at       timestamptz not null default now(), 
+  created_at       timestamptz not null default now(),
   unique (course_id, route_type, sequence_order)
 );
 
@@ -480,7 +480,7 @@ alter table inquiry      enable row level security;
 -- ============================================
 -- 카카오 로그인으로 가입한 회원. 인증은 Supabase Auth가 아니라 FastAPI가 직접 처리한다.
 --   DB를 옮겨도 회원 데이터와 인증이 그대로 따라가도록 우리 스키마의 일반 테이블로 둔다.
--- 이미 운영 중인 공용 DB에는 08_app_user.sql과 09_auth_session.sql로 같은 내용을 적용한다.
+-- 이미 운영 중인 공용 DB에는 08_app_user.sql, 09_auth_session.sql, 10_saved_course.sql, 11_run_record.sql, 12_record_card.sql로 같은 내용을 적용한다.
 
 
 -- 1. app_user (회원)
@@ -549,3 +549,49 @@ create table saved_course (
 create index idx_saved_course_user_created on saved_course(user_id, created_at desc);
 
 alter table saved_course enable row level security;
+
+
+-- 4. run_record (따라가기 완주 기록)
+-- 회원이 코스 따라가기를 마칠 때 남기는 기록. 코스 이름은 저장하지 않고 조회 때 course에서 가져온다.
+-- pace_sec_per_km: 거리가 너무 짧으면 null.
+create table run_record (
+  id                bigint generated always as identity primary key,
+  user_id           bigint not null references app_user(id) on delete cascade,
+  course_id         bigint not null references course(id) on delete cascade,
+  route_type        varchar(10) not null check (route_type in ('trail', 'bicycle')),
+  distance_km       numeric(7, 3) not null check (distance_km > 0),
+  duration_ms       bigint not null check (duration_ms > 0),
+  pace_sec_per_km   numeric(8, 2) check (pace_sec_per_km > 0),
+  finished_at       timestamptz not null,
+  created_at        timestamptz not null default now(),
+  unique (id, user_id)
+);
+
+-- 마이페이지 목록: 내 기록을 최근 순으로
+create index idx_run_record_user_finished on run_record (user_id, finished_at desc);
+
+alter table run_record enable row level security;
+
+
+-- 5. record_card (기록 카드 이미지)
+-- 한 기록으로 카드를 여러 장 만들 수 있다. 이미지는 R2에 두고 키만 저장한다.
+-- image_key: record-cards/{user_id}/... URL은 만료되므로 저장하지 않고 조회 때 발급한다.
+create table record_card (
+  id          bigint generated always as identity primary key,
+  user_id     bigint not null references app_user(id) on delete cascade,
+  record_id   bigint not null,
+  image_key   varchar(200) not null,
+  created_at  timestamptz not null default now(),
+  -- 카드의 user_id와 기록의 user_id가 같다는 것을 DB가 보장한다.
+  constraint record_card_record_owner_fk foreign key (record_id, user_id)
+    references run_record(id, user_id) on delete cascade
+);
+
+-- 마이페이지 목록: 내 카드를 최근 순으로
+create index idx_record_card_user_created on record_card (user_id, created_at desc);
+
+-- 기록이 지워질 때 FK 연쇄 삭제가 카드를 빠르게 찾도록 한다.
+create index idx_record_card_record_id on record_card (record_id);
+
+alter table record_card enable row level security;
+

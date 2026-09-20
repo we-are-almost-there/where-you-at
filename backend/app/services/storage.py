@@ -5,12 +5,12 @@ Cloudflare R2 이미지 저장소 (S3 호환 API)
 링크만 알면 누구나 볼 수 있는 공개 버킷은 쓰지 않는다. 둘 다 비공개이고 같은 서버가 다루므로
 버킷을 나눠도 얻는 것이 없다.
 
-프로필 사진은 서버를 거쳐 올린다.
-  올리기: 서버가 요청 본문 크기와 실제 파일 시그니처를 확인 → avatars/에 저장
+프로필 사진과 기록 카드는 서버를 거쳐 올린다.
+  올리기: 서버가 요청 본문 크기와 실제 이미지 디코딩을 확인 → avatars/ 또는 record-cards/에 저장
   보기:   서버가 짧게 유효한 사전 서명 GET URL을 응답에 넣어 줌
 
-presign_upload(), head(), promote()는 배포 설정을 점검하는 check_r2 스크립트와 앞으로의 다른 이미지
-기능을 위해 남겨 둔다. 프로필 사진 API는 크기를 R2 전송 전에 강제해야 하므로 이 경로를 쓰지 않는다.
+presign_upload()와 promote()는 공용 임시 업로드 유틸리티로 남겨 둔다.
+프로필 사진·기록 카드 API와 check_r2는 서버에서 put()으로 저장한다.
 
 사전 서명 URL은 만료 전까지 여러 번 쓸 수 있다. 올린 키를 그대로 저장하면 검증한 뒤에도 같은 URL로
 덮어쓸 수 있으므로, 업로드 URL은 임시 키에만 발급하고 최종 키에는 서버만 쓴다. 복사할 때 head()로 읽은
@@ -47,6 +47,26 @@ UPLOAD_URL_EXPIRES_SECONDS = 5 * 60
 DOWNLOAD_URL_EXPIRES_SECONDS = 60 * 60
 # 브라우저 자르기 결과와 같은 크기만 받아, 작은 압축 파일이 디코딩 때 큰 메모리를 차지하지 못하게 한다.
 AVATAR_IMAGE_SIZE = (512, 512)
+# 현재 카드의 최대 캔버스는 1080×1920. 디코딩 전에 메모리 사용량을 제한한다.
+MAX_CARD_IMAGE_PIXELS = 4_000_000
+
+
+def decoded_card_content_type(data: bytes) -> str | None:
+    """카드의 실제 형식·픽셀 수·전체 디코딩을 확인한다. 애니메이션은 받지 않는다."""
+    formats = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
+    try:
+        with Image.open(BytesIO(data)) as image:
+            content_type = formats.get(image.format or "")
+            if (content_type is None or image.width * image.height > MAX_CARD_IMAGE_PIXELS
+                    or getattr(image, "n_frames", 1) != 1):
+                return None
+            image.verify()
+        with Image.open(BytesIO(data)) as image:
+            image.load()
+        return content_type
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning,
+            UnidentifiedImageError, OSError, SyntaxError, ValueError):
+        return None
 
 
 class Folder(Enum):
@@ -174,14 +194,16 @@ def head(key: str) -> ObjectInfo | None:
 
 
 def promote(upload_key: str, folder: Folder, info: ObjectInfo) -> str:
-    """head()로 검증한 임시 파일을 최종 폴더로 복사하고 임시 파일을 지운 뒤 최종 키를 돌려준다.
+    """임시 파일을 매번 새로운 최종 키로 복사하고, 임시 파일은 최선 노력으로 지운다.
 
     info.etag와 같은 파일일 때만 복사한다. 그 사이 바뀌었거나 사라졌으면 UploadChangedError.
+    복사 성공 뒤 삭제가 실패해도 최종 키를 반환한다. 남은 임시 파일은 uploads/ 수명 주기로 정리한다.
     """
-    prefix, user_id, name = upload_key.split("/", 2)
+    prefix, user_id, _ = upload_key.split("/", 2)
     if prefix != Folder.UPLOAD.value or folder is Folder.UPLOAD:
         raise ValueError(f"임시 키를 최종 폴더로만 옮길 수 있다: {upload_key} → {folder.value}")
-    final_key = f"{folder.value}/{user_id}/{name}"
+    # 같은 임시 키를 다시 업로드·승격해도 기존 카드가 참조하는 객체는 덮어쓰지 않는다.
+    final_key = new_key(folder, int(user_id), info.content_type)
     try:
         _client().copy_object(
             Bucket=settings.r2_bucket,
@@ -195,7 +217,10 @@ def promote(upload_key: str, folder: Folder, info: ObjectInfo) -> str:
         raise StorageError("파일 옮기기 실패") from exc
     except BotoCoreError as exc:
         raise StorageError("파일 옮기기 실패") from exc
-    delete(upload_key)
+    try:
+        delete(upload_key)
+    except StorageError as exc:
+        print(f"[WARN] 승격 후 임시 파일 삭제 실패(uploads/ 수명 주기로 정리): {upload_key} {exc}")
     return final_key
 
 

@@ -8,6 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from .db.supabase import get_db_connection
 from .crud import user as user_crud
 from .services import auth_token
+from .core.config import settings
 
 # auto_error=False: 헤더가 없을 때 FastAPI 기본 403 대신 아래에서 401을 돌려준다.
 _bearer = HTTPBearer(auto_error=False)
@@ -84,3 +85,9 @@ def unauthorized_error() -> HTTPException:
         detail="로그인이 필요합니다.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def require_record_features() -> None:
+    """완주 기록·기록 카드 API를 켜 둔 환경에서만 통과시킨다(방침 시행 전에는 막는다)."""
+    if not settings.record_features_enabled:
+        raise HTTPException(status_code=503, detail="아직 제공하지 않는 기능입니다.")

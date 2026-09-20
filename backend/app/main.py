@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 from .api.router import api_router
 from .db.supabase import get_db_connection
@@ -34,6 +35,16 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(api_router)
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request, exc: RequestValidationError):
+    """422 응답 본문을 직접 만든다.
+
+    FastAPI 기본 핸들러는 오류에 원본 입력값(input)을 담는데, inf/nan이 들어오면
+    JSON으로 직렬화하지 못해 422가 아니라 500이 난다. 입력값과 ctx를 빼서 막는다.
+    """
+    errors = [{k: v for k, v in err.items() if k not in ("input", "ctx")} for err in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 @app.get("/health")

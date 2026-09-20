@@ -133,6 +133,7 @@ describe("PrivacyPolicyContent", () => {
 
     const changes = screen.getByRole("region", { name: /개인정보처리방침의 변경/ });
     const link = changes.querySelector("a");
+
     expect(link?.getAttribute("href")).toBe("/privacy/2026-09-17");
     expect(link?.getAttribute("target")).toBe("_blank");
     expect(link?.textContent).toContain("2026년 9월 17일 ~ 2026년 9월 20일 적용");
