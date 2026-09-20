@@ -1,6 +1,8 @@
+import type { Ref } from "react";
 import type { Course, RouteType } from "../types";
 import { formatDuration } from "../courseDuration";
 import { RoutePreview } from "./RoutePreview";
+import { SaveHeartButton } from "../../saved";
 
 interface Props {
   course: Course;
@@ -10,9 +12,13 @@ interface Props {
   onHoverChange?: (hovered: boolean) => void;
   /** 지도 마커 쪽에서 이 코스를 가리키고 있을 때 — 카드에 테두리를 둘러 되짚어 준다. */
   active?: boolean;
+  /** 하트 요청이 성공해 찜 상태가 바뀌었을 때. */
+  onSavedChange?: (saved: boolean) => void;
+  /** 찜 목록에서 카드가 사라진 뒤 인접한 하트로 포커스를 옮길 때 쓴다. */
+  saveButtonRef?: Ref<HTMLButtonElement>;
 }
 
-export function CourseCard({ course, routeType, onSelect, onHoverChange, active }: Props) {
+export function CourseCard({ course, routeType, onSelect, onHoverChange, active, onSavedChange, saveButtonRef }: Props) {
   const route =
     course.routes.find((r) => r.route_type === routeType) ?? course.routes[0];
   const points = routeType === "자전거" ? course.path_bicycle : course.path_trail;
@@ -22,7 +28,9 @@ export function CourseCard({ course, routeType, onSelect, onHoverChange, active 
   return (
     // 강조는 ring이 아니라 outline으로 준다. ring은 box-shadow 위에 합성되는데 이 카드는
     // shadow-[...] 임의값을 쓰고 있어 ring 레이어가 최종 box-shadow에 반영되지 않는다.
-    <article className="@container h-full" data-course-id={course.id}>
+    // 하트는 카드 버튼 안에 넣을 수 없어(버튼 안의 버튼) 형제로 두고 썸네일 우상단에 얹는다.
+    // 그래서 이 article에 relative가 필요하다.
+    <article className="@container relative h-full" data-course-id={course.id}>
       <button
         type="button"
         onClick={() => onSelect?.(course)}
@@ -116,6 +124,16 @@ export function CourseCard({ course, routeType, onSelect, onHoverChange, active 
           </div>
         </div>
       </button>
+
+      {/* 왼쪽 위 방문 혜택 뱃지와 겹치지 않게 오른쪽 위에 둔다. 어떤 썸네일 위에서도 또렷하도록 흰 판을 깐다. */}
+      <SaveHeartButton
+        courseId={course.id}
+        courseTitle={course.title}
+        routeType={routeType}
+        onSavedChange={onSavedChange}
+        buttonRef={saveButtonRef}
+        className="absolute right-2 top-2 z-10 size-9 rounded-full bg-white/90 shadow-[0px_1px_4px_0px_rgba(0,0,0,0.18)] hover:bg-white"
+      />
     </article>
   );
 }

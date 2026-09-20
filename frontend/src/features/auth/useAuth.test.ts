@@ -155,6 +155,20 @@ describe("useAuth", () => {
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
   });
 
+  it("다른 인증 API가 401이면 서버 요청 없이 로컬 세션을 만료시킨다", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { expireAuthSession, signIn, useAuth } = await loadAuth();
+    const { result } = renderHook(() => useAuth());
+    act(() => signIn("expired-token", USER));
+
+    act(() => expireAuthSession());
+
+    expect(result.current.status).toBe("signedOut");
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("로그아웃 연결 실패나 서버 오류면 토큰과 로그인 상태를 유지한다", async () => {
     for (const failure of [
       () => Promise.reject(new TypeError("Failed to fetch")),
