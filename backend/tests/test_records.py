@@ -76,6 +76,21 @@ class RecordsRouterTest(unittest.TestCase):
         self.assertEqual(res.status_code, 201)
         self.assertIsNone(res.json()["pace_sec_per_km"])
 
+    def test_pace_database_upper_bound(self):
+        with patch("app.api.routers.records.crud") as crud:
+            crud.create_record.return_value = {**ROW, "pace_sec_per_km": 999999.99}
+            response = self.client.post("/api/records", json={**BODY, "pace_sec_per_km": 999999.99})
+            self.assertEqual(response.status_code, 201)
+            self.assertEqual(response.json()["pace_sec_per_km"], 999999.99)
+
+    def test_pace_above_database_bound_is_422_without_insert(self):
+        with patch("app.api.routers.records.crud") as crud:
+            for pace in (999999.991, 999999.995, 999999.996, 1000000):
+                with self.subTest(pace=pace):
+                    response = self.client.post("/api/records", json={**BODY, "pace_sec_per_km": pace})
+                    self.assertEqual(response.status_code, 422)
+            crud.create_record.assert_not_called()
+
     def test_course_or_route_missing_is_404(self):
         # 코스가 없거나 그 코스에 없는 경로 유형이면 crud가 None을 돌려준다.
         with patch("app.api.routers.records.crud") as crud:

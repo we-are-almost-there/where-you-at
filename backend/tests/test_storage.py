@@ -10,7 +10,6 @@ import httpx
 from io import BytesIO
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
-from uuid import UUID
 
 from botocore.stub import Stubber
 from PIL import Image
@@ -108,7 +107,6 @@ class CheckR2Test(unittest.TestCase):
             self.assertTrue(check_r2._check(None))
             store.put.assert_called_once_with(key, check_r2._PNG, "image/png")
             store.delete.assert_called_once_with(key)
-            store.presign_upload.assert_not_called()
             store.promote.assert_not_called()
             http.options.assert_not_called()
             http.put.assert_not_called()
@@ -132,22 +130,6 @@ class CheckR2Test(unittest.TestCase):
 
 
 class PresignTest(StorageTestCase):
-    def test_upload_url_signs_content_type_and_expires_quickly(self):
-        url = urlparse(storage.presign_upload("uploads/7/a.webp", "image/webp"))
-        query = parse_qs(url.query)
-
-        self.assertEqual(url.netloc, "acc123.r2.cloudflarestorage.com")
-        self.assertEqual(url.path, "/test-uploads/uploads/7/a.webp")
-        self.assertEqual(query["X-Amz-Expires"], [str(storage.UPLOAD_URL_EXPIRES_SECONDS)])
-        # 서명에 Content-Type이 들어가야 다른 형식으로 바꿔 올릴 수 없다.
-        self.assertIn("content-type", query["X-Amz-SignedHeaders"][0])
-
-    def test_upload_url_only_for_temporary_keys(self):
-        # 최종 키에 업로드 URL을 주면 검증한 뒤에도 덮어쓸 수 있다.
-        for key in ("avatars/7/a.webp", "record-cards/7/b.jpg", "uploadsx/7/a.webp"):
-            with self.assertRaises(ValueError, msg=key):
-                storage.presign_upload(key, "image/webp")
-
     def test_download_url(self):
         url = urlparse(storage.presign_download("record-cards/7/b.jpg"))
         query = parse_qs(url.query)
@@ -202,83 +184,6 @@ class PutTest(StorageTestCase):
         self.stubber.add_client_error("put_object", service_error_code="AccessDenied", http_status_code=403)
         with self.assertRaises(storage.StorageError):
             storage.put("avatars/7/a.webp", b"image", "image/webp")
-
-
-class PromoteTest(StorageTestCase):
-    INFO = storage.ObjectInfo(size=1234, content_type="image/webp", etag='"abc"')
-
-    def test_copies_only_verified_file_and_removes_temporary(self):
-        final_key = "avatars/7/" + "1" * 32 + ".webp"
-        self.stubber.add_response(
-            "copy_object",
-            {},
-            {
-                "Bucket": "test-uploads",
-                "Key": final_key,
-                "CopySource": {"Bucket": "test-uploads", "Key": "uploads/7/a.webp"},
-                # 검증한 파일과 ETag가 같을 때만 복사한다.
-                "CopySourceIfMatch": '"abc"',
-            },
-        )
-        self.stubber.add_response("delete_object", {}, {"Bucket": "test-uploads", "Key": "uploads/7/a.webp"})
-
-        with patch.object(storage.uuid, "uuid4", return_value=UUID("1" * 32)):
-            self.assertEqual(storage.promote("uploads/7/a.webp", Folder.AVATAR, self.INFO), final_key)
-        self.stubber.assert_no_pending_responses()
-
-    def test_reused_upload_key_gets_independent_final_objects(self):
-        """같은 URL로 새 파일을 올리고 다시 승격해도 이전 최종 객체는 건드리지 않는다."""
-        keys = ["record-cards/7/" + digit * 32 + ".webp" for digit in ("1", "2")]
-        infos = [self.INFO, storage.ObjectInfo(size=4567, content_type="image/webp", etag='"new"')]
-        for key, info in zip(keys, infos):
-            self.stubber.add_response("copy_object", {}, {
-                "Bucket": "test-uploads", "Key": key,
-                "CopySource": {"Bucket": "test-uploads", "Key": "uploads/7/a.webp"},
-                "CopySourceIfMatch": info.etag,
-            })
-            self.stubber.add_response("delete_object", {}, {
-                "Bucket": "test-uploads", "Key": "uploads/7/a.webp",
-            })
-        with patch.object(storage.uuid, "uuid4", side_effect=[UUID("1" * 32), UUID("2" * 32)]):
-            actual = [storage.promote("uploads/7/a.webp", Folder.RECORD_CARD, info) for info in infos]
-        self.assertEqual(actual, keys)
-        self.assertNotEqual(actual[0], actual[1])
-        self.stubber.assert_no_pending_responses()
-
-    def test_cleanup_failure_returns_copied_key_and_logs_warning(self):
-        final_key = "record-cards/7/" + "1" * 32 + ".webp"
-        self.stubber.add_response("copy_object", {}, {
-            "Bucket": "test-uploads", "Key": final_key,
-            "CopySource": {"Bucket": "test-uploads", "Key": "uploads/7/a.webp"},
-            "CopySourceIfMatch": self.INFO.etag,
-        })
-        self.stubber.add_client_error("delete_object", service_error_code="AccessDenied", http_status_code=403,
-                                      expected_params={"Bucket": "test-uploads", "Key": "uploads/7/a.webp"})
-        with patch.object(storage.uuid, "uuid4", return_value=UUID("1" * 32)), patch("builtins.print") as log:
-            self.assertEqual(storage.promote("uploads/7/a.webp", Folder.RECORD_CARD, self.INFO), final_key)
-        log.assert_called_once()
-        self.assertIn("uploads/7/a.webp", log.call_args.args[0])
-        self.stubber.assert_no_pending_responses()
-
-    def test_changed_or_missing_upload_is_not_promoted(self):
-        for code, status in (("PreconditionFailed", 412), ("NoSuchKey", 404)):
-            self.stubber.add_client_error("copy_object", service_error_code=code, http_status_code=status)
-            with self.assertRaises(storage.UploadChangedError, msg=code):
-                storage.promote("uploads/7/a.webp", Folder.AVATAR, self.INFO)
-        # 복사하지 않았으면 임시 파일도 지우지 않는다(수명 주기 규칙이 치운다).
-        self.stubber.assert_no_pending_responses()
-
-    def test_other_errors_raise_storage_error(self):
-        self.stubber.add_client_error("copy_object", service_error_code="AccessDenied", http_status_code=403)
-        with self.assertRaises(storage.StorageError) as ctx:
-            storage.promote("uploads/7/a.webp", Folder.AVATAR, self.INFO)
-        self.assertNotIsInstance(ctx.exception, storage.UploadChangedError)
-
-    def test_rejects_non_temporary_source_or_target(self):
-        with self.assertRaises(ValueError):
-            storage.promote("avatars/7/a.webp", Folder.RECORD_CARD, self.INFO)
-        with self.assertRaises(ValueError):
-            storage.promote("uploads/7/a.webp", Folder.UPLOAD, self.INFO)
 
 
 class DeleteTest(StorageTestCase):

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
+from ..upload import read_upload_body
+
 from ...crud import user as user_crud
 from ...deps import CurrentUser, db_connection, get_current_user, unauthorized_error
 from ...schemas.user import UserOut, UserUpdate
@@ -48,26 +50,9 @@ def _discard_avatar(avatar_key: str, user_id: int, *, reason: str) -> None:
 
 
 async def _avatar_body(request: Request) -> bytes:
-    """요청 본문을 스트리밍으로 읽되 제한을 넘는 순간 중단한다."""
-    content_length = request.headers.get("content-length")
-    if content_length is not None:
-        try:
-            declared_size = int(content_length)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="올바르지 않은 파일 크기입니다.")
-        if declared_size > AVATAR_MAX_BYTES:
-            raise HTTPException(status_code=413, detail="프로필 사진은 5MB 이하만 올릴 수 있습니다.")
-
-    chunks: list[bytes] = []
-    size = 0
-    async for chunk in request.stream():
-        size += len(chunk)
-        if size > AVATAR_MAX_BYTES:
-            raise HTTPException(status_code=413, detail="프로필 사진은 5MB 이하만 올릴 수 있습니다.")
-        chunks.append(chunk)
-    if size == 0:
-        raise HTTPException(status_code=400, detail="빈 파일은 올릴 수 없습니다.")
-    return b"".join(chunks)
+    return await read_upload_body(
+        request, max_bytes=AVATAR_MAX_BYTES, too_large_detail="프로필 사진은 5MB 이하만 올릴 수 있습니다."
+    )
 
 
 @router.put("/avatar", response_model=UserOut)

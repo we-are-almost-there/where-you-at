@@ -14,7 +14,7 @@ import SavedCourseRows from "./components/SavedCourseRows";
 import RecordRows from "./components/RecordRows";
 import StampBoard from "./components/StampBoard";
 import StampMapDialog from "./components/StampMapDialog";
-import { getStamps } from "./mypageData";
+import { useSigunguStamps } from "./useSigunguStamps";
 import { useRunRecords } from "./useRunRecords";
 import { useSavedCourses } from "./useSavedCourses";
 import { PRIMARY_BUTTON } from "./buttonStyles";
@@ -49,7 +49,7 @@ export default function MyPage() {
         ) : undefined
       }
     >
-      {(user) => <Dashboard user={user} onWithdrawn={() => setWithdrawn(true)} />}
+      {(user) => <Dashboard key={user.id} user={user} onWithdrawn={() => setWithdrawn(true)} />}
     </MyPageLayout>
   );
 }
@@ -75,7 +75,8 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
   const saved = useSavedCourses();
   const recordsState = useRunRecords();
   const records = recordsState.status === "ready" ? recordsState.records : [];
-  const [stamps] = useState(getStamps);
+  const stampState = useSigunguStamps();
+  const stamps = stampState.stamps;
   const [dialog, setDialog] = useState<"edit" | "withdraw" | "stampMap" | "signOut" | null>(null);
   const cancelSignOutRef = useRef<HTMLButtonElement>(null);
   const [status, setStatus] = useState("");
@@ -257,12 +258,17 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
                 onClick={() => setDialog("stampMap")}
                 className={PRIMARY_BUTTON}
               >
-                스탬프 찍기
+                스탬프 지도 보기
               </button>
             }
           />
           <div className="mt-3">
-            <StampBoard stamps={stamps} />
+            {stampState.loading ? <p role="status">스탬프를 불러오는 중…</p> : stampState.error ? (
+              <div>
+                <p role="alert">{stampState.error}</p>
+                <button type="button" onClick={stampState.retry}>다시 시도</button>
+              </div>
+            ) : <StampBoard stamps={stamps} />}
           </div>
         </Panel>
       </div>
@@ -310,7 +316,9 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
         />
       )}
       {dialog === "withdraw" && <WithdrawDialog onClose={() => setDialog(null)} onWithdrawn={onWithdrawn} />}
-      {dialog === "stampMap" && <StampMapDialog stamps={stamps} onClose={() => setDialog(null)} />}
+      {dialog === "stampMap" && <StampMapDialog stamps={stamps} statuses={stampState.statuses}
+        loading={stampState.loading} error={stampState.error} onRetry={stampState.retry}
+        onStamp={stampState.stamp} onClose={() => setDialog(null)} />}
     </>
   );
 }

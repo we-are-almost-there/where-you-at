@@ -92,6 +92,7 @@ npm run dev --prefix frontend
 10_saved_course.sql       찜한 코스 테이블 (09 적용 뒤 운영 DB에 적용, 새 DB는 01_schema.sql에 포함)
 11_run_record.sql         완주 기록 테이블 (10 적용 뒤 운영 DB에 적용, 새 DB는 01_schema.sql에 포함)
 12_record_card.sql        기록 카드 테이블 (11 적용 뒤 운영 DB에 적용, 새 DB는 01_schema.sql에 포함)
+13_user_sigungu_stamps.sql 시군구 스탬프 테이블 (12 적용 뒤 운영 DB에 적용, 새 DB는 01_schema.sql에 포함)
 ```
 
 `09_auth_session.sql`은 백엔드를 배포하기 전에 적용합니다. 순서가 바뀌면 로그인할 때
@@ -115,7 +116,7 @@ JPG·PNG·WEBP 파일 시그니처를 확인한 뒤 R2에 저장합니다.
 1. Supabase 운영 DB에 `11_run_record.sql`, `12_record_card.sql`을 순서대로 적용합니다.
 2. Render에 `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`이 설정되어 있는지 확인합니다.
    R2 버킷의 공개 접근(r2.dev·사용자 도메인)을 끄고, 객체 수명 주기 규칙을 **접두어 `uploads/`,
-   1일 후 삭제, 활성화**로 설정합니다. 이는 공용 `promote()`의 정리 실패나 기존 임시 파일을 위한
+   1일 후 삭제, 활성화**로 설정합니다. 이는 이전 업로드 방식에서 남아 있는 임시 파일을 위한
    규칙이며, `avatars/`와 `record-cards/`에는 적용하지 않습니다.
    업로드는 API 서버를 거치므로 브라우저 직접 PUT용 R2 CORS 설정은 필요 없습니다.
    운영과 같은 R2 설정을 사용해 `backend/`에서 `python -m scripts.check_r2`를 실행합니다.
@@ -361,3 +362,33 @@ Render 로그도 함께 확인합니다. `[ERROR] 기록 카드 커밋 확인 �
 
 이 신뢰 설정은 Render 공개 서비스가 Cloudflare를 우회해 직접 접근될 수 없다는 전제에서만 사용합니다. 호스팅 업체나
 진입 경로를 바꾸면 `TRUST_CLOUDFLARE_IP_HEADER`를 먼저 `false`로 내리고 새 프록시의 보장된 헤더를 다시 검토합니다.
+
+
+### 시군구 스탬프 배포
+
+기존 완주 기록의 `run_record.user_id`, `course_id`와 `course.region_code`를 조인합니다.
+지도 파일 `frontend/public/korea-all-regions.json`의 230개 코드만 스탬프 대상이며,
+여러 지역을 지나는 코스도 저장된 출발지 기준 대표 시군구 하나만 인정합니다. NULL 지역은 자격을 부여하지 않습니다.
+`user_sigungu_stamps`에는 회원 번호·시군구 코드·찍은 시각만 저장하며, 회원 탈퇴 시 FK로 연쇄 삭제합니다.
+UNIQUE(user_id, sigungu_code)의 인덱스로 중복 방지와 사용자별 조회를 처리합니다. RLS를 켜고 기존 서버 DB 역할로 접근합니다.
+
+- `GET /api/me/sigungu-stamps`: 전체 시군구의 `{sigungu_code, status, stamped_at}` 배열. 찍은 기록이 있으면 STAMPED, 완주만 했으면 AVAILABLE, 둘 다 없으면 LOCKED입니다.
+- `POST /api/me/sigungu-stamps/{sigunguCode}`: 완주 자격을 확인하고 INSERT를 먼저 시도합니다. UNIQUE 충돌은 savepoint로 복구하고 기존 행을 조회합니다.
+- 신규 201 / 재요청 200. 응답은 `{sigungu_code, status: "STAMPED", stamped_at, created}`로 동일합니다. 잘못된 대상 404, 완주 조건 미충족 409, 미인증 401, 기록 기능 비공개 503입니다.
+- 시도 도장과 획득 수는 프론트에서 찍은 시군구만 집계합니다. R2 객체는 만들지 않습니다.
+
+운영 담당자가 적용할 순서:
+
+1. `RECORD_FEATURES_ENABLED=false` 상태에서 운영 DB의 `11_run_record.sql`, `12_record_card.sql` 적용 여부를 확인합니다.
+2. `13_user_sigungu_stamps.sql`을 적용합니다. 새 DB는 `01_schema.sql`에 포함되어 있습니다.
+3. 2026년 9월 21일 시행 개인정보처리방침·이용약관 통합 문안과 `04_help_seed.sql`의 변경 안내를 반영합니다. 기존 9월 17일 보관본은 유지합니다.
+4. 백엔드와 프론트엔드를 배포하고 기존 기록 기능 공개 조건을 확인한 뒤 `RECORD_FEATURES_ENABLED=true`로 전환합니다.
+5. 실제 완주 기록 → AVAILABLE → 직접 찍기 → STAMPED, 새로고침 후 유지와 회원 탈퇴 시 삭제를 확인합니다.
+
+스탬프 대상 코드를 바꾸면 `backend/app/sigungu_codes.py`와 지도 파일을 함께 갱신하고 범위 일치 테스트를 실행합니다.
+개발용 `VITE_MYPAGE_PREVIEW` 외에 API 조회용 환경변수는 필요하지 않습니다.
+
+PostgreSQL 통합 테스트는 운영 DB 대신 테스트 전용 DB의 주소를 `SIGUNGU_TEST_DATABASE_URL`에 지정하고
+`backend/`에서 `python -m unittest tests.test_sigungu_stamp_db`로 실행합니다.
+테스트마다 격리 스키마를 만들고 정리하며 상태 계산, 다른 회원·NULL 지역 제외, 동시 요청, 회원 탈퇴 연쇄 삭제와 RLS를 확인합니다.
+환경변수를 지정하지 않으면 이 통합 테스트는 건너뜁니다.

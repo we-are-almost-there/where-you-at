@@ -9,13 +9,8 @@ Cloudflare R2 이미지 저장소 (S3 호환 API)
   올리기: 서버가 요청 본문 크기와 실제 이미지 디코딩을 확인 → avatars/ 또는 record-cards/에 저장
   보기:   서버가 짧게 유효한 사전 서명 GET URL을 응답에 넣어 줌
 
-presign_upload()와 promote()는 공용 임시 업로드 유틸리티로 남겨 둔다.
-프로필 사진·기록 카드 API와 check_r2는 서버에서 put()으로 저장한다.
-
-사전 서명 URL은 만료 전까지 여러 번 쓸 수 있다. 올린 키를 그대로 저장하면 검증한 뒤에도 같은 URL로
-덮어쓸 수 있으므로, 업로드 URL은 임시 키에만 발급하고 최종 키에는 서버만 쓴다. 복사할 때 head()로 읽은
-ETag를 조건으로 걸어, 검증과 복사 사이에 바뀐 파일은 복사하지 않는다. 남은 임시 파일은 버킷 수명 주기
-규칙(uploads/ 접두어, 1일 뒤 삭제)이 치운다.
+이전 업로드 방식의 임시 파일은 uploads/ 수명 주기 규칙(1일 뒤 삭제)과 회원 탈퇴 처리로 정리한다.
+현재 API는 업로드 URL을 발급하지 않고 서버에서 검증한 파일만 put()으로 저장한다.
 
 키는 "{폴더}/{user_id}/{난수}.{확장자}"로 만든다. 회원 탈퇴 때 delete_user_objects()로 폴더마다
 그 사용자의 파일을 한 번에 지우기 위해서다.
@@ -41,8 +36,6 @@ IMAGE_EXTENSIONS = {
     "image/webp": "webp",
 }
 
-# 업로드 URL은 발급 직후 바로 쓰므로 짧게 둔다.
-UPLOAD_URL_EXPIRES_SECONDS = 5 * 60
 # 보기 URL은 페이지를 켜 둔 동안 이미지가 깨지지 않을 만큼 둔다. 만료되면 화면이 기본 이미지로 대체한다.
 DOWNLOAD_URL_EXPIRES_SECONDS = 60 * 60
 # 브라우저 자르기 결과와 같은 크기만 받아, 작은 압축 파일이 디코딩 때 큰 메모리를 차지하지 못하게 한다.
@@ -70,7 +63,7 @@ def decoded_card_content_type(data: bytes) -> str | None:
 
 
 class Folder(Enum):
-    # 브라우저가 올리는 임시 폴더. 검증 전 파일이라 화면에 쓰지 않는다.
+    # 이전 업로드 방식의 임시 폴더. 남아 있는 파일을 회원 탈퇴 때도 정리한다.
     UPLOAD = "uploads"
     AVATAR = "avatars"
     RECORD_CARD = "record-cards"
@@ -78,10 +71,6 @@ class Folder(Enum):
 
 class StorageError(Exception):
     """R2 요청이 실패했다. 설정 오류이거나 R2 쪽 문제다."""
-
-
-class UploadChangedError(StorageError):
-    """검증한 뒤 임시 파일이 바뀌었거나 사라져 최종 키로 옮기지 않았다."""
 
 
 @dataclass(frozen=True)
@@ -152,23 +141,6 @@ def put(key: str, data: bytes, content_type: str) -> None:
         raise StorageError("파일 저장 실패") from exc
 
 
-def presign_upload(key: str, content_type: str) -> str:
-    """브라우저가 PUT으로 올릴 URL. Content-Type을 서명에 넣어, 올릴 때 같은 헤더를 보내야 한다.
-
-    임시 폴더(uploads/) 키에만 발급한다. 최종 키에 발급하면 검증 뒤 덮어쓸 수 있다.
-    """
-    if not key.startswith(f"{Folder.UPLOAD.value}/"):
-        raise ValueError(f"업로드 URL은 {Folder.UPLOAD.value}/ 키에만 발급한다: {key}")
-    try:
-        return _client().generate_presigned_url(
-            "put_object",
-            Params={"Bucket": settings.r2_bucket, "Key": key, "ContentType": content_type},
-            ExpiresIn=UPLOAD_URL_EXPIRES_SECONDS,
-        )
-    except (BotoCoreError, ClientError) as exc:
-        raise StorageError("업로드 URL 발급 실패") from exc
-
-
 def presign_download(key: str) -> str:
     try:
         return _client().generate_presigned_url(
@@ -191,37 +163,6 @@ def head(key: str) -> ObjectInfo | None:
     except BotoCoreError as exc:
         raise StorageError("파일 정보 조회 실패") from exc
     return ObjectInfo(size=res["ContentLength"], content_type=res.get("ContentType", ""), etag=res["ETag"])
-
-
-def promote(upload_key: str, folder: Folder, info: ObjectInfo) -> str:
-    """임시 파일을 매번 새로운 최종 키로 복사하고, 임시 파일은 최선 노력으로 지운다.
-
-    info.etag와 같은 파일일 때만 복사한다. 그 사이 바뀌었거나 사라졌으면 UploadChangedError.
-    복사 성공 뒤 삭제가 실패해도 최종 키를 반환한다. 남은 임시 파일은 uploads/ 수명 주기로 정리한다.
-    """
-    prefix, user_id, _ = upload_key.split("/", 2)
-    if prefix != Folder.UPLOAD.value or folder is Folder.UPLOAD:
-        raise ValueError(f"임시 키를 최종 폴더로만 옮길 수 있다: {upload_key} → {folder.value}")
-    # 같은 임시 키를 다시 업로드·승격해도 기존 카드가 참조하는 객체는 덮어쓰지 않는다.
-    final_key = new_key(folder, int(user_id), info.content_type)
-    try:
-        _client().copy_object(
-            Bucket=settings.r2_bucket,
-            Key=final_key,
-            CopySource={"Bucket": settings.r2_bucket, "Key": upload_key},
-            CopySourceIfMatch=info.etag,
-        )
-    except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") in ("PreconditionFailed", "412", "NoSuchKey", "404"):
-            raise UploadChangedError("검증 뒤 임시 파일이 바뀌었다") from exc
-        raise StorageError("파일 옮기기 실패") from exc
-    except BotoCoreError as exc:
-        raise StorageError("파일 옮기기 실패") from exc
-    try:
-        delete(upload_key)
-    except StorageError as exc:
-        print(f"[WARN] 승격 후 임시 파일 삭제 실패(uploads/ 수명 주기로 정리): {upload_key} {exc}")
-    return final_key
 
 
 def delete(key: str) -> None:

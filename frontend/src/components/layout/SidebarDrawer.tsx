@@ -168,7 +168,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
           {auth.status === "loading" ? (
             <div role="status" className="flex h-[140px] items-center justify-center rounded-2xl bg-lavender/40 text-[13px] text-caption">로그인 정보를 확인하고 있어요…</div>
           ) : auth.status === "signedIn" ? (
-            isOpen && <SidebarAccount key={auth.user.nickname} user={auth.user} onClose={onClose} />
+            isOpen && <SidebarAccount key={`${auth.user.id}:${auth.user.nickname}`} user={auth.user} onClose={onClose} />
           ) : (
             <>
               <div className="flex items-center gap-3 rounded-2xl border border-accent/15 p-4">

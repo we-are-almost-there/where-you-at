@@ -46,6 +46,8 @@ describe("legalInfo", () => {
 
     expect(notice, "변경 안내 공지를 시드에서 찾지 못했습니다").toBeTruthy();
     expect(notice![1]).toContain(`**${EFFECTIVE_DATE}**부터 적용됩니다`);
+    expect(notice![1]).toContain("지역 스탬프");
+    expect(notice![1]).toContain("회원 번호, 시군구 코드, 찍은 시각");
   });
 
   it("경로로 이전 버전을 찾고, 없는 경로면 던진다", () => {

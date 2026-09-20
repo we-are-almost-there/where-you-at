@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from .routers import courses, regions, tour_spots, support, bicycle_facilities, races, notices, faqs, inquiries, auth, me, saved_courses, records, record_cards
+from .routers import courses, regions, tour_spots, support, bicycle_facilities, races, notices, faqs, inquiries, auth, me, saved_courses, records, record_cards, sigungu_stamps
 
 api_router = APIRouter()
 api_router.include_router(courses.router)
@@ -17,3 +17,5 @@ api_router.include_router(me.router)
 api_router.include_router(saved_courses.router)
 api_router.include_router(records.router)
 api_router.include_router(record_cards.router)
+
+api_router.include_router(sigungu_stamps.router)

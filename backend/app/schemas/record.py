@@ -18,7 +18,7 @@ class RunRecordCreate(BaseModel):
     distance_km: float = Field(..., gt=0, le=1000, allow_inf_nan=False)
     duration_ms: int = Field(..., gt=0, le=MAX_DURATION_MS)
     # numeric(8, 2)에 들어가는 범위(최대 999999.99). 거리가 너무 짧으면 프론트가 null로 보낸다.
-    pace_sec_per_km: float | None = Field(None, gt=0, lt=1_000_000, allow_inf_nan=False)
+    pace_sec_per_km: float | None = Field(None, gt=0, le=999999.99, allow_inf_nan=False)
     finished_at: datetime
 
     @field_validator("finished_at")

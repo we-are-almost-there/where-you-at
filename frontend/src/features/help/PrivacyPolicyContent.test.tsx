@@ -9,6 +9,15 @@ import PrivacyPolicyContent from "./PrivacyPolicyContent";
 afterEach(cleanup);
 
 describe("PrivacyPolicyContent", () => {
+  it("직접 찍는 스탬프의 수집 항목과 탈퇴 시 삭제를 안내한다", () => {
+    render(<PrivacyPolicyContent />);
+    const items = screen.getByRole("region", { name: /처리하는 개인정보의 항목/ });
+    expect(items.textContent).toContain("회원 번호, 스탬프를 찍은 시군구 코드, 찍은 시각");
+    expect(items.textContent).toContain("이용자가 직접 찍기를 선택한 경우");
+    const retention = screen.getByRole("region", { name: /개인정보의 처리 및 보유 기간/ });
+    expect(retention.textContent).toContain("지역 스탬프 (회원 번호, 시군구 코드, 찍은 시각)");
+    expect(retention.textContent).toContain("탈퇴하거나 카카오에서 서비스 연결을 끊으면");
+  });
   it("목차의 모든 링크가 같은 이름의 항목 제목으로 이어진다", () => {
     render(<PrivacyPolicyContent />);
 

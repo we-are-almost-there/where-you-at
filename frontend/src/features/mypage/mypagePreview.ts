@@ -38,9 +38,9 @@ export const previewRecordCards: SavedRecordCard[] = previewRecords
   .map((record, i) => ({ id: i + 1, record, imageUrl: null, createdAt: record.finishedAt }));
 
 export const previewStamps: Stamp[] = [
-  { sigunguCode: "11215", collectedAt: "2026-09-16" }, // 서울 광진구
-  { sigunguCode: "26350", collectedAt: "2026-09-06" }, // 부산 해운대구
-  { sigunguCode: "51110", collectedAt: "2026-09-13" }, // 강원 춘천시
-  { sigunguCode: "12730", collectedAt: "2026-09-03" }, // 전남광주 구례군
-  { sigunguCode: "12330", collectedAt: "2026-08-29" }, // 전남광주 광산구
+  { sigunguCode: "11215", stampedAt: "2026-09-16" }, // 서울 광진구
+  { sigunguCode: "26350", stampedAt: "2026-09-06" }, // 부산 해운대구
+  { sigunguCode: "51110", stampedAt: "2026-09-13" }, // 강원 춘천시
+  { sigunguCode: "12730", stampedAt: "2026-09-03" }, // 전남광주 구례군
+  { sigunguCode: "12330", stampedAt: "2026-08-29" }, // 전남광주 광산구
 ];

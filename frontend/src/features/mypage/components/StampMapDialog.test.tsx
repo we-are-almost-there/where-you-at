@@ -2,7 +2,8 @@
 //
 // 스탬프 지도가 전국(시도) → 시도(시군구)로 들어가고, 받은 스탬프를 구분해 보여 주며,
 // 지도를 못 불러오면 다시 시도할 수 있는지 본다. 도형은 네모 두세 개로 만든 작은 파일로 대신한다.
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { HttpError } from "../../../lib/http";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Feature } from "geojson";
 import StampMapDialog from "./StampMapDialog";
@@ -68,7 +69,7 @@ describe("StampMapDialog", () => {
     vi.stubGlobal("fetch", mapFetch);
     const onSelect = vi.fn();
     render(
-      <StampMapDialog stamps={[{ sigunguCode: "51110", collectedAt: "2026-09-13" }]} onClose={() => {}} onSelectSigungu={onSelect} />,
+      <StampMapDialog stamps={[{ sigunguCode: "51110", stampedAt: "2026-09-13" }]} onClose={() => {}} onSelectSigungu={onSelect} />,
     );
 
     // 전국: 받은 시군구가 있는 시도는 이름에 받음 표시가 붙는다.
@@ -84,11 +85,11 @@ describe("StampMapDialog", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "전국으로" }));
 
     fireEvent.click(screen.getByRole("button", { name: "춘천시 (스탬프 받음)" }));
-    expect(screen.getByText("2026.09.13에 스탬프를 받았어요.")).toBeTruthy();
+    expect(screen.getByText("2026.09.13에 스탬프를 찍었어요.")).toBeTruthy();
     expect(onSelect).toHaveBeenCalledWith({ code: "51110", name: "춘천시", sidoName: "강원특별자치도" });
 
     fireEvent.click(screen.getByRole("button", { name: "원주시" }));
-    expect(screen.getByText("아직 스탬프가 없어요.")).toBeTruthy();
+    expect(screen.getByText("아직 완주하지 않아 스탬프를 찍을 수 없어요.")).toBeTruthy();
   });
 
   it("전국으로 돌아오면 시도 목록 첫 버튼으로 초점을 옮긴다", async () => {
@@ -99,5 +100,41 @@ describe("StampMapDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "전국으로" }));
 
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "서울" }));
+  });
+
+  it("AVAILABLE에만 찍기 버튼이 있고 요청 중 중복 클릭을 막는다", async () => {
+    vi.stubGlobal("fetch", mapFetch);
+    let resolve!: () => void;
+    const onStamp = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+    const { rerender } = render(<StampMapDialog stamps={[]} statuses={[
+      { sigunguCode: "51130", status: "AVAILABLE", stampedAt: null },
+    ]} onStamp={onStamp} onClose={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "강원" }));
+    fireEvent.click(screen.getByRole("button", { name: "춘천시" }));
+    expect(screen.queryByRole("button", { name: "스탬프 찍기" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "원주시" }));
+    fireEvent.click(screen.getByRole("button", { name: "스탬프 찍기" }));
+    const pendingButton = screen.getByRole("button", { name: "찍는 중…" }) as HTMLButtonElement;
+    expect(pendingButton.disabled).toBe(true);
+    fireEvent.click(pendingButton);
+    expect(onStamp).toHaveBeenCalledTimes(1);
+    await act(async () => resolve());
+    rerender(<StampMapDialog stamps={[{ sigunguCode: "51130", stampedAt: "2026-09-21T00:00:00Z" }]}
+      statuses={[{ sigunguCode: "51130", status: "STAMPED", stampedAt: "2026-09-21T00:00:00Z" }]}
+      onStamp={onStamp} onClose={() => {}} />);
+    expect(screen.getByText("2026.09.21에 스탬프를 찍었어요.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "스탬프 찍기" })).toBeNull();
+  });
+
+  it.each([409, 500])("찍기 오류 %s를 구분해 안내하고 재시도할 수 있다", async (status) => {
+    vi.stubGlobal("fetch", mapFetch);
+    const onStamp = vi.fn().mockRejectedValue(new HttpError(status, "failed"));
+    render(<StampMapDialog stamps={[]} statuses={[{ sigunguCode: "51130", status: "AVAILABLE", stampedAt: null }]}
+      onStamp={onStamp} onClose={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "강원" }));
+    fireEvent.click(screen.getByRole("button", { name: "원주시" }));
+    fireEvent.click(screen.getByRole("button", { name: "스탬프 찍기" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(status === 409 ? "완주 기록이 아직 없어요" : "연결을 확인");
+    expect((screen.getByRole("button", { name: "스탬프 찍기" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

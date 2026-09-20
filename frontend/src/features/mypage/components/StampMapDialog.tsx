@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Feature, FeatureCollection } from "geojson";
-import { fetchOrNetworkError } from "../../../lib/http";
+import { fetchOrNetworkError, HttpError } from "../../../lib/http";
 import { buildProjection, geometryPath, labelPoint } from "../../support/koreaMapGeometry";
 import { STAMP_SIDO, sidoCodeOf } from "../stampRegions";
 import { formatDate } from "../format";
-import type { Stamp } from "../types";
+import type { SigunguStampStatus, Stamp } from "../types";
+import { PRIMARY_BUTTON } from "../buttonStyles";
 import ModalDialog from "../../../components/common/ModalDialog";
 
 // SVG fill은 토큰 클래스를 못 써서 값으로 둔다. 방문 혜택 지도와 같은 색이다.
@@ -59,11 +60,13 @@ export interface SelectedSigungu {
 
 interface Props {
   stamps: Stamp[];
+  statuses?: SigunguStampStatus[];
+  loading?: boolean;
+  error?: string;
+  onRetry?: () => void;
+  onStamp?: (code: string) => Promise<void>;
   onClose: () => void;
-  /**
-   * 시군구를 골랐을 때. 스탬프 찍기(그 지역만 활성화, 도장 모션)는 기록 담당 작업이라 여기서 하지 않는다.
-   * 그 작업이 붙으면 이 콜백에서 스탬프를 요청하고 모션을 띄운다.
-   */
+  /** 지도 선택 알림. 스탬프 저장은 별도 버튼에서 요청한다. */
   onSelectSigungu?: (region: SelectedSigungu) => void;
 }
 
@@ -74,7 +77,31 @@ interface Props {
  * 지도는 마우스용이고, 같은 지역을 지도 아래 버튼 목록으로도 둔다. 키보드·화면낭독기로도 고를 수 있고,
  * 세종·광주 구처럼 지도에서 작아 누르기 어려운 곳도 쉽게 고를 수 있다. 목록에 마우스를 올리면 지도에서도 강조된다.
  */
-export default function StampMapDialog({ stamps, onClose, onSelectSigungu }: Props) {
+export default function StampMapDialog({ stamps, statuses = [], loading = false, error = "", onRetry, onStamp, onClose, onSelectSigungu }: Props) {
+  const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState<{ code: string; message: string } | null>(null);
+  const pending = useRef(false);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const stampRegion = async (code: string) => {
+    if (!onStamp || pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setSaveError(null);
+    try {
+      await onStamp(code);
+    } catch (err) {
+      if (mounted.current) setSaveError({ code, message: err instanceof HttpError && err.status === 409
+        ? "이 지역의 완주 기록이 아직 없어요. 완주 기록을 확인한 뒤 다시 시도해 주세요."
+        : "스탬프를 찍지 못했어요. 연결을 확인하고 다시 시도해 주세요." });
+    } finally {
+      pending.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  };
   const [files, setFiles] = useState<MapFiles | null>(null);
   const [failed, setFailed] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
@@ -185,6 +212,8 @@ export default function StampMapDialog({ stamps, onClose, onSelectSigungu }: Pro
 
   return (
     <ModalDialog title="스탬프 지도" onClose={onClose} size="lg">
+      {loading && <p role="status">스탬프를 불러오는 중…</p>}
+      {error && <div><p role="alert">{error}</p><button type="button" onClick={onRetry}>다시 시도</button></div>}
       <div className="flex min-h-8 items-center gap-2">
         {!nation && (
           <button
@@ -313,12 +342,21 @@ export default function StampMapDialog({ stamps, onClose, onSelectSigungu }: Pro
                 <p className="text-ink">
                   <span className="font-bold">{selected.name}</span>
                   <span className="ml-2 text-caption">
-                    {selectedStamp ? `${formatDate(selectedStamp.collectedAt)}에 스탬프를 받았어요.` : "아직 스탬프가 없어요."}
+                    {selectedStamp ? `${formatDate(selectedStamp.stampedAt)}에 스탬프를 찍었어요.`
+                      : loading || error ? "스탬프 상태를 확인해 주세요."
+                        : statuses.some((item) => item.sigunguCode === selected.code && item.status === "AVAILABLE")
+                          ? "완주한 지역이에요. 스탬프를 찍어 보세요."
+                          : "아직 완주하지 않아 스탬프를 찍을 수 없어요."}
                   </span>
                 </p>
               ) : (
                 <p className="text-caption">지도나 목록에서 시군구를 고르면 스탬프 현황을 보여 드려요.</p>
               )}
+              {selected && !loading && !error && !selectedStamp && onStamp && statuses.some((item) => item.sigunguCode === selected.code && item.status === "AVAILABLE") && (
+                <button type="button" className={`${PRIMARY_BUTTON} mt-3 disabled:opacity-50`} disabled={busy}
+                  onClick={() => void stampRegion(selected.code)}>{busy ? "찍는 중…" : "스탬프 찍기"}</button>
+              )}
+              {selected && saveError?.code === selected.code && <p role="alert" className="mt-2 text-danger">{saveError.message}</p>}
             </div>
           )}
         </>
