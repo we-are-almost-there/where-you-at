@@ -25,20 +25,22 @@ export function Support() {
   }, []);
 
   return (
-    <>
+    <div className="flex min-h-dvh flex-col bg-white">
       <AppHeader />
-      <div className="relative">
-        {/* 바다는 뷰포트에 고정한다. 콘텐츠 높이에 붙이면 지역마다 우측 패널 높이가
-            달라질 때 배경이 위아래로 늘었다 줄었다 한다.
-            -z-10이라 sticky 헤더(z-50, 불투명 흰색)가 위를 덮는다. */}
-        <div className="fixed inset-0 -z-10">
-          <SeaBackdrop />
+      <div className="relative isolate flex-1 overflow-clip">
+        {/* 배경은 콘텐츠 영역 안에서만 자르되, 안쪽 그림은 뷰포트에 붙여 지역마다
+            우측 패널 높이가 달라져도 크기가 늘거나 줄지 않게 한다.
+            overflow-clip은 sticky의 스크롤 기준을 바꾸지 않으면서 푸터 아래 노출을 막는다. */}
+        <div aria-hidden="true" className="absolute inset-0 z-0">
+          <div className="sticky top-0 h-dvh">
+            <SeaBackdrop />
+          </div>
         </div>
 
         {/* 폭은 max-w-6xl(72rem)로 — AppHeader.tsx의 좌우 padding 계산식과
             Home.tsx의 BannerCarousel(banners.tsx)이 쓰는 max-w-6xl 기준을 그대로 따른 것.
             기준이 다르면 페이지를 옮길 때마다 헤더·본문 좌우 끝이 미묘하게 어긋나 보인다.
-            z-10은 위의 고정 배경(-z-10) 위로 콘텐츠를 올리기 위한 것. */}
+            z-10은 위의 배경 레이어(z-0) 위로 콘텐츠를 올리기 위한 것. */}
         <main id={MAIN_CONTENT_ID} tabIndex={-1} className="relative z-10 mx-auto w-full max-w-6xl px-4 py-4 outline-none">
           {/* 모바일은 패널이 지도 아래로 쌓이므로 간격을 조금 더 준다 (md+는 좌우 배치라 그대로) */}
           <div className="flex flex-col gap-8 md:flex-row md:gap-4">
@@ -75,6 +77,6 @@ export function Support() {
         </main>
       </div>
       <Footer />
-    </>
+    </div>
   );
 }

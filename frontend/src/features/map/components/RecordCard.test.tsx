@@ -4,6 +4,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RecordCard } from "./RecordCard";
 import { StrictMode } from "react";
 import { draw } from "../recordCardCanvas";
+import { saveRecordCard, ServerSaveUnconfirmedError } from "../../mypage/recordsApi";
+import { RecordApiError, RecordImageValidationError } from "../../mypage/recordsErrors";
 
 vi.mock("@fontsource/do-hyeon", () => ({}));
 vi.mock("@fontsource/black-han-sans", () => ({}));
@@ -72,6 +74,169 @@ function editFont() {
   fireEvent.click(screen.getByRole("button", { name: "글꼴" }));
   fireEvent.click(screen.getByRole("button", { name: "Do Hyeon" }));
 }
+
+it("용량 검증 실패는 원인을 안내하고 같은 이미지는 차단하되 편집 후에는 저장한다", async () => {
+  const saveToServer = vi.fn().mockRejectedValueOnce(new RecordImageValidationError("5MB 이하 파일이어야 해요."))
+    .mockResolvedValue(undefined);
+  share.mockResolvedValue(undefined);
+  render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} saveToServer={saveToServer} />);
+  await save();
+  expect(screen.getByRole("alert").textContent).toContain("5MB");
+  await save();
+  expect(saveToServer).toHaveBeenCalledTimes(1);
+  editFont();
+  await save();
+  expect(saveToServer).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it.each([
+  [409, "저장할 수 있는 기록 카드 수를 넘었어요.", "기록 카드 수", 1],
+  [409, "업로드한 이미지가 바뀌었습니다. 다시 시도해 주세요.", "이미지가 바뀌었어요", 2],
+  [429, "요청이 너무 잦아요.", "잠시 후", 2],
+  [503, "아직 제공하지 않는 기능입니다.", "아직 제공하지 않는 기능", 1],
+  [422, [], "기기 시각", 1],
+] as const)("카드 저장 거절 %s를 안내하고 허용된 경우에만 재시도한다", async (status, detail, message, attempts) => {
+  const saveToServer = vi.fn().mockRejectedValue(new RecordApiError(status, detail));
+  share.mockResolvedValue(undefined);
+  render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} saveToServer={saveToServer} />);
+  await save();
+  expect(screen.getByRole("alert").textContent).toContain(message);
+  expect(screen.getByRole("alert").textContent).not.toContain("저장 여부");
+  await save();
+  expect(saveToServer).toHaveBeenCalledTimes(attempts);
+  expect(share).toHaveBeenCalledTimes(2);
+});
+
+it("같은 편집 버전의 저장 버튼을 연속으로 눌러도 saveRecordCard와 최종 POST는 한 번만 실행한다", async () => {
+  let finishPost!: (response: Response) => void;
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ upload_key: "uploads/7/card.png", upload_url: "https://r2.test/put" })))
+    .mockResolvedValueOnce(new Response(null))
+    .mockImplementationOnce(() => new Promise<Response>((resolve) => { finishPost = resolve; }));
+  vi.stubGlobal("fetch", fetchMock);
+  vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementation((callback) => callback(new Blob(["png"], { type: "image/png" })));
+  const saveToServer = vi.fn((image: Blob) => saveRecordCard(42, image));
+  share.mockResolvedValue(undefined);
+  render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} saveToServer={saveToServer} />);
+  const button = await screen.findByRole("button", { name: "이미지 저장" }, { timeout: IMAGE_PREPARATION_TIMEOUT });
+  // 같은 이벤트 배치에서 연속 클릭해 disabled 렌더링 전의 동기 잠금도 검증한다.
+  await act(async () => { for (let i = 0; i < 10; i++) fireEvent.click(button); });
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  expect(saveToServer).toHaveBeenCalledTimes(1);
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => finishPost(new Response(JSON.stringify({ id: 9, image_url: "https://r2.test/view",
+    created_at: "2026-09-20T01:02:03Z", record: { id: 42, course_id: 1, course_name: "코스", route_type: "trail",
+      distance_km: 3, duration_ms: 60000, pace_sec_per_km: 20, finished_at: "2026-09-20T01:02:03Z" } }), { status: 201 })));
+  expect((button as HTMLButtonElement).disabled).toBe(false);
+  // 서버 응답을 받은 뒤에도 같은 편집 버전이면 추가 카드를 만들지 않는다.
+  await act(async () => { for (let i = 0; i < 10; i++) fireEvent.click(button); });
+  expect(saveToServer).toHaveBeenCalledTimes(1);
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/api/record-cards") && init.method === "POST")).toHaveLength(1);
+  expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ record_id: 42, upload_key: "uploads/7/card.png" });
+});
+
+it("이미지 저장은 공유를 즉시 시작하고 지연된 서버 저장 중 이탈을 보호한다", async () => {
+  let resolve!: () => void;
+  const saveToServer = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+  const onProtectionChange = vi.fn();
+  render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} saveToServer={saveToServer} onProtectionChange={onProtectionChange} />);
+  share.mockResolvedValue(undefined);
+  await save();
+  expect(share).toHaveBeenCalledTimes(1);
+  expect(saveToServer).toHaveBeenCalledTimes(1);
+  expect(unloadAllowed()).toBe(false);
+  expect(onProtectionChange).toHaveBeenLastCalledWith(true);
+  expect((screen.getByRole("button", { name: "이미지 저장" }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => resolve());
+  expect(unloadAllowed()).toBe(true);
+  expect(onProtectionChange).toHaveBeenLastCalledWith(false);
+  await save();
+  expect(saveToServer).toHaveBeenCalledTimes(1);
+});
+
+it("카드 업로드 실패는 동일 편집 버전으로 재시도하고 편집 후에는 새 버전을 저장한다", async () => {
+  const saveToServer = vi.fn().mockRejectedValueOnce(new Error("PUT failed")).mockResolvedValue(undefined);
+  render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} saveToServer={saveToServer} />);
+  share.mockResolvedValue(undefined);
+  await save();
+  expect(screen.getByRole("alert").textContent).toContain("업로드에 실패");
+  expect(unloadAllowed()).toBe(false);
+  await save();
+  expect(saveToServer).toHaveBeenCalledTimes(2);
+  expect(unloadAllowed()).toBe(true);
+  await save();
+  expect(saveToServer).toHaveBeenCalledTimes(2);
+  editFont();
+  await save();
+  expect(saveToServer).toHaveBeenCalledTimes(3);
+  expect(saveToServer.mock.calls[0][0]).toBe(saveToServer.mock.calls[1][0]);
+  expect(saveToServer.mock.calls[2][0]).not.toBe(saveToServer.mock.calls[1][0]);
+});
+
+it("서버 POST 결과가 불명확하면 이미지 저장을 다시 눌러도 서버 재전송은 하지 않는다", async () => {
+  const saveToServer = vi.fn().mockRejectedValue(new ServerSaveUnconfirmedError("저장 여부를 확인하지 못했어요."));
+  render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} saveToServer={saveToServer} />);
+  share.mockResolvedValue(undefined);
+  await save();
+  await save();
+  expect(saveToServer).toHaveBeenCalledTimes(1);
+  expect(share).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole("alert").textContent).toContain("저장 여부");
+  expect(unloadAllowed()).toBe(false);
+});
+
+it("업로드 중 새로 편집한 이미지는 이전 업로드 완료로 저장 처리하지 않는다", async () => {
+  let resolve!: () => void;
+  const saveToServer = vi.fn().mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }))
+    .mockResolvedValue(undefined);
+  render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} saveToServer={saveToServer} />);
+  share.mockResolvedValue(undefined);
+  await save();
+  editFont();
+  await act(async () => resolve());
+  expect(unloadAllowed()).toBe(false);
+  await save();
+  expect(saveToServer).toHaveBeenCalledTimes(2);
+  expect(unloadAllowed()).toBe(true);
+});
+
+it("이전 공유가 늦게 완료돼도 더 최신 저장 버전을 덮어쓰지 않는다", async () => {
+  let resolve!: () => void;
+  const saveToServer = vi.fn().mockResolvedValue(undefined);
+  share.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; })).mockResolvedValue(undefined);
+  render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} saveToServer={saveToServer} />);
+  await save();
+  editFont();
+  await save();
+  expect(unloadAllowed()).toBe(true);
+  await act(async () => resolve());
+  expect(unloadAllowed()).toBe(true);
+  expect(saveToServer).toHaveBeenCalledTimes(2);
+});
+
+it("서버 저장을 기다리다 닫힌 카드의 완료 응답은 보호 콜백을 다시 호출하지 않는다", async () => {
+  let resolve!: () => void;
+  const saveToServer = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+  const onProtectionChange = vi.fn();
+  const view = render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} saveToServer={saveToServer} onProtectionChange={onProtectionChange} />);
+  share.mockResolvedValue(undefined);
+  await save();
+  view.unmount();
+  onProtectionChange.mockClear();
+  await act(async () => resolve());
+  expect(onProtectionChange).not.toHaveBeenCalled();
+});
 
 it.each(["그리기 실패", "그리기 예외", "이미지 변환 실패", "이미지 변환 예외"])("%s 후 편집 없이 재시도하며 저장 전까지 보호한다", async (failure) => {
   mount();
