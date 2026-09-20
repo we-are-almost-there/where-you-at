@@ -38,9 +38,8 @@ function clampToWindow(v: number, [lo, hi]: [number, number], compress: number):
  * 링 전체를 평행이동해 모양과 구멍 정렬을 그대로 유지한다.
  * bbox 계산과 path 생성이 반드시 같은 함수를 거쳐야 좌표계가 어긋나지 않는다.
  */
-export function insetRings(geom: Geometry): Position[][] {
-  const rings: Position[][] = [];
-  for (const poly of polygonsOf(geom)) {
+function insetPolygons(geom: Geometry): Position[][][] {
+  return polygonsOf(geom).map((poly) => {
     const shell = poly[0];
     let sx = 0, sy = 0;
     for (const [lng, lat] of shell) { sx += lng; sy += lat; }
@@ -48,13 +47,14 @@ export function insetRings(geom: Geometry): Position[][] {
     const cy = sy / shell.length;
     const dLng = clampToWindow(cx, WINDOW_LNG, INSET_COMPRESS_LNG) - cx;
     const dLat = clampToWindow(cy, WINDOW_LAT, INSET_COMPRESS_LAT) - cy;
-    if (dLng === 0 && dLat === 0) {
-      for (const ring of poly) rings.push(ring);
-    } else {
-      for (const ring of poly) rings.push(ring.map(([lng, lat]) => [lng + dLng, lat + dLat]));
-    }
-  }
-  return rings;
+    return dLng === 0 && dLat === 0
+      ? poly
+      : poly.map((ring) => ring.map(([lng, lat]) => [lng + dLng, lat + dLat]));
+  });
+}
+
+export function insetRings(geom: Geometry): Position[][] {
+  return insetPolygons(geom).flat();
 }
 
 export type Projection = (point: Position) => [number, number];
@@ -112,15 +112,13 @@ export function geometryPath(geom: Geometry, project: Projection): string {
  */
 function projectedRingCenter(
   ring: Position[],
-  project: Projection,
 ): { x: number; y: number; area: number } {
-  const points = ring.map(project);
   let twiceArea = 0;
   let weightedX = 0;
   let weightedY = 0;
-  for (let i = 0; i < points.length; i++) {
-    const [x1, y1] = points[i];
-    const [x2, y2] = points[(i + 1) % points.length];
+  for (let i = 0; i < ring.length; i++) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[(i + 1) % ring.length];
     const cross = x1 * y2 - x2 * y1;
     twiceArea += cross;
     weightedX += (x1 + x2) * cross;
@@ -135,18 +133,93 @@ function projectedRingCenter(
   }
 
   // 잘못 닫혔거나 일직선인 도형도 지도 전체를 깨뜨리지 않게 기존 평균을 폴백으로 둔다.
-  const [sumX, sumY] = points.reduce(
+  const [sumX, sumY] = ring.reduce(
     ([sx, sy], [x, y]) => [sx + x, sy + y],
     [0, 0],
   );
-  return { x: sumX / points.length, y: sumY / points.length, area: 0 };
+  return { x: sumX / ring.length, y: sumY / ring.length, area: 0 };
 }
 
-/** 실제 면적이 가장 큰 링(작은 섬 말고 본체)의 면적 중심. 이름표 자리를 잡는 데 쓴다. */
+function inRing([x, y]: Position, ring: Position[]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/** 외곽 링 안에 있으면서 구멍에는 들어가지 않은 점. */
+function inPolygon(point: Position, polygon: Position[][]): boolean {
+  return inRing(point, polygon[0]) && !polygon.slice(1).some((hole) => inRing(point, hole));
+}
+
+/**
+ * 주어진 높이에서 폴리곤 내부에 놓이는 가장 긴 수평 구간의 중점.
+ * 모든 링과의 교점을 순서대로 짝지으면 구멍을 제외한 내부 구간이 된다.
+ */
+function pointOnScanline(polygon: Position[][], y: number): [number, number] | null {
+  const intersections: number[] = [];
+  for (const ring of polygon) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [x1, y1] = ring[j];
+      const [x2, y2] = ring[i];
+      if (y1 > y === y2 > y) continue;
+      intersections.push(x1 + ((y - y1) * (x2 - x1)) / (y2 - y1));
+    }
+  }
+  intersections.sort((a, b) => a - b);
+
+  let best: [number, number] | null = null;
+  let bestWidth = 0;
+  for (let i = 0; i + 1 < intersections.length; i += 2) {
+    const left = intersections[i];
+    const right = intersections[i + 1];
+    const point: [number, number] = [(left + right) / 2, y];
+    if (right - left > bestWidth && inPolygon(point, polygon)) {
+      best = point;
+      bestWidth = right - left;
+    }
+  }
+  return best;
+}
+
+/** 면적 중심이 밖에 있는 오목한 도형에서 실제 내부점 하나를 찾는다. */
+function pointOnSurface(polygon: Position[][], preferredY: number): [number, number] {
+  const ys = polygon[0].map(([, y]) => y);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const centerY = (minY + maxY) / 2;
+
+  // 면적 중심과 같은 높이를 먼저 써서 원래 의도한 위치에서 수평으로만 보정한다.
+  const preferred = pointOnScanline(polygon, preferredY);
+  if (preferred) return preferred;
+  const center = pointOnScanline(polygon, centerY);
+  if (center) return center;
+
+  // 잘못 닫힌 링처럼 위 두 선이 실패해도, 정점 사이 구간을 훑어 내부점을 찾는다.
+  const levels = [...new Set(ys)].sort((a, b) => a - b);
+  for (let i = 0; i + 1 < levels.length; i++) {
+    const point = pointOnScanline(polygon, (levels[i] + levels[i + 1]) / 2);
+    if (point) return point;
+  }
+  return polygon[0][0] as [number, number];
+}
+
+/** 실제 면적이 가장 큰 본체 안의 점. 이름표 자리를 잡는 데 쓴다. */
 export function labelPoint(geom: Geometry, project: Projection): [number, number] {
-  const centers = insetRings(geom).map((ring) => projectedRingCenter(ring, project));
-  const best = centers.reduce((largest, center) =>
-    center.area > largest.area ? center : largest,
+  const candidates = insetPolygons(geom).map((polygon) => {
+    const projected = polygon.map((ring) => ring.map(project));
+    return { polygon: projected, center: projectedRingCenter(projected[0]) };
+  });
+  const best = candidates.reduce((largest, candidate) =>
+    candidate.center.area > largest.center.area ? candidate : largest,
   );
-  return [best.x, best.y];
+  const centroid: [number, number] = [best.center.x, best.center.y];
+  return inPolygon(centroid, best.polygon)
+    ? centroid
+    : pointOnSurface(best.polygon, best.center.y);
 }
