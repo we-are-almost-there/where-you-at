@@ -15,6 +15,12 @@ _TOKEN_URL = "https://kauth.kakao.com/oauth/token"
 _USER_URL = "https://kapi.kakao.com/v2/user/me"
 _UNLINK_URL = "https://kapi.kakao.com/v1/user/unlink"
 
+# 한 로그인 요청은 토큰 교환과 회원 조회를 연달아 수행한다. 두 호출 전체를 이 수만큼만
+# 동시에 허용하고, HTTP 연결 풀도 같은 크기로 맞춘다. 변경 전에는 동기 호출 40개가
+# FastAPI 공용 스레드풀을 모두 점유해 일반 동기 API까지 기다리게 했다(#176).
+LOGIN_CONCURRENCY_LIMIT = 8
+LOGIN_HTTP_TIMEOUT_SECONDS = 10
+
 # 다시 로그인하면 해결되는 오류 코드만 적는다. 목록에 없는 코드는 모두 설정 오류나 카카오 쪽 문제로 본다.
 #   KOE320: 인가 코드가 만료됐거나 이미 쓰였다.
 # error 값으로 나누지 않는 이유: redirect_uri 불일치(KOE303)도 KOE320과 같은 invalid_grant로 온다.
@@ -62,7 +68,18 @@ def is_unlink_configured() -> bool:
     return bool(settings.kakao_login_admin_key)
 
 
-def exchange_code(code: str) -> str:
+def create_login_client() -> httpx.AsyncClient:
+    """애플리케이션 수명 동안 재사용할 카카오 로그인용 HTTP 클라이언트를 만든다."""
+    return httpx.AsyncClient(
+        timeout=LOGIN_HTTP_TIMEOUT_SECONDS,
+        limits=httpx.Limits(
+            max_connections=LOGIN_CONCURRENCY_LIMIT,
+            max_keepalive_connections=LOGIN_CONCURRENCY_LIMIT,
+        ),
+    )
+
+
+async def exchange_code(client: httpx.AsyncClient, code: str) -> str:
     """인가 코드를 카카오 액세스 토큰으로 바꾼다.
 
     redirect_uri는 요청 값이 아니라 서버 설정값을 쓴다. 인가 요청 때와 한 글자라도 다르면 KOE303이 난다.
@@ -75,7 +92,7 @@ def exchange_code(code: str) -> str:
         "code": code,
     }
     try:
-        resp = httpx.post(_TOKEN_URL, data=data, timeout=10)
+        resp = await client.post(_TOKEN_URL, data=data)
     except httpx.HTTPError as e:
         raise KakaoUpstreamError(f"토큰 요청 실패: {type(e).__name__}") from e
 
@@ -95,10 +112,10 @@ def exchange_code(code: str) -> str:
     )
 
 
-def fetch_user(access_token: str) -> KakaoUser:
+async def fetch_user(client: httpx.AsyncClient, access_token: str) -> KakaoUser:
     """카카오 액세스 토큰으로 회원번호와 닉네임을 조회한다. 프로필 사진은 받지 않는다."""
     try:
-        resp = httpx.get(_USER_URL, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+        resp = await client.get(_USER_URL, headers={"Authorization": f"Bearer {access_token}"})
     except httpx.HTTPError as e:
         raise KakaoUpstreamError(f"회원 정보 요청 실패: {type(e).__name__}") from e
 

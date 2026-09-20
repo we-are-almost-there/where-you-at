@@ -45,6 +45,8 @@ IMAGE_EXTENSIONS = {
 UPLOAD_URL_EXPIRES_SECONDS = 5 * 60
 # 보기 URL은 페이지를 켜 둔 동안 이미지가 깨지지 않을 만큼 둔다. 만료되면 화면이 기본 이미지로 대체한다.
 DOWNLOAD_URL_EXPIRES_SECONDS = 60 * 60
+# 브라우저 자르기 결과와 같은 크기만 받아, 작은 압축 파일이 디코딩 때 큰 메모리를 차지하지 못하게 한다.
+AVATAR_IMAGE_SIZE = (512, 512)
 
 
 class Folder(Enum):
@@ -114,11 +116,7 @@ def decoded_image_content_type(data: bytes) -> str | None:
     try:
         with Image.open(BytesIO(data)) as image:
             content_type = formats.get(image.format or "")
-            if content_type is None or image.width <= 0 or image.height <= 0:
-                return None
-            # 프로필 편집기는 작은 정사각형을 만든다. 직접 API를 호출해 고압축 거대 이미지를 보내더라도
-            # 디코더가 과도한 메모리를 쓰지 않도록 픽셀 수를 먼저 제한한다.
-            if image.width * image.height > 4096 * 4096:
+            if content_type is None or image.size != AVATAR_IMAGE_SIZE:
                 return None
             image.load()
             return content_type

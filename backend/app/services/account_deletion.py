@@ -17,10 +17,15 @@ def delete_account(user_id: int) -> None:
     """
     if not storage.is_configured():
         raise ObjectCleanupError("R2 설정을 확인할 수 없다")
-    try:
-        storage.delete_user_objects(user_id)
-    except storage.StorageError as exc:
-        raise ObjectCleanupError("R2 사용자 객체 삭제 실패") from exc
-
     with db_connection() as conn:
+        # 업로드도 같은 행 잠금을 잡은 뒤 R2에 쓴다. 잠금부터 R2 정리와 DB 삭제까지 한 트랜잭션으로
+        # 묶으면 탈퇴가 끝난 뒤 늦은 업로드 객체가 남는 순서를 만들 수 없다.
+        if user_crud.lock_user_for_update(conn, user_id) is None:
+            conn.rollback()
+            return
+        try:
+            storage.delete_user_objects(user_id)
+        except storage.StorageError as exc:
+            conn.rollback()
+            raise ObjectCleanupError("R2 사용자 객체 삭제 실패") from exc
         user_crud.delete_user(conn, user_id)

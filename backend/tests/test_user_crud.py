@@ -86,5 +86,17 @@ class TestSetAvatar(unittest.TestCase):
         conn.rollback.assert_called_once()
 
 
+class TestUserLock(unittest.TestCase):
+    def test_locks_user_row_for_upload_and_account_deletion(self):
+        conn, cursor = _conn({"id": 7, "avatar_key": None})
+
+        row = user_crud.lock_user_for_update(conn, 7)
+
+        query, params = cursor.execute.call_args.args
+        self.assertIn("for update", query.lower())
+        self.assertEqual(params, {"id": 7})
+        self.assertEqual(row["id"], 7)
+
+
 if __name__ == "__main__":
     unittest.main()

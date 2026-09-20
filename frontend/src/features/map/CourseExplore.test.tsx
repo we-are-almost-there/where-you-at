@@ -223,6 +223,55 @@ describe("CourseExplore 지역 필터 표시", () => {
     );
   });
 
+  // 탭에 없는 유형의 코스만 가진 지역을 고르면 빈 목록이 나온다 (서울은 자전거 코스만 있다)
+  it("지역 항목은 지금 탭의 경로 유형으로 받고, 탭마다 한 번만 받는다", async () => {
+    const SEOUL_BIKE = [
+      { region_code: "11650", name: "서초구", sido: "서울특별시", is_population_drop: false },
+    ];
+    vi.mocked(regions).mockImplementation((type) => Promise.resolve(type === "자전거" ? SEOUL_BIKE : BUSAN));
+    const optionLabels = async () => {
+      fireEvent.click(regionTriggers()[0]);
+      const labels = (await screen.findAllByRole("option")).map((o) => o.textContent);
+      fireEvent.click(regionTriggers()[0]);
+      return labels;
+    };
+
+    renderFresh("/courses");
+
+    await waitFor(() => expect(regions).toHaveBeenCalledWith("도보"), WAIT_FOR_REGION_LABEL);
+    await waitFor(async () => expect(await optionLabels()).toEqual(["전체 지역", "부산"]), WAIT_FOR_REGION_LABEL);
+
+    fireEvent.click(screen.getByRole("tab", { name: "자전거" }));
+    await waitFor(async () => expect(await optionLabels()).toEqual(["전체 지역", "서울"]), WAIT_FOR_REGION_LABEL);
+
+    fireEvent.click(screen.getByRole("tab", { name: "도보" }));
+    await waitFor(async () => expect(await optionLabels()).toEqual(["전체 지역", "부산"]), WAIT_FOR_REGION_LABEL);
+    // 받아 둔 탭으로 돌아올 때는 다시 받지 않는다
+    expect(vi.mocked(regions).mock.calls).toEqual([["도보"], ["자전거"]]);
+  });
+
+  it("탭을 바꿔 고른 지역이 새 탭 항목에 없어도 필터를 되돌리지 않고 이름을 띄운다", async () => {
+    vi.mocked(regions).mockImplementation((type) => Promise.resolve(type === "자전거" ? [] : BUSAN));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ names: { "26": "부산광역시" } }) })),
+    );
+
+    renderFresh("/courses?region=26");
+    await waitFor(
+      () => regionTriggers().forEach((t) => expect(t.textContent).toContain("부산")),
+      WAIT_FOR_REGION_LABEL,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "자전거" }));
+
+    await waitFor(() => expect(regions).toHaveBeenCalledWith("자전거"), WAIT_FOR_REGION_LABEL);
+    await waitFor(
+      () => regionTriggers().forEach((t) => expect(t.textContent).toContain("부산")),
+      WAIT_FOR_REGION_LABEL,
+    );
+  });
+
   it("지역 목록 재시도를 모두 소진해도 URL 지역 이름을 필터에 띄운다", async () => {
     vi.useFakeTimers();
     const error = new TypeError("Failed to fetch");

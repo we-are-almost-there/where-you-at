@@ -1,19 +1,20 @@
 import { Link } from "react-router";
-import type { Course } from "../../map/types";
+import type { SavedCourse } from "../../saved";
 
 /**
  * 찜한 코스 게시판형 목록. 마이페이지 첫 화면에서 최근 몇 개만 보여 줄 때 쓴다.
  * 공지 목록처럼 한 줄에 하나씩, 이름 아래에 종목·출발지·거리를 둔다. 전체는 코스 카드로 본다.
+ * 찜은 종목 단위라 코스가 가진 경로가 아니라 찜할 때 고른 종목으로 보여 주고 연결한다.
  */
-export default function SavedCourseRows({ courses }: { courses: Course[] }) {
+export default function SavedCourseRows({ courses }: { courses: SavedCourse[] }) {
   return (
     <ul className="flex flex-col">
-      {courses.map((course) => {
-        const route = course.routes[0];
+      {courses.map(({ course, routeType }) => {
+        const route = course.routes.find((r) => r.route_type === routeType) ?? course.routes[0];
         return (
-          <li key={course.id} className="border-b border-divider last:border-b-0">
+          <li key={`${course.id}:${routeType}`} className="border-b border-divider last:border-b-0">
             <Link
-              to={`/courses/${course.id}${route?.route_type === "자전거" ? "?type=bicycle" : ""}`}
+              to={`/courses/${course.id}${routeType === "자전거" ? "?type=bicycle" : ""}`}
               className="flex items-center gap-3 py-3 hover:bg-surface-hover"
             >
               <span className="flex min-w-0 flex-1 flex-col gap-1">

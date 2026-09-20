@@ -26,9 +26,9 @@ R2_SETTINGS = {
 }
 
 
-def _image_bytes(format_name: str) -> bytes:
+def _image_bytes(format_name: str, size: tuple[int, int] = (512, 512)) -> bytes:
     output = BytesIO()
-    Image.new("RGB", (2, 2), "purple").save(output, format=format_name)
+    Image.new("RGB", size, "purple").save(output, format=format_name)
     return output.getvalue()
 
 
@@ -88,6 +88,9 @@ class DecodedImageContentTypeTest(unittest.TestCase):
         )
         for data in files:
             self.assertIsNone(storage.decoded_image_content_type(data), data[:20])
+
+    def test_rejects_dimensions_other_than_crop_output_before_decoding_pixels(self):
+        self.assertIsNone(storage.decoded_image_content_type(_image_bytes("PNG", (513, 512))))
 
 
 class CheckR2Test(unittest.TestCase):

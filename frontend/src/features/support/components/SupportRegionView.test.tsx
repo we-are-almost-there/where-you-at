@@ -146,32 +146,97 @@ describe("SupportRegionView — 코스 링크", () => {
     );
 
   const courseLink = () => screen.queryByRole("link", { name: /코스 보러가기/ });
-  const offNotice = () => screen.queryByText("이 지역에는 등록된 도보 코스가 없어요");
+  const offNotice = () => screen.queryByText(/등록된 (도보 )?코스가 없어요/);
 
-  it("도보 코스가 있는 지역은 코스 링크를 보여준다", async () => {
-    vi.mocked(regions).mockResolvedValue(COURSE_REGIONS);
+  /** 경로 유형별 코스 보유 지역. 실패로 둘 유형은 Error를 준다 */
+  const regionsByType = (trail: typeof COURSE_REGIONS | Error, bicycle: typeof COURSE_REGIONS | Error) =>
+    vi.mocked(regions).mockImplementation((type) => {
+      const rows = type === "자전거" ? bicycle : trail;
+      return rows instanceof Error ? Promise.reject(rows) : Promise.resolve(rows);
+    });
+
+  /** 담양군 — 자전거 코스만 있는 지원 대상 지역 */
+  const DAMYANG = [
+    { region_code: "46710", name: "담양군", sido: "전남광주통합특별시", is_population_drop: true },
+  ];
+
+  it("도보 코스만 있는 지역은 도보 탭 코스 링크를 보여준다", async () => {
+    regionsByType(COURSE_REGIONS, DAMYANG); // 화천(51790)은 자전거 목록에 없다
 
     renderFresh("51790");
 
+    await waitFor(() => expect(regions).toHaveBeenCalledWith("자전거"));
     await waitFor(() => expect(courseLink()!.getAttribute("href")).toBe("/courses?region=51790"));
-    expect(regions).toHaveBeenCalledWith("도보");
+    expect(courseLink()!.textContent).toBe("이 지역 코스 보러가기 →");
     expect(offNotice()).toBeNull();
   });
 
-  it("도보 코스가 없는 지역은 링크 대신 비활성 안내를 보여준다", async () => {
-    vi.mocked(regions).mockResolvedValue(COURSE_REGIONS); // 고성(48820)은 목록에 없다
+  it("도보·자전거 코스가 모두 있는 지역도 기본 탭(도보)으로 보낸다", async () => {
+    regionsByType(COURSE_REGIONS, COURSE_REGIONS);
+
+    renderFresh("51790");
+
+    await waitFor(() => expect(regions).toHaveBeenCalledWith("자전거"));
+    await waitFor(() => expect(courseLink()!.getAttribute("href")).toBe("/courses?region=51790"));
+    expect(courseLink()!.textContent).toBe("이 지역 코스 보러가기 →");
+    expect(offNotice()).toBeNull();
+  });
+
+  it("자전거 코스만 있는 지역은 자전거 탭으로 보낸다", async () => {
+    regionsByType(COURSE_REGIONS, DAMYANG);
+
+    renderFresh("46710");
+
+    await waitFor(() =>
+      expect(courseLink()!.getAttribute("href")).toBe("/courses?region=46710&type=bicycle"),
+    );
+    // 자전거 탭으로 간다는 것을 문구에서도 알린다
+    expect(courseLink()!.textContent).toBe("이 지역 자전거 코스 보러가기 →");
+    expect(regions).toHaveBeenCalledWith("자전거");
+    expect(offNotice()).toBeNull();
+  });
+
+  it("어느 유형의 코스도 없는 지역은 링크 대신 비활성 안내를 보여준다", async () => {
+    regionsByType(COURSE_REGIONS, DAMYANG); // 고성(48820)은 두 목록에 모두 없다
 
     renderFresh("48820");
 
     // 누를 것이 아니라 알리는 문구다. disabled 버튼이면 Tab 순서에서 빠져
     // 키보드로 패널을 훑는 사람이 이 문구를 만나지 못한다.
-    const off = await screen.findByText("이 지역에는 등록된 도보 코스가 없어요");
+    const off = await screen.findByText("이 지역에는 등록된 코스가 없어요");
     expect(off.tagName).toBe("P");
-    expect(screen.queryByRole("button", { name: /등록된 도보 코스가 없어요/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /등록된 코스가 없어요/ })).toBeNull();
     expect(courseLink()).toBeNull();
   });
 
-  it("코스 보유 지역을 못 받으면 링크를 막지 않는다", async () => {
+  it("도보 코스가 없고 자전거 쪽을 못 받으면 자전거 탭 링크를 막지 않는다", async () => {
+    // 도보가 없으니 코스가 있다면 자전거 탭에 있다. 모르는 것을 없다고 단정해 막지 않되,
+    // 있다고 단정하지도 않도록 '자전거 코스'라고 적지 않는다.
+    regionsByType(COURSE_REGIONS, new TypeError("Failed to fetch"));
+
+    renderFresh("48820");
+
+    await screen.findByText("이 지역에 해당하는 지원 제도가 없어요.");
+    await waitFor(() =>
+      expect(courseLink()!.getAttribute("href")).toBe("/courses?region=48820&type=bicycle"),
+    );
+    expect(courseLink()!.textContent).toBe("이 지역 코스 보러가기 →");
+    expect(offNotice()).toBeNull();
+  });
+
+  it("도보 코스 보유 지역을 못 받으면 링크를 막지 않는다", async () => {
+    // 모르는 것을 없다고 단정하지 않는다 — 코스가 있는 지역의 링크를 조회 실패로
+    // 막아 버리는 쪽이, 빈 목록을 한 번 보여주는 것보다 나쁘다.
+    regionsByType(new TypeError("Failed to fetch"), []);
+
+    renderFresh("48820");
+
+    await screen.findByText("이 지역에 해당하는 지원 제도가 없어요.");
+    expect(courseLink()!.getAttribute("href")).toBe("/courses?region=48820");
+    expect(offNotice()).toBeNull();
+  });
+
+  it("코스 보유 지역을 모두 못 받아도 링크를 막지 않는다", async () => {
     // 모르는 것을 없다고 단정하지 않는다 — 코스가 있는 지역의 링크를 조회 실패로
     // 막아 버리는 쪽이, 빈 목록을 한 번 보여주는 것보다 나쁘다.
     vi.mocked(regions).mockRejectedValue(new TypeError("Failed to fetch"));

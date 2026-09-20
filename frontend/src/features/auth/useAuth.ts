@@ -38,6 +38,12 @@ function clearAuthState() {
   setState(SIGNED_OUT);
 }
 
+/** 인증이 필요한 다른 API에서 401을 받았을 때 서버 호출 없이 만료된 로컬 세션을 정리한다. */
+export function expireAuthSession(): void {
+  generation += 1;
+  clearAuthState();
+}
+
 function subscribe(listener: () => void) {
   listeners.add(listener);
   checkMe();

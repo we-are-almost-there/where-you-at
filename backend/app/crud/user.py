@@ -98,19 +98,30 @@ def set_avatar(conn, user_id: int, avatar_key: str | None) -> tuple[dict | None,
     이전 키를 잠근 뒤 바꾸므로 동시에 두 업로드를 완료해도 각 요청이 자신이 교체한 파일만 정리한다.
     회원이 이미 탈퇴했으면 (None, None).
     """
+    previous = lock_user_for_update(conn, user_id)
+    if previous is None:
+        conn.rollback()
+        return None, None
+    row = set_avatar_locked(conn, user_id, avatar_key)
+    conn.commit()
+    return row, previous["avatar_key"]
+
+
+def lock_user_for_update(conn, user_id: int) -> dict | None:
+    """업로드와 탈퇴가 공유하는 회원 행 잠금. 호출자는 트랜잭션 종료까지 연결을 유지한다."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("select avatar_key from app_user where id = %(id)s for update", {"id": user_id})
-        previous = cur.fetchone()
-        if previous is None:
-            conn.rollback()
-            return None, None
+        cur.execute("select id, avatar_key from app_user where id = %(id)s for update", {"id": user_id})
+        return cur.fetchone()
+
+
+def set_avatar_locked(conn, user_id: int, avatar_key: str | None) -> dict | None:
+    """이미 잠근 회원의 사진 키를 바꾼다. commit은 잠금을 관리하는 호출자가 수행한다."""
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"update app_user set avatar_key = %(avatar_key)s where id = %(id)s returning {_USER_COLUMNS}",
             {"id": user_id, "avatar_key": avatar_key},
         )
-        row = cur.fetchone()
-    conn.commit()
-    return row, previous["avatar_key"]
+        return cur.fetchone()
 
 
 def delete_session(conn, *, user_id: int, session_id: UUID) -> None:

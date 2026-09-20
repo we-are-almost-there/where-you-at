@@ -22,9 +22,9 @@ USER = {"id": 7, "nickname": "길손", "bio": None, "avatar_key": None, "kakao_i
 AVATAR_KEY = "avatars/7/" + "a" * 32 + ".webp"
 
 
-def _image_bytes(format_name: str) -> bytes:
+def _image_bytes(format_name: str, size: tuple[int, int] = (512, 512)) -> bytes:
     output = BytesIO()
-    Image.new("RGB", (2, 2), "purple").save(output, format=format_name)
+    Image.new("RGB", size, "purple").save(output, format=format_name)
     return output.getvalue()
 
 
@@ -56,28 +56,39 @@ class AvatarApiTest(unittest.TestCase):
         auth.start()
         self.addCleanup(auth.stop)
 
-    @patch("app.crud.user.set_avatar")
+    @patch("app.crud.user.set_avatar_locked")
+    @patch("app.crud.user.lock_user_for_update", return_value={"id": 7, "avatar_key": "avatars/7/old.webp"})
     @patch("app.services.storage.delete")
     @patch("app.services.storage.presign_download", return_value="https://view.example/signed")
     @patch("app.services.storage.put")
     @patch("app.services.storage.new_key", return_value=AVATAR_KEY)
     @patch("app.services.storage.is_configured", return_value=True)
     def test_validates_and_uploads_image_then_deletes_previous_avatar(
-        self, _configured, mock_new_key, mock_put, _presign, mock_delete, mock_set_avatar
+        self, _configured, mock_new_key, mock_put, _presign, mock_delete, mock_lock, mock_set_avatar
     ):
-        mock_set_avatar.return_value = (
-            {"id": 7, "nickname": "길손", "bio": None, "avatar_key": AVATAR_KEY},
-            "avatars/7/old.webp",
-        )
+        mock_set_avatar.return_value = {"id": 7, "nickname": "길손", "bio": None, "avatar_key": AVATAR_KEY}
 
         res = self.client.put("/api/me/avatar", headers=_headers("image/webp"), content=WEBP)
 
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["avatar_url"], "https://view.example/signed")
         mock_new_key.assert_called_once_with(me.storage.Folder.AVATAR, 7, "image/webp")
+        mock_lock.assert_called_once()
         mock_put.assert_called_once_with(AVATAR_KEY, WEBP, "image/webp")
         self.assertEqual(mock_set_avatar.call_args.args[1:], (7, AVATAR_KEY))
         mock_delete.assert_called_once_with("avatars/7/old.webp")
+
+    @patch("app.crud.user.set_avatar_locked")
+    @patch("app.crud.user.lock_user_for_update", return_value=None)
+    @patch("app.services.storage.put")
+    @patch("app.services.storage.new_key", return_value=AVATAR_KEY)
+    def test_does_not_write_r2_after_account_deletion(self, _new_key, mock_put, _lock, mock_set_avatar):
+        with self.assertRaises(HTTPException) as ctx:
+            me._store_avatar(7, WEBP, "image/webp")
+
+        self.assertEqual(ctx.exception.status_code, 401)
+        mock_put.assert_not_called()
+        mock_set_avatar.assert_not_called()
 
     @patch("app.api.routers.me.run_in_threadpool", new_callable=AsyncMock)
     @patch("app.services.storage.is_configured", return_value=True)

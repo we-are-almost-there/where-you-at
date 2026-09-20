@@ -89,28 +89,31 @@ def _store_avatar(user_id: int, data: bytes, declared_type: str) -> UserOut:
         raise HTTPException(status_code=400, detail="파일 형식과 확장자가 맞는 JPG, PNG, WEBP 사진만 올려 주세요.")
 
     avatar_key = storage.new_key(storage.Folder.AVATAR, user_id, detected_type)
-    try:
-        storage.put(avatar_key, data, detected_type)
-    except storage.StorageError:
-        raise _storage_unavailable()
-
+    previous_key = None
+    uploaded = False
     try:
         with db_connection() as conn:
-            user, previous_key = user_crud.set_avatar(conn, user_id, avatar_key)
+            # 탈퇴도 같은 잠금을 R2 정리부터 DB 삭제까지 유지한다. 먼저 끝난 작업에 따라 새 사진을
+            # 탈퇴가 함께 지우거나, 탈퇴한 회원의 업로드를 R2 쓰기 전에 거부한다.
+            locked_user = user_crud.lock_user_for_update(conn, user_id)
+            if locked_user is None:
+                conn.rollback()
+                raise unauthorized_error()
+            previous_key = locked_user["avatar_key"]
+            storage.put(avatar_key, data, detected_type)
+            uploaded = True
+            user = user_crud.set_avatar_locked(conn, user_id, avatar_key)
+            conn.commit()
+    except storage.StorageError:
+        raise _storage_unavailable()
     except Exception:
         # DB에 연결하지 못했다면 새 최종 파일이 고아로 남지 않게 되돌린다.
-        try:
-            storage.delete(avatar_key)
-        except storage.StorageError:
-            pass
+        if uploaded:
+            try:
+                storage.delete(avatar_key)
+            except storage.StorageError:
+                pass
         raise
-    if user is None:
-        try:
-            storage.delete(avatar_key)
-        except storage.StorageError:
-            pass
-        raise unauthorized_error()
-
     if previous_key and previous_key != avatar_key:
         try:
             storage.delete(previous_key)

@@ -26,14 +26,22 @@ class AccountDeletionTest(unittest.TestCase):
         self.delete_user = delete_patcher.start()
         self.addCleanup(delete_patcher.stop)
 
+        lock_patcher = patch(
+            "app.services.account_deletion.user_crud.lock_user_for_update",
+            return_value={"id": 7, "avatar_key": "avatars/7/old.webp"},
+        )
+        self.lock_user = lock_patcher.start()
+        self.addCleanup(lock_patcher.stop)
+
     def test_deletes_r2_objects_before_database_user(self):
         calls = []
+        self.lock_user.side_effect = lambda conn, user_id: calls.append(call.lock(conn, user_id)) or {"id": user_id}
         self.cleanup.side_effect = lambda user_id: calls.append(call.r2(user_id))
         self.delete_user.side_effect = lambda conn, user_id: calls.append(call.db(conn, user_id))
 
         account_deletion.delete_account(7)
 
-        self.assertEqual(calls, [call.r2(7), call.db(self.conn, 7)])
+        self.assertEqual(calls, [call.lock(self.conn, 7), call.r2(7), call.db(self.conn, 7)])
 
     def test_r2_failure_keeps_database_user_for_retry(self):
         self.cleanup.side_effect = storage.StorageError("boom")
@@ -41,7 +49,8 @@ class AccountDeletionTest(unittest.TestCase):
         with self.assertRaises(account_deletion.ObjectCleanupError):
             account_deletion.delete_account(7)
 
-        self.db_connection.assert_not_called()
+        self.db_connection.assert_called_once()
+        self.conn.rollback.assert_called_once()
         self.delete_user.assert_not_called()
 
     def test_missing_r2_configuration_keeps_database_user(self):
@@ -53,6 +62,15 @@ class AccountDeletionTest(unittest.TestCase):
         self.cleanup.assert_not_called()
         self.db_connection.assert_not_called()
         self.delete_user.assert_not_called()
+
+    def test_missing_user_skips_r2_and_database_delete(self):
+        self.lock_user.return_value = None
+
+        account_deletion.delete_account(7)
+
+        self.cleanup.assert_not_called()
+        self.delete_user.assert_not_called()
+        self.conn.rollback.assert_called_once()
 
 
 if __name__ == "__main__":

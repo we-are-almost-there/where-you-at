@@ -89,6 +89,7 @@ npm run dev --prefix frontend
 08_app_user.sql           카카오 로그인 회원 테이블 (기존 운영 DB에 적용, 새 DB는 01_schema.sql에 포함)
                           (SQL Editor, 다시 실행해도 된다. 회원 칸이 늘면 다시 실행)
 09_auth_session.sql       로그인 세션 테이블 (08 적용 뒤 운영 DB에 적용)
+10_saved_course.sql       찜한 코스 테이블 (09 적용 뒤 운영 DB에 적용, 새 DB는 01_schema.sql에 포함)
 ```
 
 `09_auth_session.sql`은 백엔드를 배포하기 전에 적용합니다. 순서가 바뀌면 로그인할 때
