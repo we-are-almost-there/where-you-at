@@ -74,4 +74,6 @@ class RecordCardOut(BaseModel):
 
 class RecordCardListResponse(BaseModel):
     total_count: int
+    page: int
+    size: int
     cards: list[RecordCardOut]

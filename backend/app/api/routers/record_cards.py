@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...crud import record as crud
 from ...deps import CurrentUser, db_connection, get_current_user
@@ -18,10 +18,14 @@ router = APIRouter(prefix="/api/record-cards", tags=["record-cards"])
 # 카드 이미지는 Canvas PNG라 보통 수백 KB다. 넉넉히 5MB까지만 받는다.
 MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024
 
+# 한 번에 받을 수 있는 카드 수의 상한. 카드마다 presigned URL을 발급하므로 크게 열지 않는다.
+MAX_CARD_PAGE_SIZE = 50
+
 # 회원별 10분에 업로드 URL 30회, 카드 생성 30회. 정상 사용(완주 뒤 카드 몇 장)의 몇 배로 넉넉히 잡았다.
 # 메모리 기반이라 프로세스별로 센다(services/rate_limit.py 참고). 현재 배포는 인스턴스 1개, 워커 1개다.
 upload_url_limiter = SlidingWindowLimiter(max_requests=30, window_seconds=600)
 create_card_limiter = SlidingWindowLimiter(max_requests=30, window_seconds=600)
+
 
 def _require_storage() -> None:
     if not storage.is_configured():
@@ -129,8 +133,12 @@ def create_card(body: RecordCardCreate, current_user: CurrentUser = Depends(get_
 
 
 @router.get("", response_model=RecordCardListResponse)
-def list_cards(current_user: CurrentUser = Depends(get_current_user)):
-    """내 기록 카드를 최근 순으로 돌려준다. 이미지 URL은 조회할 때마다 새로 발급한다."""
+def list_cards(
+    page: int = Query(1, ge=1),
+    size: int = Query(12, ge=1, le=MAX_CARD_PAGE_SIZE),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """내 기록 카드를 최근 순으로 한 쪽만 돌려준다. 이미지 URL은 이 쪽의 카드에만 발급한다."""
     with db_connection() as conn:
-        total, rows = crud.list_cards(conn, user_id=current_user.id)
-    return {"total_count": total, "cards": [_to_card_out(row) for row in rows]}
+        total, rows = crud.list_cards(conn, user_id=current_user.id, page=page, size=size)
+    return {"total_count": total, "page": page, "size": size, "cards": [_to_card_out(row) for row in rows]}

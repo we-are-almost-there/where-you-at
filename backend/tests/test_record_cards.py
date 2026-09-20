@@ -178,5 +178,34 @@ class CreateCardTest(unittest.TestCase):
         new_key.assert_not_called()
 
 
+class ListCardsTest(unittest.TestCase):
+    def setUp(self):
+        app.dependency_overrides[get_current_user] = lambda: USER
+        self.client = TestClient(app)
+        for p in (
+            patch("app.api.routers.record_cards.db_connection", fake_db),
+            patch("app.api.routers.record_cards.storage.presign_download", return_value="https://r2/x"),
+        ):
+            p.start()
+            self.addCleanup(p.stop)
+        self.addCleanup(app.dependency_overrides.clear)
+
+    def test_returns_one_page_and_presigns_only_that_page(self):
+        with patch("app.api.routers.record_cards.crud") as crud:
+            crud.list_cards.return_value = (30, [CARD_ROW, {**CARD_ROW, "card_id": 2}])
+            res = self.client.get("/api/record-cards?page=2&size=2")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual((data["total_count"], data["page"], data["size"]), (30, 2, 2))
+        self.assertEqual(len(data["cards"]), 2)
+        kwargs = crud.list_cards.call_args.kwargs
+        self.assertEqual((kwargs["page"], kwargs["size"]), (2, 2))
+
+    def test_size_over_max_is_422(self):
+        with patch("app.api.routers.record_cards.crud"):
+            self.assertEqual(self.client.get("/api/record-cards?size=51").status_code, 422)
+            self.assertEqual(self.client.get("/api/record-cards?page=0").status_code, 422)
+
+
 if __name__ == "__main__":
     unittest.main()

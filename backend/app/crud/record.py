@@ -138,8 +138,8 @@ def create_card(conn, *, user_id: int, record_id: int, image_key: str) -> dict |
     return row
 
 
-def list_cards(conn, *, user_id: int) -> tuple[int, list[dict]]:
-    """내 기록 카드를 최근 순으로 돌려준다. (전체 개수, 행 목록)"""
+def list_cards(conn, *, user_id: int, page: int, size: int) -> tuple[int, list[dict]]:
+    """내 기록 카드를 최근 순으로 한 쪽만 돌려준다. (전체 개수, 그 쪽의 행 목록)"""
     query = f"""
         select {_CARD_COLUMNS}
         from record_card k
@@ -147,11 +147,14 @@ def list_cards(conn, *, user_id: int) -> tuple[int, list[dict]]:
         join course c on c.id = r.course_id
         where k.user_id = %(user_id)s
         order by k.created_at desc, k.id desc
+        limit %(size)s offset %(offset)s
     """
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(query, {"user_id": user_id})
+        cur.execute("select count(*) as n from record_card where user_id = %(user_id)s", {"user_id": user_id})
+        total = cur.fetchone()["n"]
+        cur.execute(query, {"user_id": user_id, "size": size, "offset": (page - 1) * size})
         rows = cur.fetchall()
-    return len(rows), rows
+    return total, rows
 
 
 def record_exists(conn, *, user_id: int, record_id: int) -> bool:
@@ -163,7 +166,7 @@ def record_exists(conn, *, user_id: int, record_id: int) -> bool:
         )
         return cur.fetchone() is not None
 
-    
+
 def count_cards(conn, *, user_id: int) -> int:
     with conn.cursor() as cur:
         cur.execute("select count(*) from record_card where user_id = %(user_id)s", {"user_id": user_id})
