@@ -3,7 +3,8 @@
 // 마이페이지가 로그인 상태에 따라 알맞은 화면을 보여 주고, 프로필 수정·로그아웃·탈퇴가
 // 로그인 저장소(features/auth)의 함수로 이어지는지 본다. 저장소 동작 자체는 auth/useAuth.test.ts가 맡는다.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { Link, MemoryRouter, Route, Routes } from "react-router";
+import ScrollToTop from "../../components/layout/ScrollToTop";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../../lib/http";
 import { signOut, startKakaoLogin, updateProfile, useAuth, withdraw, type AuthState } from "../auth";
@@ -89,6 +90,36 @@ afterEach(() => {
 });
 
 describe("MyPage", () => {
+  it("다른 페이지에서 스탬프 링크로 진입하거나 같은 링크를 다시 눌러도 제목까지 이동한다", async () => {
+    const scroll = vi.fn();
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scroll });
+    const scrollTop = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    try {
+      render(
+        <MemoryRouter initialEntries={["/courses"]}>
+          <ScrollToTop />
+          <Link to="/mypage#mypage-stamps">스탬프 바로가기</Link>
+          <Routes>
+            <Route path="/courses" element={<div>코스</div>} />
+            <Route path="/mypage" element={<MyPage />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      fireEvent.click(screen.getByRole("link", { name: "스탬프 바로가기" }));
+      await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+      const heading = document.getElementById("mypage-stamps");
+      expect(scroll.mock.instances[0]).toBe(heading);
+      expect(document.activeElement).toBe(heading);
+      fireEvent.click(screen.getByRole("link", { name: "스탬프 바로가기" }));
+      await waitFor(() => expect(scroll).toHaveBeenCalledTimes(2));
+    } finally {
+      scrollTop.mockRestore();
+      if (original) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", original);
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+    }
+  });
+
   it("로그아웃 상태면 로그인 안내를 보여 주고, 로그인 뒤 마이페이지로 돌아오게 한다", () => {
     mockedUseAuth.mockReturnValue({ status: "signedOut", user: null });
     renderPage();

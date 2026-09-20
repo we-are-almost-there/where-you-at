@@ -1,4 +1,5 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useLocation } from "react-router";
 import ModalDialog from "../../components/common/ModalDialog";
 import { Footprints, Heart, LogOut, Pencil } from "lucide-react";
 import { StatusMessage } from "../../components/common/a11y";
@@ -53,6 +54,23 @@ export default function MyPage() {
 }
 
 function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void }) {
+  const { hash, key } = useLocation();
+  // 로그인 확인 뒤 대시보드가 실제로 그려진 시점에 처리한다.
+  // 같은 주소의 스탬프 링크를 다시 눌러도 이동하도록 navigation key를 구독한다.
+  useEffect(() => {
+    if (hash !== "#mypage-stamps") return;
+    // ScrollToTop과 드로어의 포커스 복귀가 끝난 다음 프레임에 이동한다.
+    const frame = requestAnimationFrame(() => {
+      const heading = document.getElementById("mypage-stamps");
+      if (!heading) return;
+      heading.setAttribute("tabindex", "-1");
+      heading.classList.add("outline-none");
+      heading.focus({ preventScroll: true });
+      heading.scrollIntoView({ block: "start", behavior: "instant" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [hash, key]);
+
   const saved = useSavedCourses();
   // API가 생기면 useSavedCourses처럼 불러오고 로딩·오류 상태를 둔다. 지금은 빈 값(또는 미리보기 예시)이다.
   const [records] = useState(getRecords);
@@ -288,7 +306,7 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
 /** 영역 하나. 제목(h2)의 id로 이름을 붙여 화면낭독기의 영역 목록에서 찾을 수 있게 한다. */
 function Panel({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <section aria-labelledby={id} className={`min-w-0 ${PANEL}`}>
+    <section aria-labelledby={id} className={`min-w-0 ${PANEL} ${id === "mypage-stamps" ? "[&_h2]:scroll-mt-28 md:[&_h2]:scroll-mt-32" : ""}`}>
       {children}
     </section>
   );
