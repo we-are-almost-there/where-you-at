@@ -56,10 +56,15 @@ export function CourseExplore() {
   const { routeType, filters, page } = useMemo(() => parseCourseUrlState(searchParams), [searchParams]);
   const [userLoc, setUserLoc] = useState<LatLng | null>(null);
   const [geoDenied, setGeoDenied] = useState(false);
-  // /api/regions가 준 항목(코스 보유 지역만). 화면에 넘기는 목록은 아래 regionOptions다.
-  // null은 아직 /api/regions 결과를 모르는 상태다. []와 합치면 정상 빈 응답이나
+  // /api/regions?type=가 준 항목(지금 탭의 코스 보유 지역만). 탭마다 따로 받아 두어
+  // 탭을 오갈 때 다시 받지 않는다. 화면에 넘기는 목록은 아래 regionOptions다.
+  const [regionOptionsByType, setRegionOptionsByType] = useState<
+    Partial<Record<RouteType, RegionSelectItem[]>>
+  >({});
+  // null은 아직 이 탭의 /api/regions 결과를 모르는 상태다. []와 합치면 정상 빈 응답이나
   // 재시도 소진도 계속 "조회 전"으로 남아, URL 지역을 임시 항목으로 보완하지 못한다.
-  const [courseRegionOptions, setCourseRegionOptions] = useState<RegionSelectItem[] | null>(null);
+  const courseRegionOptions = regionOptionsByType[routeType] ?? null;
+  const courseRegionsLoaded = courseRegionOptions !== null;
   const [regionNames, setRegionNames] = useState<Map<string, string> | null>(null);
   const listScrollRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<HTMLDivElement>(null);
@@ -91,15 +96,19 @@ export function CourseExplore() {
     return () => observer.disconnect();
   }, []);
 
-  // 지역 필터 옵션 로드. 코스와 달리 재조회 트리거가 없으므로, 마운트 시점에
+  // 지역 필터 옵션 로드. 탭의 경로 유형으로 받아, 그 탭에서 고르면 빈 목록이 나오는 지역
+  // (도보 탭의 자전거 전용 지역 등)을 항목에서 뺀다. 코스와 달리 재조회 트리거가 없으므로,
   // 백엔드가 아직 안 떠 있으면 영구히 빈 필터가 된다. 실패 시 짧게 재시도해 자가 복구한다.
   useEffect(() => {
+    if (courseRegionsLoaded) return;
     let cancelled = false;
     let attempts = 0;
     let timer: ReturnType<typeof setTimeout>;
+    const settle = (items: RegionSelectItem[]) =>
+      setRegionOptionsByType((prev) => ({ ...prev, [routeType]: items }));
     const load = () => {
-      getRegions()
-        .then((rs) => !cancelled && setCourseRegionOptions(buildRegionOptions(rs)))
+      getRegions(routeType)
+        .then((rs) => !cancelled && settle(buildRegionOptions(rs)))
         .catch((err) => {
           if (cancelled) return;
           // 재시도가 남았으면 조용히 다시 시도하고, 다 소진되면 원인 추적용으로 한 줄 남긴다.
@@ -107,7 +116,7 @@ export function CourseExplore() {
           else {
             // 재시도를 다 썼으면 "조회 완료·항목 없음"으로 정착시킨다. 그래야 URL에
             // 지역이 있을 때 region-index.json의 이름으로 현재 필터를 계속 드러낼 수 있다.
-            setCourseRegionOptions([]);
+            settle([]);
             console.error("[CourseExplore] regions fetch failed:", err);
           }
         });
@@ -117,10 +126,13 @@ export function CourseExplore() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, []);
+  }, [routeType, courseRegionsLoaded]);
 
   // URL의 지역이 드롭다운 항목에 없을 수 있다.
-  //   - 코스가 없는 지역 — /api/regions는 코스를 가진 지역만 준다
+  //   - 코스가 없는 지역 — /api/regions는 지금 탭의 코스를 가진 지역만 준다.
+  //     탭을 바꿨는데 고른 지역에 그 탭 코스가 없을 때도 여기에 든다. 필터를 '전체 지역'으로
+  //     되돌리지 않고 이름을 띄워 둔다 — 사용자가 고른 조건을 몰래 바꾸지 않고, 빈 목록이
+  //     그 지역 때문임을 보여 준다.
   //   - 광역시의 구·군 — 드롭다운이 광역시를 시도 하나로 흡수해 5자리 항목이 없다
   // 방문 혜택 패널의 '이 지역 코스 보러가기'가 늘 5자리 코드를 넘기므로 둘 다 실제로 들어온다.
   // 항목이 없으면 트리거는 '전체 지역'으로 보이는데 목록은 걸러진 채다 — 강화군으로 들어오면
