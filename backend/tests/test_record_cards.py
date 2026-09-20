@@ -196,6 +196,35 @@ class CreateCardTest(unittest.TestCase):
                 self.post()
         delete.assert_not_called()
 
+    def test_verification_failure_after_exception_keeps_image_and_notifies(self):
+        """저장도 실패하고 재확인용 연결도 실패하면, 이미지는 지우지 않고 Slack으로 알린다."""
+        calls = {"n": 0}
+
+        @contextmanager
+        def flaky():
+            calls["n"] += 1
+            if calls["n"] == 1:
+                yield object()  # 소유권 확인은 성공
+            else:
+                raise HTTPException(status_code=503, detail="db down")
+
+        with patch("app.api.routers.record_cards.crud") as crud, patch(
+            "app.api.routers.record_cards.storage.head", return_value=INFO
+        ), patch(
+            "app.api.routers.record_cards.storage.promote", return_value="record-cards/7/a.png"
+        ), patch("app.api.routers.record_cards.storage.delete") as delete, patch(
+            "app.api.routers.record_cards.db_connection"
+        ) as db_conn, patch("app.api.routers.record_cards.record_card_notify") as notify:
+            db_conn.side_effect = flaky
+            crud.record_exists.return_value = True
+            res = self.post()
+        self.assertEqual(res.status_code, 503)
+        delete.assert_not_called()
+        notify.notify_reconciliation_failure.assert_called_once_with(
+            user_id=7, image_key="record-cards/7/a.png"
+        )
+
+
 class ListCardsTest(unittest.TestCase):
     def setUp(self):
         app.dependency_overrides[get_current_user] = lambda: USER

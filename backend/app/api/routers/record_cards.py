@@ -10,7 +10,7 @@ from ...schemas.record import (
     RecordCardUploadResponse,
     RunRecordOut,
 )
-from ...services import storage
+from ...services import storage, record_card_notify
 from ...services.rate_limit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api/record-cards", tags=["record-cards"], dependencies=[Depends(require_record_features)])
@@ -71,13 +71,15 @@ def _card_was_committed(*, user_id: int, image_key: str) -> bool | None:
 
     커밋이 확인되면(True) 이미지를 지우면 안 된다 — DB 행이 그 이미지를 가리키고 있다.
     확인 자체가 실패하면(None) 커밋 여부를 알 수 없으므로, 아직 참조 중일 가능성을 감안해
-    지우지 않는 쪽으로 둔다. 확실히 커밋 안 됐을 때만(False) 지운다.
+    지우지 않는 쪽으로 두고 Slack으로 알려 운영팀이 직접 확인하게 한다.
+    확실히 커밋 안 됐을 때만(False) 지운다.
     """
     try:
         with db_connection() as conn:
             return crud.card_exists_with_image(conn, user_id=user_id, image_key=image_key)
     except Exception as e:
-        print(f"[ERROR] 기록 카드 커밋 여부 확인 실패(이미지 유지): {image_key} {e}")
+        print(f"[ERROR] 기록 카드 커밋 여부 확인 실패(이미지 유지, Slack 알림): {image_key} {e}")
+        record_card_notify.notify_reconciliation_failure(user_id=user_id, image_key=image_key)
         return None
 
 
