@@ -26,12 +26,16 @@ it("바다 배경을 지원금 영역 안에서만 고정하고 푸터는 그 �
 
   const page = container.firstElementChild as HTMLElement;
   const content = page.children[1] as HTMLElement;
-  const backdropLayer = screen.getByTestId("sea-backdrop").parentElement?.parentElement;
+  const stickyBackdrop = screen.getByTestId("sea-backdrop").parentElement;
+  const backdropLayer = stickyBackdrop?.parentElement;
   const footer = screen.getByTestId("footer");
 
   expect(page.classList.contains("min-h-dvh")).toBe(true);
   expect(content.classList.contains("overflow-clip")).toBe(true);
-  expect(backdropLayer?.classList.contains("fixed")).toBe(false);
+  expect(stickyBackdrop?.classList.contains("sticky")).toBe(true);
+  expect(stickyBackdrop?.classList.contains("top-0")).toBe(true);
+  expect(stickyBackdrop?.classList.contains("h-dvh")).toBe(true);
+  expect(stickyBackdrop?.classList.contains("fixed")).toBe(false);
   expect(backdropLayer?.parentElement).toBe(content);
   expect(content.nextElementSibling).toBe(footer);
 });
