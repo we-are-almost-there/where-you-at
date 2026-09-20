@@ -14,6 +14,8 @@ vi.mock("../recordCardCanvas", async (importOriginal) => ({
 }));
 
 const unloadAllowed = () => window.dispatchEvent(new Event("beforeunload", { cancelable: true }));
+// 병렬 실행 시 글꼴 로딩·렌더링·이미지 변환 대기에 여유를 둔다.
+const IMAGE_PREPARATION_TIMEOUT = 3000;
 const share = vi.fn();
 const loadFonts = vi.fn();
 const originalFonts = Object.getOwnPropertyDescriptor(document, "fonts");
@@ -62,7 +64,7 @@ function mount(onClose = () => {}) {
 }
 
 async function save() {
-  const button = await screen.findByRole("button", { name: "이미지 저장" });
+  const button = await screen.findByRole("button", { name: "이미지 저장" }, { timeout: IMAGE_PREPARATION_TIMEOUT });
   await act(async () => { fireEvent.click(button); });
 }
 
@@ -73,20 +75,20 @@ function editFont() {
 
 it.each(["그리기 실패", "그리기 예외", "이미지 변환 실패", "이미지 변환 예외"])("%s 후 편집 없이 재시도하며 저장 전까지 보호한다", async (failure) => {
   mount();
-  await screen.findByRole("button", { name: "이미지 저장" });
+  await screen.findByRole("button", { name: "이미지 저장" }, { timeout: IMAGE_PREPARATION_TIMEOUT });
   if (failure === "그리기 실패") vi.mocked(draw).mockReturnValueOnce(false);
   else if (failure === "그리기 예외") vi.mocked(draw).mockImplementationOnce(() => { throw new Error("그리기 실패"); });
   else if (failure === "이미지 변환 실패") vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementationOnce((callback) => callback(null));
   else vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementationOnce(() => { throw new Error("변환 실패"); });
   editFont();
-  const retry = await screen.findByRole("button", { name: "다시 시도" });
+  const retry = await screen.findByRole("button", { name: "다시 시도" }, { timeout: IMAGE_PREPARATION_TIMEOUT });
   expect((retry as HTMLButtonElement).disabled).toBe(false);
   expect(screen.getByRole("alert").textContent).toContain("다시 시도해 주세요");
   expect(unloadAllowed()).toBe(false);
   const edited = vi.mocked(draw).mock.lastCall?.[1];
   fireEvent.click(retry);
   expect((screen.getByRole("button", { name: "이미지 준비 중…" }) as HTMLButtonElement).disabled).toBe(true);
-  await screen.findByRole("button", { name: "이미지 저장" });
+  await screen.findByRole("button", { name: "이미지 저장" }, { timeout: IMAGE_PREPARATION_TIMEOUT });
   expect(vi.mocked(draw).mock.lastCall?.[1]).toEqual(edited);
   expect(screen.queryByRole("alert")).toBeNull();
   expect(unloadAllowed()).toBe(false);
@@ -99,9 +101,9 @@ it.each(["그리기 실패", "그리기 예외", "이미지 변환 실패", "이
 it("초기 생성의 반복 실패를 재시도해도 사용자 편집으로 처리하지 않는다", async () => {
   vi.mocked(draw).mockReturnValueOnce(false).mockReturnValueOnce(false);
   mount();
-  fireEvent.click(await screen.findByRole("button", { name: "다시 시도" }));
-  fireEvent.click(await screen.findByRole("button", { name: "다시 시도" }));
-  await screen.findByRole("button", { name: "이미지 저장" });
+  fireEvent.click(await screen.findByRole("button", { name: "다시 시도" }, { timeout: IMAGE_PREPARATION_TIMEOUT }));
+  fireEvent.click(await screen.findByRole("button", { name: "다시 시도" }, { timeout: IMAGE_PREPARATION_TIMEOUT }));
+  await screen.findByRole("button", { name: "이미지 저장" }, { timeout: IMAGE_PREPARATION_TIMEOUT });
   expect(unloadAllowed()).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: /^닫기$/ }));
   expect(screen.getByRole("alertdialog")).toBeTruthy();
@@ -276,7 +278,7 @@ it("글꼴 로딩 중에는 이전 이미지를 저장하지 않고 최신 이�
   fireEvent.click(pendingButton);
   expect(share).toHaveBeenCalledTimes(1);
   expect(unloadAllowed()).toBe(false);
-  await waitFor(() => expect(finishFonts).toBeTypeOf("function"));
+  await waitFor(() => expect(finishFonts).toBeTypeOf("function"), { timeout: IMAGE_PREPARATION_TIMEOUT });
   expect(vi.mocked(draw).mock.calls.length).toBe(oldDrawCount);
   await act(async () => { finishFonts(); });
   await save();
@@ -289,10 +291,10 @@ it("이전 편집본의 이미지 변환이 늦게 끝나도 최신 이미지를
   const callbacks: BlobCallback[] = [];
   vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementation((callback) => { callbacks.push(callback); });
   mount();
-  await waitFor(() => expect(callbacks).toHaveLength(1));
+  await waitFor(() => expect(callbacks).toHaveLength(1), { timeout: IMAGE_PREPARATION_TIMEOUT });
   fireEvent.click(screen.getByRole("button", { name: "글꼴" }));
   fireEvent.click(screen.getByRole("button", { name: "Do Hyeon" }));
-  await waitFor(() => expect(callbacks).toHaveLength(2));
+  await waitFor(() => expect(callbacks).toHaveLength(2), { timeout: IMAGE_PREPARATION_TIMEOUT });
   const latest = new Blob(["최신 이미지"]);
   await act(async () => { callbacks[1](latest); });
   await act(async () => { callbacks[0](new Blob(["이전 이미지"])); });
