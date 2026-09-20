@@ -488,7 +488,7 @@ alter table inquiry      enable row level security;
 -- kakao_id: 카카오 회원번호. 로그인할 때 이 값으로 회원을 찾고, 없으면 새로 만든다.
 -- nickname: 처음 가입할 때 카카오 값으로 채우고, 이후에는 마이페이지에서 바꾼 값을 유지한다(로그인이 덮어쓰지 않는다).
 -- bio: 한 줄 소개(선택, 40자). 마이페이지에서 적는다. 비우면 null. 쪽지·리뷰에서 작성자 소개로 쓸 예정이다.
--- 프로필 사진은 받지 않는다. 화면에 꼭 필요하지 않아 수집하는 개인정보를 줄였다.
+-- avatar_key: 사용자가 직접 올린 프로필 사진의 비공개 R2 객체 키. 만료되는 보기 URL은 저장하지 않는다.
 -- 보유 기간: 탈퇴할 때까지 (개인정보처리방침과 같아야 한다). 탈퇴하면 행을 삭제한다.
 -- 회원에 딸린 테이블(기록, 저장, 리뷰 등)은 app_user(id)를 on delete cascade로 참조해 탈퇴 시 함께 지운다.
 create table app_user (
@@ -496,6 +496,7 @@ create table app_user (
   kakao_id          bigint not null unique,
   nickname          varchar(50),
   bio               varchar(40),
+  avatar_key        varchar(200),
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
 );

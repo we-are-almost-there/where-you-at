@@ -287,3 +287,23 @@ describe("updateProfile", () => {
     expect(result.current.status).toBe("signedOut");
   });
 });
+
+describe("removeAvatar", () => {
+  it("삭제 성공 응답으로 전역 회원 상태를 기본 이미지로 바꾼다", async () => {
+    const withAvatar = { ...USER, avatar_url: "https://view.example/avatar.webp" };
+    const withoutAvatar = { ...USER, avatar_url: null };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, withoutAvatar));
+    vi.stubGlobal("fetch", fetchMock);
+    const { useAuth, signIn, removeAvatar } = await loadAuth();
+    const { result } = renderHook(() => useAuth());
+    act(() => signIn("our-token", withAvatar));
+
+    await act(() => removeAvatar());
+
+    expect(result.current).toEqual({ status: "signedIn", user: withoutAvatar });
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/api\/me\/avatar$/), {
+      method: "DELETE",
+      headers: { Authorization: "Bearer our-token" },
+    });
+  });
+});

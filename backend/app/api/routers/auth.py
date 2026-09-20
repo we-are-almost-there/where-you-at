@@ -9,8 +9,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from ...core.config import settings
 from ...crud import user as user_crud
 from ...deps import CurrentUser, db_connection, get_current_user
-from ...schemas.user import KakaoLoginRequest, LoginResponse, UserOut
-from ...services import auth_token, kakao_oauth, slack_notify
+from ...schemas.user import KakaoLoginRequest, LoginResponse
+from ...services import auth_token, kakao_oauth, profile, slack_notify, storage
 from ...services.rate_limit import SlidingWindowLimiter, client_key
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -68,7 +68,7 @@ def login_with_kakao(body: KakaoLoginRequest, request: Request):
         )
     return LoginResponse(
         access_token=auth_token.create_access_token(user["id"], session_id, now=now),
-        user=UserOut(**user),
+        user=profile.user_out(user),
     )
 
 
@@ -164,6 +164,8 @@ def _delete_user_by_kakao_id(kakao_id: int) -> None:
             if user_id is None:
                 return
             user_crud.delete_user(conn, user_id)
+        if storage.is_configured():
+            storage.delete_user_objects(user_id)
     except Exception as e:
         # DB 연결 실패(503)까지 여기서 삼킨다. 로그의 회원번호로 직접 지워야 한다.
         print(f"[ERROR] 연결 끊기 웹훅 회원 삭제 실패(직접 삭제 필요): kakao_id={kakao_id} {type(e).__name__}")

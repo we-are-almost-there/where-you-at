@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { Link, useLocation } from "react-router";
-import { UserRound } from "lucide-react";
 import SidebarDrawer from "./SidebarDrawer";
 import { useAuth, useKakaoLogin } from "../../features/auth";
+import ProfileAvatar from "../../features/mypage/components/ProfileAvatar";
 import logoUrl from "../../assets/logo.svg";
 import { MAIN_CONTENT_ID } from "./mainContent";
 
@@ -168,10 +168,7 @@ export default function AppHeader({
                   to="/mypage"
                   className="flex items-center gap-2.5 rounded-lg py-1 pl-1 pr-2 hover:bg-control-hover"
                 >
-                  {/* 카카오 프로필 사진은 받지 않아 기본 아바타를 쓴다. */}
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-lavender">
-                    <UserRound className="size-6 text-accent" aria-hidden="true" />
-                  </span>
+                  <ProfileAvatar size="sm" imageUrl={auth.user.avatar_url} />
                   <span className="flex min-w-0 flex-col">
                     <span className="max-w-[7rem] truncate text-[14px] font-bold leading-5 text-ink">
                       {auth.user.nickname ?? "회원"}

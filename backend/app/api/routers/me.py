@@ -1,17 +1,27 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...crud import user as user_crud
 from ...deps import CurrentUser, db_connection, get_current_user, unauthorized_error
-from ...schemas.user import UserOut, UserUpdate
-from ...services import kakao_oauth
+from ...schemas.user import (
+    AvatarUploadCompleteRequest,
+    AvatarUploadRequest,
+    AvatarUploadTicket,
+    UserOut,
+    UserUpdate,
+)
+from ...services import kakao_oauth, profile, storage
 
 router = APIRouter(prefix="/api/me", tags=["me"])
+
+AVATAR_MAX_BYTES = 5 * 1024 * 1024
 
 
 @router.get("", response_model=UserOut)
 def read_me(current_user: CurrentUser = Depends(get_current_user)):
     """로그인한 회원 정보."""
-    return UserOut(id=current_user.id, nickname=current_user.nickname, bio=current_user.bio)
+    return profile.user_out(current_user)
 
 
 @router.patch("", response_model=UserOut)
@@ -25,7 +35,111 @@ def update_me(body: UserUpdate, current_user: CurrentUser = Depends(get_current_
         user = user_crud.update_profile(conn, current_user.id, body.changes())
     if user is None:
         raise unauthorized_error()
-    return user
+    return profile.user_out(user)
+
+
+def _storage_unavailable() -> HTTPException:
+    return HTTPException(status_code=503, detail="지금은 사진을 올릴 수 없습니다. 잠시 후 다시 시도해 주세요.")
+
+
+def _discard_upload(key: str) -> None:
+    try:
+        storage.delete(key)
+    except storage.StorageError:
+        # uploads/ 수명 주기 규칙이 하루 뒤 정리한다.
+        pass
+
+
+@router.post("/avatar/upload-url", response_model=AvatarUploadTicket)
+def create_avatar_upload(body: AvatarUploadRequest, current_user: CurrentUser = Depends(get_current_user)):
+    """브라우저가 R2 임시 경로에 직접 올릴 사전 서명 URL을 발급한다."""
+    if not storage.is_configured():
+        raise _storage_unavailable()
+    upload_key = storage.new_key(storage.Folder.UPLOAD, current_user.id, body.content_type)
+    try:
+        upload_url = storage.presign_upload(upload_key, body.content_type)
+    except storage.StorageError:
+        raise _storage_unavailable()
+    return AvatarUploadTicket(upload_url=upload_url, upload_key=upload_key, max_bytes=AVATAR_MAX_BYTES)
+
+
+@router.post("/avatar/complete", response_model=UserOut)
+def complete_avatar_upload(
+    body: AvatarUploadCompleteRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """임시 파일을 확인해 avatars/로 옮기고 회원의 현재 사진으로 지정한다."""
+    if not storage.is_configured():
+        raise _storage_unavailable()
+
+    # 다른 회원의 임시 키나 서버가 발급하지 않은 모양의 키를 조회·승격하지 않는다.
+    pattern = rf"^uploads/{current_user.id}/[0-9a-f]{{32}}\.(jpg|png|webp)$"
+    if re.fullmatch(pattern, body.upload_key) is None:
+        raise HTTPException(status_code=400, detail="올바르지 않은 업로드입니다. 사진을 다시 선택해 주세요.")
+
+    try:
+        info = storage.head(body.upload_key)
+    except storage.StorageError:
+        raise _storage_unavailable()
+    if info is None:
+        raise HTTPException(status_code=400, detail="업로드한 사진을 찾을 수 없습니다. 사진을 다시 선택해 주세요.")
+
+    expected_extension = storage.IMAGE_EXTENSIONS.get(info.content_type)
+    if expected_extension is None or not body.upload_key.endswith(f".{expected_extension}"):
+        _discard_upload(body.upload_key)
+        raise HTTPException(status_code=400, detail="JPG, PNG, WEBP 사진만 올릴 수 있습니다.")
+    if info.size <= 0:
+        _discard_upload(body.upload_key)
+        raise HTTPException(status_code=400, detail="빈 파일은 올릴 수 없습니다.")
+    if info.size > AVATAR_MAX_BYTES:
+        _discard_upload(body.upload_key)
+        raise HTTPException(status_code=413, detail="프로필 사진은 5MB 이하만 올릴 수 있습니다.")
+
+    try:
+        avatar_key = storage.promote(body.upload_key, storage.Folder.AVATAR, info)
+    except storage.UploadChangedError:
+        raise HTTPException(status_code=409, detail="업로드가 변경되었습니다. 사진을 다시 선택해 주세요.")
+    except storage.StorageError:
+        raise _storage_unavailable()
+
+    try:
+        with db_connection() as conn:
+            user, previous_key = user_crud.set_avatar(conn, current_user.id, avatar_key)
+    except Exception:
+        # DB에 연결하지 못했다면 새 최종 파일이 고아로 남지 않게 되돌린다.
+        try:
+            storage.delete(avatar_key)
+        except storage.StorageError:
+            pass
+        raise
+    if user is None:
+        _discard_upload(avatar_key)
+        raise unauthorized_error()
+
+    if previous_key and previous_key != avatar_key:
+        try:
+            storage.delete(previous_key)
+        except storage.StorageError as exc:
+            # 새 사진 저장은 이미 끝났다. 이전 파일 정리 실패 때문에 성공을 실패로 바꾸지 않는다.
+            print(f"[WARN] 이전 프로필 사진 삭제 실패: user_id={current_user.id} {type(exc).__name__}")
+    return profile.user_out(user)
+
+
+@router.delete("/avatar", response_model=UserOut)
+def delete_avatar(current_user: CurrentUser = Depends(get_current_user)):
+    """현재 프로필 사진을 기본 이미지로 되돌리고 기존 R2 객체를 지운다."""
+    with db_connection() as conn:
+        user, previous_key = user_crud.set_avatar(conn, current_user.id, None)
+    if user is None:
+        raise unauthorized_error()
+
+    if previous_key and storage.is_configured():
+        try:
+            storage.delete(previous_key)
+        except storage.StorageError as exc:
+            # DB에서는 이미 연결을 끊었다. 삭제 실패가 화면의 되돌리기를 실패로 보이게 하지는 않는다.
+            print(f"[WARN] 프로필 사진 삭제 실패(직접 삭제 필요): user_id={current_user.id} {type(exc).__name__}")
+    return profile.user_out(user)
 
 
 @router.delete("", status_code=204)
@@ -54,3 +168,10 @@ def delete_me(current_user: CurrentUser = Depends(get_current_user)):
 
     with db_connection() as conn:
         user_crud.delete_user(conn, current_user.id)
+
+    if storage.is_configured():
+        try:
+            storage.delete_user_objects(current_user.id)
+        except storage.StorageError as exc:
+            # 회원 행과 세션 삭제는 끝났다. 탈퇴 자체를 실패로 되돌릴 수 없으므로 운영 로그로 후속 정리한다.
+            print(f"[ERROR] 탈퇴 회원 R2 파일 삭제 실패(직접 삭제 필요): user_id={current_user.id} {type(exc).__name__}")

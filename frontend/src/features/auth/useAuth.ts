@@ -9,7 +9,7 @@
 import { useSyncExternalStore } from "react";
 import { clearAccessToken, readAccessToken, writeAccessToken } from "../../lib/authToken";
 import { HttpError } from "../../lib/http";
-import { deleteMe, fetchMe, logout, updateMe, type ProfileChanges, type User } from "./authApi";
+import { deleteAvatar, deleteMe, fetchMe, logout, updateMe, uploadAvatar, type ProfileChanges, type User } from "./authApi";
 
 export type AuthState =
   | { status: "loading"; user: null }
@@ -124,6 +124,40 @@ export async function updateProfile(changes: ProfileChanges): Promise<void> {
     throw error;
   }
   // 응답을 기다리는 사이 로그아웃했으면 다시 로그인 상태로 되돌리지 않는다.
+  if (requestedGeneration !== generation || state.status !== "signedIn") return;
+  setState({ status: "signedIn", user });
+}
+
+/** 프로필 사진을 R2에 올리고 성공 응답으로 전역 회원 상태를 갱신한다. */
+export async function updateAvatar(file: File): Promise<void> {
+  const requestedGeneration = generation;
+  let user: User;
+  try {
+    user = await uploadAvatar(file);
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 401) {
+      generation += 1;
+      clearAuthState();
+    }
+    throw error;
+  }
+  if (requestedGeneration !== generation || state.status !== "signedIn") return;
+  setState({ status: "signedIn", user });
+}
+
+/** 프로필 사진을 지우고 기본 이미지가 담긴 회원 상태로 갱신한다. */
+export async function removeAvatar(): Promise<void> {
+  const requestedGeneration = generation;
+  let user: User;
+  try {
+    user = await deleteAvatar();
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 401) {
+      generation += 1;
+      clearAuthState();
+    }
+    throw error;
+  }
   if (requestedGeneration !== generation || state.status !== "signedIn") return;
   setState({ status: "signedIn", user });
 }

@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../../lib/http";
-import { signOut, startKakaoLogin, updateProfile, useAuth, withdraw, type AuthState } from "../auth";
+import { removeAvatar, signOut, startKakaoLogin, updateAvatar, updateProfile, useAuth, withdraw, type AuthState } from "../auth";
 import MyPage from "./MyPage";
 import { fetchSavedCourses, getRecords, getStamps } from "./mypageData";
 import type { Course } from "../map/types";
@@ -20,6 +20,8 @@ vi.mock("../auth", () => {
     startKakaoLogin,
     // 나이 확인 팝업은 useKakaoLogin.test.tsx가 본다. 여기서는 확인을 마친 것처럼 바로 로그인을 시작한다.
     useKakaoLogin: () => ({ login: startKakaoLogin, dialog: null }),
+    removeAvatar: vi.fn(),
+    updateAvatar: vi.fn(),
     updateProfile: vi.fn(),
     withdraw: vi.fn(),
   };
@@ -33,6 +35,15 @@ vi.mock("./mypageData", () => ({
 // 스탬프 지도는 도형 파일을 불러오므로 여기서는 열리는지만 본다. 지도 동작은 StampMapDialog.test.tsx가 맡는다.
 vi.mock("./components/StampMapDialog", () => ({
   default: () => <div role="dialog" aria-label="스탬프 지도" />,
+}));
+vi.mock("./components/AvatarCropEditor", () => ({
+  default: ({ file, onConfirm }: { file: File; onConfirm: (file: File) => Promise<void> }) => (
+    <section aria-label="프로필 사진 자르기">
+      <button type="button" aria-label="프로필 사진 자르기 적용" onClick={() => void onConfirm(file)}>
+        적용
+      </button>
+    </section>
+  ),
 }));
 // AppHeader는 ResizeObserver 같은 브라우저 API를 써서 jsdom에서 그릴 수 없고, 이 테스트의 대상도 아니다.
 vi.mock("../../components/layout/AppHeader", () => ({ default: () => null }));
@@ -244,6 +255,54 @@ describe("프로필 수정", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
     await waitFor(() => expect(updateProfile).toHaveBeenCalledWith({ bio: "안녕하세요!! 러닝 좋아요" }));
+  });
+
+  it("지원하는 사진을 선택하면 프로필 사진 업로드를 시작한다", async () => {
+    vi.mocked(updateAvatar).mockResolvedValue();
+    openDialog();
+    const dialog = screen.getByRole("dialog");
+    const panelClassName = dialog.className;
+    const file = new File(["image"], "avatar.webp", { type: "image/webp" });
+
+    fireEvent.change(screen.getByLabelText("프로필 사진 파일"), { target: { files: [file] } });
+    expect(screen.getByRole("region", { name: "프로필 사진 자르기" })).toBeTruthy();
+    expect(screen.getByRole("dialog").className).toBe(panelClassName);
+    expect(screen.queryByLabelText("닉네임")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "프로필 사진 자르기 적용" }));
+
+    await waitFor(() => expect(updateAvatar).toHaveBeenCalledWith(file));
+  });
+
+  it("지원하지 않는 형식과 5MB 초과 사진은 전송 전에 막는다", () => {
+    openDialog();
+    const input = screen.getByLabelText("프로필 사진 파일");
+    fireEvent.change(input, { target: { files: [new File(["gif"], "avatar.gif", { type: "image/gif" })] } });
+    expect(screen.getByText("JPG, PNG, WEBP 사진만 올릴 수 있어요.")).toBeTruthy();
+
+    const large = new File(["x"], "large.png", { type: "image/png" });
+    Object.defineProperty(large, "size", { value: 5 * 1024 * 1024 + 1 });
+    fireEvent.change(input, { target: { files: [large] } });
+    expect(screen.getByText("5MB 이하의 사진을 선택해 주세요.")).toBeTruthy();
+    expect(updateAvatar).not.toHaveBeenCalled();
+  });
+
+  it("현재 사진이 있으면 기본 이미지로 되돌릴 수 있다", async () => {
+    mockedUseAuth.mockReturnValue({
+      status: "signedIn",
+      user: { id: 7, nickname: "길손", avatar_url: "https://view.example/avatar.webp" },
+    });
+    vi.mocked(removeAvatar).mockResolvedValue();
+    openDialog();
+
+    const changeButton = screen.getByRole("button", { name: "프로필 사진 변경" });
+    const deleteButton = screen.getByRole("button", { name: "프로필 사진 삭제" });
+    expect(changeButton.className).toContain("w-full");
+    expect(deleteButton.className).toContain("w-full");
+    expect(changeButton.parentElement?.className).toContain("grid-cols-2");
+
+    fireEvent.click(deleteButton);
+
+    await waitFor(() => expect(removeAvatar).toHaveBeenCalledTimes(1));
   });
 
   it("앞뒤 공백을 지운 닉네임으로 저장하고 대화상자를 닫는다", async () => {

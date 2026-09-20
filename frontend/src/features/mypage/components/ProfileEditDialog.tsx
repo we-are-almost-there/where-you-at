@@ -1,13 +1,17 @@
-import { useId, useRef, useState, type FormEvent, type RefObject } from "react";
-import { updateProfile, type ProfileChanges, type User } from "../../auth";
+import { useId, useRef, useState, type ChangeEvent, type FormEvent, type RefObject } from "react";
+import { Camera, Trash2 } from "lucide-react";
+import { removeAvatar, updateAvatar, updateProfile, type ProfileChanges, type User } from "../../auth";
 import { HttpError, NetworkError } from "../../../lib/http";
 import ProfileAvatar from "./ProfileAvatar";
 import ModalDialog from "../../../components/common/ModalDialog";
 import { charLength, inputLength, limitInput, toOneLine } from "../oneLineText";
+import AvatarCropEditor from "./AvatarCropEditor";
 
 // 서버(backend/app/schemas/user.py NICKNAME_MAX_LENGTH·BIO_MAX_LENGTH)와 같은 값. 바꾸면 두 곳을 함께 고친다.
 export const NICKNAME_MAX_LENGTH = 20;
 export const BIO_MAX_LENGTH = 40;
+export const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+const AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 interface Props {
   user: User;
@@ -33,6 +37,13 @@ function saveErrorMessage(error: unknown): string {
   return "저장하지 못했어요. 잠시 후 다시 시도해 주세요.";
 }
 
+function avatarErrorMessage(error: unknown): string {
+  if (error instanceof NetworkError) return "사진을 전송하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.";
+  if (error instanceof HttpError && error.status === 413) return "5MB 이하의 사진을 선택해 주세요.";
+  if (error instanceof HttpError && (error.status === 400 || error.status === 422)) return "JPG, PNG, WEBP 사진만 올릴 수 있어요.";
+  return "사진을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.";
+}
+
 /**
  * 프로필 수정. 닉네임과 한 줄 소개를 바꾼다. 바뀐 칸만 서버에 보낸다.
  * 한 줄 소개는 나중에 쪽지·리뷰에서 작성자 소개로 쓸 예정이라, 다른 사람에게 보일 수 있다고 안내한다.
@@ -44,10 +55,14 @@ export default function ProfileEditDialog({ user, onClose, onSaved }: Props) {
   const errorId = useId();
   const nicknameRef = useRef<HTMLInputElement>(null);
   const bioRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [nickname, setNickname] = useState(user.nickname ?? "");
   const [bio, setBio] = useState(user.bio ?? "");
   const [error, setError] = useState<{ field: Field | null; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [deletingAvatar, setDeletingAvatar] = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null);
 
   const focusField = (field: Field | null) => (field === "bio" ? bioRef : nicknameRef).current?.focus();
 
@@ -85,67 +100,163 @@ export default function ProfileEditDialog({ user, onClose, onSaved }: Props) {
     if (error) setError(null);
   };
 
+  const handleAvatar = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // 같은 파일을 다시 선택해 재시도할 수 있게 바로 비운다.
+    event.target.value = "";
+    if (!file) return;
+    if (!AVATAR_TYPES.has(file.type)) {
+      setError({ field: null, message: "JPG, PNG, WEBP 사진만 올릴 수 있어요." });
+      return;
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      setError({ field: null, message: "5MB 이하의 사진을 선택해 주세요." });
+      return;
+    }
+    setError(null);
+    setCropFile(file);
+  };
+
+  const handleCroppedAvatar = async (file: File) => {
+    setCropFile(null);
+    setUploadingAvatar(true);
+    setError(null);
+    try {
+      await updateAvatar(file);
+      onSaved();
+    } catch (err) {
+      setError({ field: null, message: avatarErrorMessage(err) });
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleDeleteAvatar = async () => {
+    if (deletingAvatar) return;
+    setDeletingAvatar(true);
+    setError(null);
+    try {
+      await removeAvatar();
+      onSaved();
+    } catch (err) {
+      setError({ field: null, message: avatarErrorMessage(err) });
+    } finally {
+      setDeletingAvatar(false);
+    }
+  };
+
   return (
-    <ModalDialog title="프로필 수정" onClose={onClose} initialFocusRef={nicknameRef} busy={saving}>
-      <form onSubmit={handleSubmit} noValidate>
-        <div className="flex justify-center pb-5 pt-1">
-          <ProfileAvatar size="lg" />
-        </div>
-
-        <TextField
-          id={nicknameId}
-          inputRef={nicknameRef}
-          label="닉네임"
-          value={nickname}
-          max={NICKNAME_MAX_LENGTH}
-          autoComplete="nickname"
-          errorId={error?.field === "nickname" ? errorId : undefined}
-          onChange={(value) => {
-            setNickname(value);
-            clearError();
-          }}
+    <ModalDialog
+      title="프로필 수정"
+      onClose={onClose}
+      initialFocusRef={nicknameRef}
+      busy={saving || uploadingAvatar || deletingAvatar}
+      panelClassName="h-[min(620px,85dvh)]"
+    >
+      <form onSubmit={handleSubmit} noValidate className="h-full">
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="sr-only"
+          aria-label="프로필 사진 파일"
+          onChange={handleAvatar}
         />
+        {cropFile ? (
+          <div className="flex min-h-full items-center py-2">
+            <AvatarCropEditor
+              file={cropFile}
+              onReselect={() => avatarInputRef.current?.click()}
+              onConfirm={handleCroppedAvatar}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col items-center pb-5 pt-1">
+              <ProfileAvatar size="lg" imageUrl={user.avatar_url} />
+              <div className={`mt-3 grid w-full max-w-52 gap-2 ${user.avatar_url ? "grid-cols-2" : "grid-cols-1"}`}>
+                <button
+                  type="button"
+                  disabled={saving || uploadingAvatar || deletingAvatar}
+                  onClick={() => avatarInputRef.current?.click()}
+                  aria-label={user.avatar_url ? "프로필 사진 변경" : "프로필 사진 올리기"}
+                  className="flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-control-border px-2 text-[13px] font-bold text-ink hover:bg-control-hover disabled:cursor-wait disabled:opacity-60"
+                >
+                  <Camera size={15} aria-hidden="true" />
+                  {uploadingAvatar ? "업로드 중…" : user.avatar_url ? "변경" : "사진 올리기"}
+                </button>
+                {user.avatar_url && (
+                  <button
+                    type="button"
+                    disabled={saving || uploadingAvatar || deletingAvatar}
+                    onClick={handleDeleteAvatar}
+                    aria-label="프로필 사진 삭제"
+                    className="flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-control-border px-3 text-[13px] font-bold text-danger hover:bg-control-hover disabled:cursor-wait disabled:opacity-60"
+                  >
+                    <Trash2 size={15} aria-hidden="true" />
+                    {deletingAvatar ? "삭제 중…" : "삭제"}
+                  </button>
+                )}
+              </div>
+              <p className="mt-1.5 text-[11px] text-caption">JPG, PNG, WEBP · 최대 5MB</p>
+            </div>
 
-        <div className="mt-4">
-          <TextField
-            id={bioId}
-            inputRef={bioRef}
-            label="한 줄 소개"
-            optional
-            value={bio}
-            max={BIO_MAX_LENGTH}
-            placeholder="예: 주말마다 한강을 걸어요"
-            autoComplete="off"
-            hint="쪽지나 리뷰에서 다른 사람에게 보일 수 있어요."
-            errorId={error?.field === "bio" ? errorId : undefined}
-            onChange={(value) => {
-              setBio(value);
-              clearError();
-            }}
-          />
-        </div>
+            <TextField
+              id={nicknameId}
+              inputRef={nicknameRef}
+              label="닉네임"
+              value={nickname}
+              max={NICKNAME_MAX_LENGTH}
+              autoComplete="nickname"
+              errorId={error?.field === "nickname" ? errorId : undefined}
+              onChange={(value) => {
+                setNickname(value);
+                clearError();
+              }}
+            />
 
-        <p id={errorId} className="mt-3 min-h-[1lh] text-[12px] text-danger" aria-live="polite">
-          {error?.message}
-        </p>
+            <div className="mt-4">
+              <TextField
+                id={bioId}
+                inputRef={bioRef}
+                label="한 줄 소개"
+                optional
+                value={bio}
+                max={BIO_MAX_LENGTH}
+                placeholder="예: 주말마다 한강을 걸어요"
+                autoComplete="off"
+                hint="쪽지나 리뷰에서 다른 사람에게 보일 수 있어요."
+                errorId={error?.field === "bio" ? errorId : undefined}
+                onChange={(value) => {
+                  setBio(value);
+                  clearError();
+                }}
+              />
+            </div>
 
-        <div className="mt-2 flex gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="h-11 flex-1 cursor-pointer rounded-lg border border-control-border text-[15px] font-bold text-ink hover:bg-control-hover disabled:cursor-default disabled:opacity-50"
-          >
-            취소
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="h-11 flex-1 cursor-pointer rounded-lg bg-accent text-[15px] font-bold text-white hover:bg-accent-strong disabled:cursor-default disabled:opacity-60"
-          >
-            {saving ? "저장 중…" : "저장"}
-          </button>
-        </div>
+            <p id={errorId} className="mt-3 min-h-[1lh] text-[12px] text-danger" aria-live="polite">
+              {error?.message}
+            </p>
+
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={saving || uploadingAvatar || deletingAvatar || cropFile !== null}
+                className="h-11 flex-1 cursor-pointer rounded-lg border border-control-border text-[15px] font-bold text-ink hover:bg-control-hover disabled:cursor-default disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                disabled={saving || uploadingAvatar || deletingAvatar || cropFile !== null}
+                className="h-11 flex-1 cursor-pointer rounded-lg bg-accent text-[15px] font-bold text-white hover:bg-accent-strong disabled:cursor-default disabled:opacity-60"
+              >
+                {saving ? "저장 중…" : "저장"}
+              </button>
+            </div>
+          </>
+        )}
       </form>
     </ModalDialog>
   );

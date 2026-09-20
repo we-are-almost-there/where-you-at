@@ -19,12 +19,32 @@ class UserOut(BaseModel):
     id: int
     nickname: str | None
     bio: str | None = None
+    # 비공개 R2 객체의 짧게 유효한 보기 URL. 사진이 없거나 URL 발급에 실패하면 null.
+    avatar_url: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class LoginResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
     user: UserOut
+
+
+# 프로필 사진 업로드 (POST /api/me/avatar/*) ───────────
+AvatarContentType = Literal["image/jpeg", "image/png", "image/webp"]
+
+
+class AvatarUploadRequest(BaseModel):
+    content_type: AvatarContentType
+
+
+class AvatarUploadTicket(BaseModel):
+    upload_url: str
+    upload_key: str
+    max_bytes: int
+
+
+class AvatarUploadCompleteRequest(BaseModel):
+    upload_key: str = Field(min_length=1, max_length=200)
 
 
 # 프로필 수정 (PATCH /api/me) ──────────────────────────

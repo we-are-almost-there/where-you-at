@@ -102,7 +102,7 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
               ))}
             </ul>
             <div className="mt-4 flex flex-1 items-center gap-4 md:flex-col md:justify-center md:text-center">
-              <ProfileAvatar />
+              <ProfileAvatar imageUrl={user.avatar_url} />
               <div className="min-w-0">
                 <p className="break-keep text-[18px] font-bold text-ink wrap-anywhere md:text-[20px]">{user.nickname ?? "회원"}</p>
                 <p className="mt-0.5 text-[12px] text-caption">카카오 계정으로 로그인 중</p>

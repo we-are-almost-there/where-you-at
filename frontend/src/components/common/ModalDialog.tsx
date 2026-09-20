@@ -11,6 +11,8 @@ interface Props {
   busy?: boolean;
   /** sm: 확인·입력용(400px), lg: 지도처럼 넓은 내용(720px). 내용이 길면 본문만 스크롤한다. */
   size?: "sm" | "lg";
+  /** 특정 대화상자만 고정 높이처럼 패널 바깥 모양을 조정할 때 쓴다. */
+  panelClassName?: string;
   children: ReactNode;
 }
 
@@ -19,7 +21,7 @@ interface Props {
  * 배경 잠금(스크롤·#root inert)과 초점 처리는 개인정보처리방침 팝업(help/PrivacyPolicyDialog)과 같다.
  * 닫힌 뒤에는 열 때 초점이 있던 버튼으로 돌려준다.
  */
-export default function ModalDialog({ title, onClose, initialFocusRef, busy = false, size = "sm", children }: Props) {
+export default function ModalDialog({ title, onClose, initialFocusRef, busy = false, size = "sm", panelClassName = "", children }: Props) {
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const busyRef = useRef(busy);
@@ -71,7 +73,7 @@ export default function ModalDialog({ title, onClose, initialFocusRef, busy = fa
         aria-labelledby={titleId}
         className={`flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.2)] ${
           size === "lg" ? "max-w-[720px]" : "max-w-[400px]"
-        }`}
+        } ${panelClassName}`}
       >
         <header className="flex h-14 shrink-0 items-center justify-between gap-3 pl-5 pr-4">
           <h2 id={titleId} className="text-[17px] font-bold text-ink">

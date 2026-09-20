@@ -47,6 +47,7 @@ class CurrentUser:
     bio: str | None
     kakao_id: int
     session_id: UUID
+    avatar_key: str | None = None
 
 
 def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> CurrentUser:
