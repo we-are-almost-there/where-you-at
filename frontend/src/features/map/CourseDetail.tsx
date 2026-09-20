@@ -8,6 +8,7 @@ import { HttpError } from "../../lib/http";
 import { getCourseDetail, getCourseGpx } from "./coursesApi";
 import type { CourseDetail as CourseDetailData, LatLng, RouteDetail, RouteType } from "./types";
 import { Nearby } from "../nearby";
+import { SaveHeartButton } from "../saved";
 import type { NearbyHandle } from "../nearby";
 import type { NearbySpot } from "../nearby/types";
 import { isSavedRecord, readSession, writeSession } from "./trackingSession";
@@ -250,11 +251,15 @@ function CourseDetailSession() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [sessionActive]);
   // 탭·필터 변경은 허용하고, 다른 화면으로 향하는 모든 라우트 이동을 보호한다.
+  const protectedCardEditsRef = useRef(false);
+  const updateCardProtection = useCallback((protectedEdits: boolean) => {
+    protectedCardEditsRef.current = protectedEdits;
+  }, []);
   const blocker = useBlocker(({ currentLocation, nextLocation }) =>
-    sessionActive && currentLocation.pathname !== nextLocation.pathname,
+    (sessionActive || protectedCardEditsRef.current) && currentLocation.pathname !== nextLocation.pathname,
   );
   useEffect(() => {
-    if (blocker.state !== "blocked") return;
+    if (blocker.state !== "blocked" || !sessionActive) return;
     if (window.confirm("이 화면을 나가면 지금까지의 따라가기 기록이 사라집니다. 이동할까요?")) {
       // 내부 기록부터 비워 언마운트가 늦어져도 주기적 저장이 세션을 되살리지 않게 한다.
       stopTracking();
@@ -262,7 +267,7 @@ function CourseDetailSession() {
     } else {
       blocker.reset();
     }
-  }, [blocker, stopTracking]);
+  }, [blocker, stopTracking, sessionActive]);
   const backToCourses = () => {
     navigate("/courses");
   };
@@ -794,10 +799,23 @@ function CourseDetailSession() {
             >
               ←
             </button>}
-            {/* 로딩·오류·성공 상태에서 같은 제목 요소를 유지해 초점이 사라지지 않게 한다. */}
-            <h1 className={showsCourse ? "mt-2 font-bold text-ink text-[20px]" : "sr-only"}>
-              {showsCourse ? detail.title : "코스 상세"}
-            </h1>
+            {/* 로딩·오류·성공 상태에서 같은 제목 요소를 유지해 초점이 사라지지 않게 한다.
+              코스가 그려질 때는 제목과 하트를 한 줄에 둬 어느 코스를 찜하는지 분명히 한다.
+              찜은 고른 종목(도보·자전거) 단위다. */}
+            <div className={showsCourse ? "mt-2 flex items-start justify-between gap-2" : "contents"}>
+              <h1 className={showsCourse ? "font-bold text-ink text-[20px]" : "sr-only"}>
+                {showsCourse ? detail.title : "코스 상세"}
+              </h1>
+              {showsCourse && (
+                <SaveHeartButton
+                  courseId={courseId}
+                  courseTitle={detail.title}
+                  routeType={routeType}
+                  size={22}
+                  className="-mr-1.5 -mt-1 size-10 shrink-0"
+                />
+              )}
+            </div>
 
             {loading && validId ? (
               <p role="status" className="py-16 text-center text-[14px] text-caption">
@@ -1083,6 +1101,12 @@ function CourseDetailSession() {
       </main>
       {record && (
         <RecordCard
+          onProtectionChange={updateCardProtection}
+          navigationBlocked={!sessionActive && blocker.state === "blocked"}
+          onCancelNavigation={() => { if (blocker.state === "blocked") blocker.reset(); }}
+          onConfirmNavigation={() => {
+            if (blocker.state === "blocked") blocker.proceed();
+          }}
           record={record.summary}
           routeType={record.routeType}
           routePoints={record.routePoints}

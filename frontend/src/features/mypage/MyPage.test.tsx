@@ -10,7 +10,7 @@ import { HttpError } from "../../lib/http";
 import { signOut, startKakaoLogin, updateProfile, useAuth, withdraw, type AuthState } from "../auth";
 import MyPage from "./MyPage";
 import { fetchSavedCourses, getRecords, getStamps } from "./mypageData";
-import type { Course } from "../map/types";
+import type { SavedCourse } from "../saved";
 import type { RunRecord } from "./types";
 
 vi.mock("../auth", () => {
@@ -25,6 +25,15 @@ vi.mock("../auth", () => {
     withdraw: vi.fn(),
   };
 });
+// 하트는 로그인 상태를 따라 찜 목록을 받으러 나간다. 이 화면의 관심사가 아니라 저장소만 대신한다.
+vi.mock("../saved/savedStore", () => ({
+  useSavedCourse: () => ({ saved: false, busy: false }),
+  toggleSavedCourse: vi.fn(),
+  ensureSavedKeysLoaded: vi.fn(),
+  clearSavedKeys: vi.fn(),
+  seedSavedKeys: vi.fn(),
+}));
+
 vi.mock("./mypageData", () => ({
   fetchSavedCourses: vi.fn(),
   getRecords: vi.fn(),
@@ -49,18 +58,22 @@ function renderPage(path = "/mypage") {
   );
 }
 
-function course(id: number): Course {
+function course(id: number): SavedCourse {
   return {
-    id,
-    title: `코스 ${id}`,
-    start_address: "강원 춘천시",
-    image_url: "",
-    region_code: "51110",
-    is_population_drop_zone: false,
-    landmarks: [],
-    routes: [{ route_type: "도보", distance: 5, estimated_time: 60, difficulty: "쉬움" }],
-    path_trail: [],
-    path_bicycle: [],
+    course: {
+      id,
+      title: `코스 ${id}`,
+      start_address: "강원 춘천시",
+      image_url: "",
+      region_code: "51110",
+      is_population_drop_zone: false,
+      landmarks: [],
+      routes: [{ route_type: "도보", distance: 5, estimated_time: 60, difficulty: "쉬움" }],
+      path_trail: [],
+      path_bicycle: [],
+    },
+    routeType: "도보",
+    savedAt: "2026-09-19T10:00:00+00:00",
   };
 }
 

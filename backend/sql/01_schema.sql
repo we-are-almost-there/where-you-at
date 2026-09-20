@@ -480,7 +480,7 @@ alter table inquiry      enable row level security;
 -- ============================================
 -- 카카오 로그인으로 가입한 회원. 인증은 Supabase Auth가 아니라 FastAPI가 직접 처리한다.
 --   DB를 옮겨도 회원 데이터와 인증이 그대로 따라가도록 우리 스키마의 일반 테이블로 둔다.
--- 이미 운영 중인 공용 DB에는 08_app_user.sql, 09_auth_session.sql, 10_run_record.sql, 11_record_card.sql로 같은 내용을 적용한다.
+-- 이미 운영 중인 공용 DB에는 08_app_user.sql, 09_auth_session.sql, 10_saved_course.sql, 11_run_record.sql, 12_record_card.sql로 같은 내용을 적용한다.
 
 
 -- 1. app_user (회원)
@@ -525,7 +525,32 @@ create index idx_auth_session_user_id on auth_session(user_id);
 alter table auth_session enable row level security;
 
 
--- 3. run_record (따라가기 완주 기록)
+-- 3. saved_course (찜한 코스)
+-- 코스가 아니라 "코스 + 종목"을 찜한다. 코스 목록이 도보·자전거 탭으로 나뉘고 한 코스가 두 종목을 다 가질 수
+--   있어서, 자전거로 찜한 코스는 마이페이지에서도 자전거로 보여 줘야 하기 때문이다.
+-- 종목 FK를 course_route(course_id, route_type)로 거는 이유
+--   - 자전거 경로가 없는 코스를 자전거로 찜하는 요청을 DB가 막는다.
+--   - 코스나 경로가 지워지면 찜도 함께 정리된다.
+-- 수정하는 칸이 없어 updated_at과 트리거를 두지 않는다. 추가와 삭제만 한다.
+create table saved_course (
+  user_id          bigint not null,
+  course_id        bigint not null,
+  route_type       varchar(10) not null,
+  created_at       timestamptz not null default now(),
+  primary key (user_id, course_id, route_type),
+  constraint saved_course_user_fk foreign key (user_id)
+    references app_user(id) on delete cascade,
+  constraint saved_course_route_fk foreign key (course_id, route_type)
+    references course_route(course_id, route_type) on delete cascade
+);
+
+-- 마이페이지 찜 목록은 한 회원의 것을 최근 찜한 순으로 읽는다.
+create index idx_saved_course_user_created on saved_course(user_id, created_at desc);
+
+alter table saved_course enable row level security;
+
+
+-- 4. run_record (따라가기 완주 기록)
 -- 회원이 코스 따라가기를 마칠 때 남기는 기록. 코스 이름은 저장하지 않고 조회 때 course에서 가져온다.
 -- pace_sec_per_km: 거리가 너무 짧으면 null.
 create table run_record (
@@ -546,7 +571,7 @@ create index idx_run_record_user_finished on run_record (user_id, finished_at de
 alter table run_record enable row level security;
 
 
--- 4. record_card (기록 카드 이미지)
+-- 5. record_card (기록 카드 이미지)
 -- 한 기록으로 카드를 여러 장 만들 수 있다. 이미지는 R2에 두고 키만 저장한다.
 -- image_key: record-cards/{user_id}/... URL은 만료되므로 저장하지 않고 조회 때 발급한다.
 create table record_card (
@@ -564,3 +589,4 @@ create index idx_record_card_user_created on record_card (user_id, created_at de
 create index idx_record_card_record_id on record_card (record_id);
 
 alter table record_card enable row level security;
+

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import type { TrackingRecord } from "../trackingRecord";
 import type { LatLng, RouteType } from "../types";
@@ -109,20 +109,39 @@ export function RecordCard({
   routeType,
   routePoints,
   onClose,
+  onProtectionChange,
+  navigationBlocked = false,
+  onCancelNavigation,
+  onConfirmNavigation,
 }: {
   record: TrackingRecord;
   /** 따라간 종목. 페이스를 분/km로 쓸지 km/h로 쓸지 가른다. */
   routeType: RouteType;
   routePoints: LatLng[];
   onClose: () => void;
+  onProtectionChange?: (protectedEdits: boolean) => void;
+  navigationBlocked?: boolean;
+  onCancelNavigation?: () => void;
+  onConfirmNavigation?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   // 공유는 사용자 제스처 안에서 동기적으로 불러야 iOS에서 막히지 않는다.
   // 조작이 멎으면 미리 만들어 두고, 버튼에서는 그대로 넘긴다.
   const blobRef = useRef<Blob | null>(null);
-  // 마지막으로 그린 내용이 아직 blob에 담기지 않았는지. 저장 시 낡은 이미지를 내보내지 않으려고 둔다.
-  const dirtyRef = useRef(true);
+  // 공유 같은 비동기 작업이 끝났을 때 카드가 아직 열려 있는지 확인한다.
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // 캔버스와 저장용 이미지가 각각 어느 편집본인지 기록해 낡은 이미지 저장을 막는다.
+  const renderedVersionRef = useRef<number | null>(null);
+  const blobVersionRef = useRef<number | null>(null);
   const blobTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
   const dragTargetRef = useRef<"photo" | "route" | "stats" | null>(null);
@@ -143,6 +162,77 @@ export function RecordCard({
 
   const hasRoute = routePoints.length >= 2;
   const canvasH = RATIOS.find((r) => r.key === ratio)?.height ?? RATIOS[0].height;
+  const editSnapshot = useMemo(() => ({
+    record, routeType, routePoints, image, transform, template, textColor,
+    fontChoice, textScale, showRoute, routeOffset, routeScale, statsOffset, canvasH,
+  }), [record, routeType, routePoints, image, transform, template, textColor,
+    fontChoice, textScale, showRoute, routeOffset, routeScale, statsOffset, canvasH]);
+  const [readySnapshot, setReadySnapshot] = useState<typeof editSnapshot | null>(null);
+  const imageReady = readySnapshot === editSnapshot;
+  const [failedSnapshot, setFailedSnapshot] = useState<typeof editSnapshot | null>(null);
+  const preparationFailed = failedSnapshot === editSnapshot;
+  const [retryCount, setRetryCount] = useState(0);
+  const retryPreparation = () => {
+    // 재시도는 편집이나 저장이 아니다. 보호 상태는 그대로 두고 생성 작업만 다시 실행한다.
+    setFailedSnapshot(null);
+    setRetryCount((count) => count + 1);
+  };
+  const currentSnapshotRef = useRef(editSnapshot);
+
+  const editVersionRef = useRef(0);
+  const savedVersionRef = useRef<number | null>(null);
+  const hasEditedRef = useRef(false);
+  const protectionCallbackRef = useRef(onProtectionChange);
+  // 콜백 교체는 편집이 아니다. 최신 수신자에게 현재 상태만 전달한다.
+  useLayoutEffect(() => {
+    protectionCallbackRef.current = onProtectionChange;
+    onProtectionChange?.(hasEditedRef.current && savedVersionRef.current !== editVersionRef.current);
+  }, [onProtectionChange]);
+  const previousEditRef = useRef(editSnapshot);
+  const [closeConfirmationOpen, setCloseConfirmationOpen] = useState(false);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const requestClose = () => {
+    if (savedVersionRef.current === editVersionRef.current) onClose();
+    else setCloseConfirmationOpen(true);
+  };
+  // 저장 후 다시 편집하면 보호를 재개한다. 도구 탭이나 미리보기 크기 변경은 제외한다.
+  useLayoutEffect(() => {
+    const previous = previousEditRef.current;
+    // 사용자 편집 값만 비교한다. 초기 실행·효과 재실행·부모의 기록 갱신은 편집이 아니다.
+    if (previous.image !== image || previous.template !== template || previous.textColor !== textColor
+      || previous.fontChoice !== fontChoice || previous.textScale !== textScale
+      || previous.showRoute !== showRoute || previous.routeScale !== routeScale
+      || previous.canvasH !== canvasH
+      || previous.transform.scale !== transform.scale
+      || previous.transform.offsetX !== transform.offsetX || previous.transform.offsetY !== transform.offsetY
+      || previous.routeOffset.x !== routeOffset.x || previous.routeOffset.y !== routeOffset.y
+      || previous.statsOffset.x !== statsOffset.x || previous.statsOffset.y !== statsOffset.y) {
+      hasEditedRef.current = true;
+    }
+    previousEditRef.current = editSnapshot;
+    editVersionRef.current += 1;
+    protectionCallbackRef.current?.(hasEditedRef.current && savedVersionRef.current !== editVersionRef.current);
+    currentSnapshotRef.current = editSnapshot;
+    // 글꼴 로딩이나 그리기를 기다리지 않고 편집 즉시 이전 이미지를 무효화한다.
+    blobRef.current = null;
+    blobVersionRef.current = null;
+    renderedVersionRef.current = null;
+    if (blobTimerRef.current) clearTimeout(blobTimerRef.current);
+  }, [editSnapshot, image, template, textColor, fontChoice, textScale, showRoute, routeScale,
+    canvasH, transform, routeOffset, statsOffset]);
+
+  useEffect(() => () => protectionCallbackRef.current?.(false), []);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasEditedRef.current) return;
+      if (savedVersionRef.current === editVersionRef.current) return;
+      event.preventDefault();
+      event.returnValue = true;
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   // 미리보기는 남는 자리에 맞춰 줄이되 비율을 지켜야 한다. CSS만으로는 안 된다 —
   // 캔버스에 건 max-h-full은 백분율이라 높이가 정해지지 않은 래퍼를 기준으로 잡혀 무시되고,
@@ -181,26 +271,43 @@ export function RecordCard({
   // PNG 인코딩은 무거워서 그리기와 분리한다. 조작이 멎은 뒤 한 번만 만든다.
   const scheduleBlob = useCallback(() => {
     if (blobTimerRef.current) clearTimeout(blobTimerRef.current);
+    const version = renderedVersionRef.current;
+    if (version === null || version !== editVersionRef.current) return;
     blobTimerRef.current = setTimeout(() => {
-      canvasRef.current?.toBlob((blob) => {
-        blobRef.current = blob;
-        dirtyRef.current = false;
-      }, "image/png");
+      if (version !== editVersionRef.current) return;
+      try {
+        canvasRef.current?.toBlob((blob) => {
+          // 이전 편집본의 변환이 늦게 끝나도 최신 이미지와 준비 상태를 덮어쓰지 않는다.
+          if (version !== editVersionRef.current) return;
+          if (!blob) {
+            setFailedSnapshot(currentSnapshotRef.current);
+            return;
+          }
+          blobRef.current = blob;
+          blobVersionRef.current = version;
+          setReadySnapshot(currentSnapshotRef.current);
+          setFailedSnapshot(null);
+        }, "image/png");
+      } catch {
+        if (version === editVersionRef.current) setFailedSnapshot(currentSnapshotRef.current);
+      }
     }, BLOB_DEBOUNCE_MS);
   }, []);
 
   useEffect(() => () => {
     if (blobTimerRef.current) clearTimeout(blobTimerRef.current);
+    editVersionRef.current += 1;
   }, []);
 
   useEffect(() => {
     let cancelled = false;
+    const version = editVersionRef.current;
     const { family, weight } = FONTS.find((f) => f.key === fontChoice) ?? FONTS[0];
 
     // 캔버스는 아직 내려받지 않은 글꼴을 조용히 기본 글꼴로 대체해 버리므로 먼저 실어 둔다.
     ensureCardFonts(family, weight).then(() => {
       const canvas = canvasRef.current;
-      if (cancelled || !canvas) return;
+      if (cancelled || !canvas || version !== editVersionRef.current) return;
       // 그리다 실패하면 여기서 잡아야 한다. 안 잡으면 처리되지 않은 거부로 새어 나가고
       // 화면은 이전 그림 그대로라, 사용자는 조작이 왜 안 먹는지 알 수 없다.
       let drawn: boolean;
@@ -224,11 +331,10 @@ export function RecordCard({
         drawn = false;
       }
       if (!drawn) {
-        setErrorMessage("카드를 그리지 못했어요. 화면을 캡처해 주세요.");
+        setFailedSnapshot(currentSnapshotRef.current);
         return;
       }
-      // 그린 내용이 아직 blob에 없다는 표시는 항상 남긴다(끄는 중이라 인코딩을 미뤄도 마찬가지).
-      dirtyRef.current = true;
+      renderedVersionRef.current = version;
       // 끄는 중에는 인코딩을 미룬다 — 매 프레임 돌면 드래그가 끊긴다.
       if (!dragTargetRef.current) scheduleBlob();
     });
@@ -252,6 +358,7 @@ export function RecordCard({
     statsOffset,
     canvasH,
     scheduleBlob,
+    retryCount,
   ]);
 
   const pickPhoto = (file: File | undefined) => {
@@ -383,29 +490,24 @@ export function RecordCard({
 
   const save = useCallback(async () => {
     setErrorMessage(null);
-
-    // 인코딩은 디바운스로 미뤄 두므로, 방금 바꾼 내용이 아직 blob에 안 담겼을 수 있다.
-    // 미리 만들어 둔 게 낡았으면 여기서 즉시 굽는다 — 안 그러면 변경 전 이미지가 저장된다.
-    let blob = dirtyRef.current ? null : blobRef.current;
-    if (!blob) {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-      if (!blob) {
-        setErrorMessage("이미지를 만들지 못했어요. 화면을 캡처해 주세요.");
-        return;
-      }
-      blobRef.current = blob;
-      dirtyRef.current = false;
-    }
+    const savingVersion = blobVersionRef.current;
+    const blob = blobRef.current;
+    // 실제 변환된 이미지의 버전으로 저장한다. 최신 편집본이 준비되지 않았으면 전달하지 않는다.
+    if (!blob || savingVersion === null || savingVersion !== editVersionRef.current) return;
 
     const file = new File([blob], "record.png", { type: "image/png" });
 
     if (navigator.canShare?.({ files: [file] })) {
       try {
         await navigator.share({ files: [file] });
+        // 공유 중 카드가 닫혔으면 저장 상태·보호 콜백을 건드리지 않는다.
+        if (!mountedRef.current) return;
+        savedVersionRef.current = savingVersion;
+        protectionCallbackRef.current?.(hasEditedRef.current && savingVersion !== editVersionRef.current);
         return;
       } catch (e) {
+        // 닫힌 카드는 다운로드 폴백도, 오류 상태 갱신도 하지 않는다.
+        if (!mountedRef.current) return;
         // 사용자가 공유 시트를 닫은 것뿐이면 조용히 끝낸다.
         if (e instanceof DOMException && e.name === "AbortError") return;
         // 그 밖의 실패(제스처 요건 등)는 아래 다운로드로 떨어진다.
@@ -421,6 +523,9 @@ export function RecordCard({
       document.body.appendChild(link);
       link.click();
       link.remove();
+      // 다운로드의 실제 완료는 알 수 없으므로 브라우저에 전달한 시점을 기준으로 한다.
+      savedVersionRef.current = savingVersion;
+      protectionCallbackRef.current?.(hasEditedRef.current && savingVersion !== editVersionRef.current);
       // 클릭 직후 동기적으로 해제하면 다운로드가 시작되기 전에 URL이 죽을 수 있다.
       setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
     } catch {
@@ -472,9 +577,9 @@ export function RecordCard({
         </div>
       </div>
 
-      {errorMessage && (
+      {(preparationFailed || errorMessage) && (
         <p role="alert" className="px-5 pb-2 text-center text-[13px] text-white">
-          {errorMessage}
+          {preparationFailed ? "이미지를 만들지 못했어요. 다시 시도해 주세요. 계속 실패하면 화면을 캡처해 주세요." : errorMessage}
         </p>
       )}
 
@@ -662,20 +767,84 @@ export function RecordCard({
       >
         <button
           type="button"
-          onClick={onClose}
+          ref={closeButtonRef}
+          onClick={requestClose}
           className="h-14 flex-1 cursor-pointer rounded-[14px] bg-white/15 text-[15px] font-bold text-white"
         >
           닫기
         </button>
         <button
           type="button"
-          onClick={save}
-          className="h-14 flex-[2] cursor-pointer rounded-[14px] bg-accent text-[15px] font-bold text-white"
+          onClick={preparationFailed ? retryPreparation : save}
+          disabled={!imageReady && !preparationFailed}
+          className="h-14 flex-[2] cursor-pointer rounded-[14px] bg-accent text-[15px] font-bold text-white disabled:cursor-wait disabled:opacity-60"
         >
-          이미지 저장
+          {preparationFailed ? "다시 시도" : imageReady ? "이미지 저장" : "이미지 준비 중…"}
         </button>
       </div>
+      {(navigationBlocked || closeConfirmationOpen) && (
+        <CloseRecordConfirmation
+          leaving={navigationBlocked}
+          onContinue={() => {
+            if (navigationBlocked) onCancelNavigation?.();
+            setCloseConfirmationOpen(false);
+            closeButtonRef.current?.focus();
+          }}
+          onDiscard={navigationBlocked ? () => onConfirmNavigation?.() : onClose}
+        />
+      )}
     </div>
+  );
+}
+
+function CloseRecordConfirmation({ onContinue, onDiscard, leaving = false }: {
+  leaving?: boolean;
+  onContinue: () => void;
+  onDiscard: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const continueRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  const cancelClose = () => {
+    // 모달이 뒤쪽 카드의 초점을 막는 상태를 먼저 해제한 뒤 닫기 버튼으로 돌아간다.
+    dialogRef.current?.close();
+    onContinue();
+  };
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    // 기본 모달 기능으로 뒤쪽 카드 조작을 막고 키보드 초점을 확인창 안에 가둔다.
+    dialog?.showModal();
+    continueRef.current?.focus();
+    return () => dialog?.close();
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      role="alertdialog"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      onCancel={(event) => { event.preventDefault(); cancelClose(); }}
+      onKeyDown={(event) => {
+        // 뒤쪽 대화상자가 같은 Escape 입력으로 닫히지 않게 한다.
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          cancelClose();
+        }
+      }}
+      className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-sm rounded-[18px] bg-white px-5 py-6 text-center text-ink shadow-[0px_8px_24px_0px_rgba(0,0,0,0.2)] backdrop:bg-black/40"
+    >
+      <h2 id={titleId} className="break-keep text-[17px] font-bold">{leaving ? "저장하지 않은 편집 내용이 있어요." : "저장하지 않은 기록 카드예요."}</h2>
+      <p id={descriptionId} className="mt-2 break-keep text-[14px] leading-relaxed text-caption">{leaving ? "지금 나가면 편집한 내용이 사라져요." : "지금 닫으면 이 기록 카드는 사라져요."}</p>
+      <div className="mt-5 flex gap-3">
+        <button ref={continueRef} type="button" onClick={cancelClose}
+          className="h-12 flex-1 cursor-pointer break-keep rounded-[14px] bg-lavender px-3 text-[15px] font-bold text-ink">계속 편집</button>
+        <button type="button" onClick={onDiscard}
+          className="h-12 flex-1 cursor-pointer break-keep rounded-[14px] bg-accent px-3 text-[15px] font-bold text-white">{leaving ? "저장하지 않고 나가기" : "저장하지 않고 닫기"}</button>
+      </div>
+    </dialog>
   );
 }
 
