@@ -11,8 +11,8 @@ from fastapi.concurrency import run_in_threadpool
 from ...core.config import settings
 from ...crud import user as user_crud
 from ...deps import CurrentUser, db_connection, get_current_user
-from ...schemas.user import KakaoLoginRequest, LoginResponse, UserOut
-from ...services import auth_token, kakao_oauth, slack_notify
+from ...schemas.user import KakaoLoginRequest, LoginResponse
+from ...services import account_deletion, auth_token, kakao_oauth, profile, slack_notify, storage
 from ...services.rate_limit import SlidingWindowLimiter, client_key
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -79,7 +79,7 @@ async def login_with_kakao(body: KakaoLoginRequest, request: Request):
         user = await run_in_threadpool(_save_login, kakao_user, session_id, now)
         return LoginResponse(
             access_token=auth_token.create_access_token(user["id"], session_id, now=now),
-            user=UserOut(**user),
+            user=profile.user_out(user),
         )
     finally:
         limiter.release()
@@ -114,8 +114,8 @@ async def kakao_unlink_callback(request: Request, background_tasks: BackgroundTa
     카카오톡의 연결된 앱 관리에서 사용자가 직접 끊었을 때만 온다.
 
     카카오는 3초 안에 200을 기대하고, 재전송은 계정 상태 변경 웹훅에서만 지원해 연결 해제 웹훅은
-    다시 보내지 않는다. 그래서 회원을 못 찾거나 삭제가 실패해도 200을 돌려주고, 놓친 삭제는
-    Slack 알림과 [ERROR] 로그로 찾아 직접 지운다(README 참고).
+    다시 보내지 않는다. 그래서 회원을 못 찾거나 삭제가 실패해도 200을 돌려주고, 실패하면 회원 행과
+    내부 user_id를 가능한 한 남겨 Slack 알림과 [ERROR] 로그로 찾아 직접 정리한다(README 참고).
     200이 아닌 응답은 검증에 실패한 요청(401)에만 쓴다. 이때의 401은 카카오가 아닌 요청이거나
     우리가 가진 키가 대표 어드민 키가 아니라는 신호다.
 
@@ -180,18 +180,34 @@ def _body_params(request: Request, body: bytes) -> dict[str, str]:
 
 
 def _delete_user_by_kakao_id(kakao_id: int) -> None:
-    """회원 행을 지운다. 카카오에 200을 돌려줘야 하므로 실패해도 예외를 올리지 않고 로그만 남긴다.
+    """R2 객체와 회원 행을 지운다. 카카오에는 이미 200을 돌려줬으므로 실패를 Slack과 로그에 남긴다.
 
-    탈퇴 API와 같은 delete_user를 쓴다. 회원에 딸린 정리가 늘어날 때 한쪽에만 들어가지 않게 한다.
+    수동 탈퇴와 같은 공통 서비스를 써 R2가 실패하면 회원 행과 내부 user_id를 복구 기준으로 남긴다.
     """
+    user_id = None
     try:
         with db_connection() as conn:
             user_id = user_crud.get_user_id_by_kakao_id(conn, kakao_id)
             if user_id is None:
                 return
-            user_crud.delete_user(conn, user_id)
+        account_deletion.delete_account(user_id)
     except Exception as e:
-        # DB 연결 실패(503)까지 여기서 삼킨다. 로그의 회원번호로 직접 지워야 한다.
-        print(f"[ERROR] 연결 끊기 웹훅 회원 삭제 실패(직접 삭제 필요): kakao_id={kakao_id} {type(e).__name__}")
+        # DB 연결 실패(503)까지 여기서 삼킨다. 웹훅은 재전송되지 않으므로 Slack과 로그로 직접 복구한다.
+        cleanup = ""
+        if user_id is not None:
+            prefixes = ", ".join(storage.user_prefixes(user_id))
+            cleanup = f" user_id={user_id} prefixes={prefixes}"
+        print(
+            f"[ERROR] 연결 끊기 웹훅 회원 삭제 실패(직접 삭제 필요): "
+            f"kakao_id={kakao_id}{cleanup} {type(e).__name__}"
+        )
         # 로그만으로는 7일 안에 아무도 보지 않으면 놓친다. 알림 전송이 실패해도 로그는 이미 남았다.
-        slack_notify.notify_unlink_failure()
+        if user_id is None:
+            slack_notify.notify_unlink_failure()
+        else:
+            stage = "R2 객체 정리" if isinstance(e, account_deletion.ObjectCleanupError) else "DB 회원 삭제"
+            slack_notify.notify_account_deletion_failure(
+                user_id,
+                source="카카오 연결 끊기 웹훅",
+                stage=stage,
+            )

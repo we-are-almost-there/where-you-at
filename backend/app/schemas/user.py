@@ -19,6 +19,8 @@ class UserOut(BaseModel):
     id: int
     nickname: str | None
     bio: str | None = None
+    # 비공개 R2 객체의 짧게 유효한 보기 URL. 사진이 없거나 URL 발급에 실패하면 null.
+    avatar_url: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class LoginResponse(BaseModel):

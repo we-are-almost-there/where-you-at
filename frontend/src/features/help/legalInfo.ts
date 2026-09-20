@@ -13,7 +13,7 @@ export const CONTEST = "2026 관광데이터 활용 공모전";
  * - backend/sql/04_help_seed.sql 변경 안내 공지 본문의 시행일
  * 내용을 바꾸면 지금 버전을 versions/에 복사해 PREVIOUS_VERSIONS에 추가하고, 새 시행일을 적는다.
  */
-export const EFFECTIVE_DATE = "2026년 9월 20일";
+export const EFFECTIVE_DATE = "2026년 9월 21일";
 
 export interface PreviousVersion {
   /** 적용 기간. 예: "2026년 9월 17일 ~ 2026년 9월 19일" */
@@ -24,7 +24,7 @@ export interface PreviousVersion {
 
 /** 이전 버전. 최근 것이 앞. 방침 14번과 약관 부칙에서 링크한다. */
 export const PREVIOUS_VERSIONS: readonly PreviousVersion[] = [
-  { period: "2026년 9월 17일 ~ 2026년 9월 19일", privacyPath: "/privacy/2026-09-17", termsPath: "/terms/2026-09-17" },
+  { period: "2026년 9월 17일 ~ 2026년 9월 20일", privacyPath: "/privacy/2026-09-17", termsPath: "/terms/2026-09-17" },
 ];
 
 /**

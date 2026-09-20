@@ -2,7 +2,7 @@
 // KakaoCallback이 AppHeader를 쓰므로 여기서 내보내면, 헤더나 사이드바가 이 배럴을 가져올 때
 // AppHeader → index → KakaoCallback → AppHeader 순환이 생긴다.
 
-export { useAuth, signOut, updateProfile, withdraw } from "./useAuth";
+export { useAuth, removeAvatar, signOut, updateAvatar, updateProfile, withdraw } from "./useAuth";
 export type { AuthState } from "./useAuth";
 export type { ProfileChanges, User } from "./authApi";
 export { KAKAO_CALLBACK_PATH, startKakaoLogin } from "./kakaoRedirect";

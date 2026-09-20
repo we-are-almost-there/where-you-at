@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from app.core.config import settings
+from app.services import storage
 
 LOGGER = logging.getLogger(__name__)
 TIMEOUT_SECONDS = 3
@@ -22,16 +23,33 @@ def plain_text(text: str) -> dict[str, str]:
 
 
 def notify_unlink_failure() -> bool:
-    """연결 끊기 웹훅을 받고도 회원을 지우지 못했음을 알린다(삭제 실패, 회원번호 없음).
+    """연결 끊기 웹훅에서 내부 회원 번호를 확인하지 못한 실패를 알린다.
 
     카카오는 연결 해제 웹훅을 다시 보내지 않고 Render 로그는 7일만 남으므로, 이 알림이 없으면
-    회원 정보가 모르는 사이 계속 남는다. 무엇이 실패했는지와 어느 회원인지는 Render 로그로만
-    확인한다. Slack 전송 항목에 회원번호를 더하면 개인정보처리방침 7·8번을 함께 고쳐야 한다.
+    회원 정보가 모르는 사이 계속 남는다. 회원 번호를 확인한 뒤의 R2 정리 실패는 개인정보처리방침
+    7·8번에 고지한 notify_account_deletion_failure()로 별도 알린다.
     """
     return post(
         settings.inquiry_webhook_url,
         {"text": UNLINK_FAILURE_MESSAGE},
         failure_log="연결 끊기 웹훅 처리 실패 알림 전송 실패",
+    )
+
+
+def notify_account_deletion_failure(user_id: int, *, source: str, stage: str) -> bool:
+    """회원 탈퇴 실패 단계와 수동 복구에 필요한 내부 식별자를 알린다."""
+    prefixes = ", ".join(storage.user_prefixes(user_id))
+    message = (
+        "[어디까지왔니] 회원 탈퇴 처리 실패\n"
+        f"처리 경로: {source}\n"
+        f"실패 단계: {stage}\n"
+        f"내부 user_id: {user_id}\n"
+        f"R2 정리 대상: {prefixes}"
+    )
+    return post(
+        settings.inquiry_webhook_url,
+        {"text": message},
+        failure_log=f"회원 탈퇴 처리 실패 알림 전송 실패: user_id={user_id} stage={stage}",
     )
 
 

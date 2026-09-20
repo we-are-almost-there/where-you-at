@@ -1,7 +1,7 @@
 """services/slack_notify.py의 연결 끊기 웹훅 알림 테스트 (실제 네트워크 요청 없음).
 
 전송 자체(주소 검증, 타임아웃, 비밀 노출 없음)는 tests/test_inquiry_notify.py가 같은 경로로 확인한다.
-여기서는 알림 내용에 개인정보가 들어가지 않는지와 설정한 주소로 나가는지만 본다.
+여기서는 일반 웹훅 실패 알림과 R2 수동 복구에 필요한 내부 회원 번호·prefix가 설정한 주소로 나가는지 본다.
 
 실행 (backend/ 에서):
     python -m unittest tests.test_slack_notify
@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from app.core.config import settings
-from app.services.slack_notify import notify_unlink_failure
+from app.services.slack_notify import notify_account_deletion_failure, notify_unlink_failure
 
 SLACK = "https://hooks.slack.com/services/T000/B000/secret-token"
 
@@ -42,6 +42,19 @@ class TestNotifyUnlinkFailure(unittest.TestCase):
             self.assertFalse(notify_unlink_failure())
 
         urlopen.assert_not_called()
+
+    def test_cleanup_failure_includes_internal_id_and_r2_prefixes(self, urlopen: MagicMock):
+        urlopen.return_value.__enter__.return_value.read.return_value = b"ok"
+
+        self.assertTrue(notify_account_deletion_failure(7, source="수동 탈퇴", stage="DB 회원 삭제"))
+
+        request = urlopen.call_args.args[0]
+        message = json.loads(request.data.decode("utf-8"))["text"]
+        self.assertIn("처리 경로: 수동 탈퇴", message)
+        self.assertIn("실패 단계: DB 회원 삭제", message)
+        self.assertIn("내부 user_id: 7", message)
+        for prefix in ("uploads/7/", "avatars/7/", "record-cards/7/"):
+            self.assertIn(prefix, message)
 
 
 if __name__ == "__main__":

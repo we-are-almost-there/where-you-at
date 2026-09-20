@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
+from app.services import storage
 
 ADMIN_KEY = "admin-key"
 HEADERS = {"Authorization": f"KakaoAK {ADMIN_KEY}"}
@@ -42,6 +43,15 @@ class TestKakaoUnlinkWebhook(unittest.TestCase):
         notify_patcher = patch("app.services.slack_notify.notify_unlink_failure")
         self.notify = notify_patcher.start()
         self.addCleanup(notify_patcher.stop)
+        cleanup_notify_patcher = patch("app.services.slack_notify.notify_account_deletion_failure")
+        self.notify_cleanup = cleanup_notify_patcher.start()
+        self.addCleanup(cleanup_notify_patcher.stop)
+        configured_patcher = patch("app.services.storage.is_configured", return_value=True)
+        configured_patcher.start()
+        self.addCleanup(configured_patcher.stop)
+        cleanup_patcher = patch("app.services.storage.delete_user_objects")
+        self.cleanup = cleanup_patcher.start()
+        self.addCleanup(cleanup_patcher.stop)
 
     def _post(self, params=PARAMS, headers=HEADERS):
         return self.client.post("/api/auth/kakao/unlink", data=params, headers=headers)
@@ -66,6 +76,7 @@ class TestKakaoUnlinkWebhook(unittest.TestCase):
                 self.assertEqual(mock_find.call_args.args[1], 4321)
                 # 탈퇴 API와 같은 삭제 함수를 회원 id로 부른다.
                 self.assertEqual(mock_delete.call_args.args[1], USER_ID)
+                self.cleanup.assert_called_with(USER_ID)
 
     def test_query_and_body_are_merged(self, mock_find, mock_delete):
         # 콘솔에 쿼리가 붙은 주소를 등록하는 실수가 있어도 바디를 버리지 않아야 한다.
@@ -156,7 +167,24 @@ class TestKakaoUnlinkWebhook(unittest.TestCase):
             mock_delete.side_effect = RuntimeError("boom")
 
             self.assertEqual(self._post().status_code, 200)
-            self.assertEqual(self.notify.call_count, 3)
+            self.notify_cleanup.assert_called_once_with(
+                USER_ID,
+                source="카카오 연결 끊기 웹훅",
+                stage="DB 회원 삭제",
+            )
+
+    def test_r2_failure_keeps_user_and_notifies_cleanup_target(self, mock_find, mock_delete):
+        self.cleanup.side_effect = storage.StorageError("boom")
+
+        res = self._post()
+
+        self.assertEqual(res.status_code, 200)
+        mock_delete.assert_not_called()
+        self.notify_cleanup.assert_called_once_with(
+            USER_ID,
+            source="카카오 연결 끊기 웹훅",
+            stage="R2 객체 정리",
+        )
 
     def test_slack_is_not_notified_when_nothing_failed(self, mock_find, mock_delete):
         cases = {"삭제 성공": USER_ID, "회원 없음": None}
@@ -166,13 +194,19 @@ class TestKakaoUnlinkWebhook(unittest.TestCase):
 
                 self.assertEqual(self._post().status_code, 200)
         self.notify.assert_not_called()
+        self.notify_cleanup.assert_not_called()
 
     def test_slack_failure_does_not_change_response(self, mock_find, mock_delete):
         # 알림 전송은 실패해도 False만 돌려준다(slack_notify.post). 알림이 막혀도 [ERROR] 로그는 남는다.
-        mock_delete.side_effect = RuntimeError("boom")
-        self.notify.return_value = False
+        self.cleanup.side_effect = storage.StorageError("boom")
+        self.notify_cleanup.return_value = False
 
-        self.assertEqual(self._post().status_code, 200)
+        with patch("builtins.print") as print_mock:
+            self.assertEqual(self._post().status_code, 200)
+
+        log = " ".join(str(call.args[0]) for call in print_mock.call_args_list)
+        self.assertIn("user_id=7", log)
+        self.assertIn("avatars/7/", log)
 
 
 if __name__ == "__main__":

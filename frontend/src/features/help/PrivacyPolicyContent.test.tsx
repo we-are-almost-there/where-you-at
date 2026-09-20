@@ -53,11 +53,14 @@ describe("PrivacyPolicyContent", () => {
 
     const outsourcing = screen.getByRole("region", { name: /개인정보 처리업무의 위탁/ });
     expect(outsourcing.textContent).toContain("Slack Technologies Limited");
-    expect(outsourcing.textContent).toContain("새 1:1 문의 접수 알림 전송 및 보관");
+    expect(outsourcing.textContent).toContain("새 1:1 문의 접수 및 회원 탈퇴 처리 실패 알림 전송·보관");
 
     const overseas = screen.getByRole("region", { name: /개인정보의 국외 수집 및 이전/ });
+    expect(overseas.textContent).toContain("탈퇴 처리에 실패한 회원의 내부 회원 번호, 실패 단계");
+    expect(overseas.textContent).toContain("회원 탈퇴 처리에 실패할 때 Incoming Webhook을 통해 전송");
     expect(overseas.textContent).toContain("아일랜드 (처리 주체), 미국 (기본 데이터 저장 위치)");
-    expect(overseas.textContent).toContain("이메일, 문의 유형, 문의 내용, 알림 전송 일시");
+    expect(overseas.textContent).toContain("1:1 문의의 이메일·문의 유형·문의 내용");
+    expect(overseas.textContent).toContain("알림 전송 일시");
     expect(overseas.textContent).toContain("전송 후 90일");
   });
 
@@ -79,14 +82,16 @@ describe("PrivacyPolicyContent", () => {
 
     const items = screen.getByRole("region", { name: /처리하는 개인정보의 항목/ });
     expect(items.textContent).toContain("카카오 회원번호, 닉네임");
-    expect(items.textContent).toContain("한 줄 소개 (이용자가 마이페이지에서 직접 적은 경우에만)");
+    expect(items.textContent).toContain("한 줄 소개, 프로필 사진과 저장 객체 키");
     expect(items.textContent).toContain("로그인 세션 번호, 회원 번호, 만료 시각");
     expect(items.textContent).toContain("제15조제1항제4호(계약의 체결·이행)");
     expect(items.textContent).not.toContain("회원가입 없이");
 
     const retention = screen.getByRole("region", { name: /개인정보의 처리 및 보유 기간/ });
-    expect(retention.textContent).toContain("회원 정보 (카카오 회원번호, 닉네임, 한 줄 소개)");
+    expect(retention.textContent).toContain("회원 정보 (카카오 회원번호, 닉네임, 한 줄 소개, 프로필 사진과 저장 객체 키)");
     expect(retention.textContent).toContain("회원 탈퇴 시까지(카카오에서 서비스와의 연결을 끊은 경우 포함)");
+    expect(retention.textContent).toContain("프로필 사진은 삭제하거나 새 사진으로 바꾸면 기존 파일과 저장 객체 키를 바로 삭제");
+    expect(retention.textContent).not.toContain("임시 업로드 파일");
     expect(retention.textContent).toContain("로그인 세션 (로그인 세션 번호, 회원 번호, 만료 시각)");
     expect(retention.textContent).toContain("7일이 지나 만료된 세션은 같은 회원이 다음에 로그인할 때 삭제");
 
@@ -104,6 +109,25 @@ describe("PrivacyPolicyContent", () => {
     expect(autoCollect.textContent).toContain("회원 번호, 로그인 세션 번호와 발급·만료 시각");
   });
 
+  it("Cloudflare R2의 프로필 사진 위탁·국외 이전과 직접 삭제 방법을 안내한다", () => {
+    render(<PrivacyPolicyContent />);
+
+    const outsourcing = screen.getByRole("region", { name: /개인정보 처리업무의 위탁/ });
+    expect(outsourcing.textContent).toContain("Cloudflare, Inc.");
+    expect(outsourcing.textContent).toContain("프로필 사진을 비공개 객체 저장소(R2)에 저장·전송하고 삭제");
+
+    const overseas = screen.getByRole("region", { name: /개인정보의 국외 수집 및 이전/ });
+    expect(overseas.textContent).toContain("아시아·태평양(APAC) (객체 저장 위치)");
+    expect(overseas.textContent).toContain("회원이 직접 올린 프로필 사진과 저장 객체 키");
+    expect(overseas.textContent).toContain("프로필 사진 삭제·교체 또는 회원 탈퇴 시까지");
+
+    const security = screen.getByRole("region", { name: /개인정보의 안전성 확보조치/ });
+    expect(security.textContent).toContain("프로필 사진 비공개 저장과 만료되는 조회 주소 사용");
+
+    const rights = screen.getByRole("region", { name: /정보주체의 권리·의무 및 행사방법/ });
+    expect(rights.textContent).toContain("프로필 사진을 직접 바꾸거나 삭제");
+  });
+
   it("이전 방침을 적용 기간과 함께 새 탭 링크로 연결한다", () => {
     render(<PrivacyPolicyContent />);
 
@@ -111,6 +135,6 @@ describe("PrivacyPolicyContent", () => {
     const link = changes.querySelector("a");
     expect(link?.getAttribute("href")).toBe("/privacy/2026-09-17");
     expect(link?.getAttribute("target")).toBe("_blank");
-    expect(link?.textContent).toContain("2026년 9월 17일 ~ 2026년 9월 19일 적용");
+    expect(link?.textContent).toContain("2026년 9월 17일 ~ 2026년 9월 20일 적용");
   });
 });

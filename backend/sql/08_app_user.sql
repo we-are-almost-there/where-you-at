@@ -21,12 +21,15 @@ create table if not exists public.app_user (
   kakao_id          bigint not null unique,
   nickname          varchar(50),
   bio               varchar(40),
+  avatar_key        varchar(200),
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
 );
 
 -- 한 줄 소개(2026-09 추가). 이 칸이 생기기 전에 이 파일을 실행한 DB용.
 alter table public.app_user add column if not exists bio varchar(40);
+-- 비공개 R2 avatars/ 객체 키(2026-09 추가). URL은 만료되므로 키만 저장한다.
+alter table public.app_user add column if not exists avatar_key varchar(200);
 
 drop trigger if exists trg_app_user_updated_at on public.app_user;
 create trigger trg_app_user_updated_at
@@ -42,7 +45,7 @@ alter table public.app_user enable row level security;
 -- 테이블과 RLS: relrowsecurity가 true여야 한다.
 -- select relname, relrowsecurity from pg_class where relname = 'app_user';
 --
--- 칸: id, kakao_id, nickname, bio, created_at, updated_at 여섯 행이 나와야 한다. bio는 character varying 40.
+-- 칸: id, kakao_id, nickname, bio, avatar_key, created_at, updated_at 일곱 행이 나와야 한다.
 --     add column으로 채운 DB는 bio가 맨 끝에 온다. 순서는 달라도 된다.
 -- select column_name, data_type, character_maximum_length
 --   from information_schema.columns where table_name = 'app_user' order by ordinal_position;
