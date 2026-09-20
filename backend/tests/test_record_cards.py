@@ -57,6 +57,9 @@ class CreateCardTest(unittest.TestCase):
             self.addCleanup(p.stop)
         record_cards_router.upload_url_limiter.reset()
         record_cards_router.create_card_limiter.reset()
+        f = patch("app.deps.settings.record_features_enabled", True)
+        f.start()
+        self.addCleanup(f.stop)
         self.addCleanup(app.dependency_overrides.clear)
 
     def post(self, upload_key="uploads/7/a.png"):
@@ -188,6 +191,9 @@ class ListCardsTest(unittest.TestCase):
         ):
             p.start()
             self.addCleanup(p.stop)
+        f = patch("app.deps.settings.record_features_enabled", True)
+        f.start()
+        self.addCleanup(f.stop)
         self.addCleanup(app.dependency_overrides.clear)
 
     def test_returns_one_page_and_presigns_only_that_page(self):

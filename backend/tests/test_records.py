@@ -52,6 +52,9 @@ class RecordsRouterTest(unittest.TestCase):
         p = patch("app.api.routers.records.db_connection", fake_db)
         p.start()
         self.addCleanup(p.stop)
+        f = patch("app.deps.settings.record_features_enabled", True)
+        f.start()
+        self.addCleanup(f.stop)
         self.addCleanup(app.dependency_overrides.clear)
 
     def test_create_returns_201_with_record(self):
@@ -121,9 +124,21 @@ class AuthRequiredTest(unittest.TestCase):
         app.dependency_overrides.clear()
         client = TestClient(app)
         # 로그인 설정이 없는 환경(CI)에서도 "토큰 없음 → 401" 경로를 타게 한다.
-        with patch("app.deps.auth_token.is_configured", return_value=True):
+        with patch("app.deps.auth_token.is_configured", return_value=True), patch(
+            "app.deps.settings.record_features_enabled", True
+        ):
             self.assertEqual(client.get("/api/records").status_code, 401)
             self.assertEqual(client.post("/api/records", json=BODY).status_code, 401)
+
+
+class FeatureDisabledTest(unittest.TestCase):
+    def test_disabled_returns_503_for_both_apis(self):
+        app.dependency_overrides[get_current_user] = lambda: USER
+        self.addCleanup(app.dependency_overrides.clear)
+        client = TestClient(app)
+        with patch("app.deps.settings.record_features_enabled", False):
+            self.assertEqual(client.get("/api/records").status_code, 503)
+            self.assertEqual(client.get("/api/record-cards").status_code, 503)
 
 
 if __name__ == "__main__":

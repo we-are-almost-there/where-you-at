@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...crud import record as crud
-from ...deps import CurrentUser, db_connection, get_current_user
+from ...deps import CurrentUser, db_connection, get_current_user, require_record_features
 from ...schemas.record import (
     RecordCardCreate,
     RecordCardListResponse,
@@ -13,7 +13,7 @@ from ...schemas.record import (
 from ...services import storage
 from ...services.rate_limit import SlidingWindowLimiter
 
-router = APIRouter(prefix="/api/record-cards", tags=["record-cards"])
+router = APIRouter(prefix="/api/record-cards", tags=["record-cards"], dependencies=[Depends(require_record_features)])
 
 # 카드 이미지는 Canvas PNG라 보통 수백 KB다. 넉넉히 5MB까지만 받는다.
 MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024

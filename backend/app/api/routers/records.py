@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...crud import record as crud
-from ...deps import CurrentUser, db_connection, get_current_user
+from ...deps import CurrentUser, db_connection, get_current_user, require_record_features
 from ...schemas.record import RunRecordCreate, RunRecordListResponse, RunRecordOut
 
-router = APIRouter(prefix="/api/records", tags=["records"])
+router = APIRouter(prefix="/api/records", tags=["records"], dependencies=[Depends(require_record_features)])
 
 
 @router.post("", response_model=RunRecordOut, status_code=201)
