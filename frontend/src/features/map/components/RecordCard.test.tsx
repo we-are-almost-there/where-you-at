@@ -124,6 +124,65 @@ it("편집·저장·재편집에 맞춰 페이지 이동 보호 상태를 전달
   expect(onProtectionChange).toHaveBeenLastCalledWith(true);
 });
 
+it("콜백만 교체해도 준비된 이미지와 저장 완료 상태를 유지한다", async () => {
+  const record = { distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 };
+  const routePoints: [] = [];
+  const onClose = vi.fn();
+  const first = vi.fn();
+  const second = vi.fn();
+  const third = vi.fn();
+  const card = (callback: (protectedEdits: boolean) => void) => (
+    <RecordCard record={record} routeType="도보" routePoints={routePoints}
+      onClose={onClose} onProtectionChange={callback} />
+  );
+  const view = render(card(first));
+  editFont();
+  await screen.findByRole("button", { name: "이미지 저장" }, { timeout: IMAGE_PREPARATION_TIMEOUT });
+  const drawCount = vi.mocked(draw).mock.calls.length;
+  first.mockClear();
+  view.rerender(card(second));
+  expect(first).not.toHaveBeenCalled();
+  expect(second).toHaveBeenLastCalledWith(true);
+  expect(vi.mocked(draw).mock.calls.length).toBe(drawCount);
+  share.mockResolvedValue(undefined);
+  await save();
+  expect(share).toHaveBeenCalledOnce();
+  expect(second).toHaveBeenLastCalledWith(false);
+  view.rerender(card(third));
+  expect(third).toHaveBeenLastCalledWith(false);
+  expect(unloadAllowed()).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: /^닫기$/ }));
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  second.mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "Pretendard" }));
+  expect(third).toHaveBeenLastCalledWith(true);
+  expect(second).not.toHaveBeenCalled();
+  view.unmount();
+  expect(third).toHaveBeenLastCalledWith(false);
+});
+
+it("공유 중 콜백이 교체되면 새 콜백으로 저장 완료를 알린다", async () => {
+  const record = { distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 };
+  const routePoints: [] = [];
+  const first = vi.fn();
+  const second = vi.fn();
+  let complete!: () => void;
+  share.mockImplementation(() => new Promise<void>((resolve) => { complete = resolve; }));
+  const view = render(<RecordCard record={record} routePoints={routePoints} routeType="도보"
+    onClose={() => {}} onProtectionChange={first} />);
+  editFont();
+  await save();
+  first.mockClear();
+  view.rerender(<RecordCard record={record} routePoints={routePoints} routeType="도보"
+    onClose={() => {}} onProtectionChange={second} />);
+  expect(second).toHaveBeenLastCalledWith(true);
+  await act(async () => { complete(); });
+  expect(first).not.toHaveBeenCalled();
+  expect(second).toHaveBeenLastCalledWith(false);
+  expect(unloadAllowed()).toBe(true);
+});
+
 it("페이지 이동 확인은 나가기 문구를 표시하고 카드 닫기 대신 이동 처리를 호출한다", () => {
   const onClose = vi.fn();
   const onConfirmNavigation = vi.fn();

@@ -172,6 +172,12 @@ export function RecordCard({
   const editVersionRef = useRef(0);
   const savedVersionRef = useRef<number | null>(null);
   const hasEditedRef = useRef(false);
+  const protectionCallbackRef = useRef(onProtectionChange);
+  // 콜백 교체는 편집이 아니다. 최신 수신자에게 현재 상태만 전달한다.
+  useLayoutEffect(() => {
+    protectionCallbackRef.current = onProtectionChange;
+    onProtectionChange?.(hasEditedRef.current && savedVersionRef.current !== editVersionRef.current);
+  }, [onProtectionChange]);
   const previousEditRef = useRef(editSnapshot);
   const [closeConfirmationOpen, setCloseConfirmationOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -195,7 +201,7 @@ export function RecordCard({
     }
     previousEditRef.current = editSnapshot;
     editVersionRef.current += 1;
-    onProtectionChange?.(hasEditedRef.current && savedVersionRef.current !== editVersionRef.current);
+    protectionCallbackRef.current?.(hasEditedRef.current && savedVersionRef.current !== editVersionRef.current);
     currentSnapshotRef.current = editSnapshot;
     // 글꼴 로딩이나 그리기를 기다리지 않고 편집 즉시 이전 이미지를 무효화한다.
     blobRef.current = null;
@@ -203,9 +209,9 @@ export function RecordCard({
     renderedVersionRef.current = null;
     if (blobTimerRef.current) clearTimeout(blobTimerRef.current);
   }, [editSnapshot, image, template, textColor, fontChoice, textScale, showRoute, routeScale,
-    canvasH, transform, routeOffset, statsOffset, onProtectionChange]);
+    canvasH, transform, routeOffset, statsOffset]);
 
-  useEffect(() => () => onProtectionChange?.(false), [onProtectionChange]);
+  useEffect(() => () => protectionCallbackRef.current?.(false), []);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -485,7 +491,7 @@ export function RecordCard({
       try {
         await navigator.share({ files: [file] });
         savedVersionRef.current = savingVersion;
-        onProtectionChange?.(hasEditedRef.current && savingVersion !== editVersionRef.current);
+        protectionCallbackRef.current?.(hasEditedRef.current && savingVersion !== editVersionRef.current);
         return;
       } catch (e) {
         // 사용자가 공유 시트를 닫은 것뿐이면 조용히 끝낸다.
@@ -505,13 +511,13 @@ export function RecordCard({
       link.remove();
       // 다운로드의 실제 완료는 알 수 없으므로 브라우저에 전달한 시점을 기준으로 한다.
       savedVersionRef.current = savingVersion;
-      onProtectionChange?.(hasEditedRef.current && savingVersion !== editVersionRef.current);
+      protectionCallbackRef.current?.(hasEditedRef.current && savingVersion !== editVersionRef.current);
       // 클릭 직후 동기적으로 해제하면 다운로드가 시작되기 전에 URL이 죽을 수 있다.
       setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
     } catch {
       setErrorMessage("이미지를 저장하지 못했어요. 화면을 캡처해 주세요.");
     }
-  }, [onProtectionChange]);
+  }, []);
 
   // 열리면 포커스를 카드 안으로 들인다. 뒤쪽은 CourseDetail이 inert로 잠그므로 여기서 시작하지 않으면
   // 키보드로는 카드에 닿을 수 없다. 컨테이너를 잡아 aria-label("기록 카드")이 먼저 읽히게 한다.
