@@ -90,6 +90,8 @@ npm run dev --prefix frontend
                           (SQL Editor, 다시 실행해도 된다. 회원 칸이 늘면 다시 실행)
 09_auth_session.sql       로그인 세션 테이블 (08 적용 뒤 운영 DB에 적용)
 10_saved_course.sql       찜한 코스 테이블 (09 적용 뒤 운영 DB에 적용, 새 DB는 01_schema.sql에 포함)
+11_run_record.sql         완주 기록 테이블 (10 적용 뒤 운영 DB에 적용, 새 DB는 01_schema.sql에 포함)
+12_record_card.sql        기록 카드 테이블 (11 적용 뒤 운영 DB에 적용, 새 DB는 01_schema.sql에 포함)
 ```
 
 `09_auth_session.sql`은 백엔드를 배포하기 전에 적용합니다. 순서가 바뀌면 로그인할 때
@@ -104,6 +106,23 @@ JPG·PNG·WEBP 파일 시그니처를 확인한 뒤 R2에 저장합니다.
 또한 프로필 사진 수집·R2 보관 내용을 반영한 개인정보처리방침과 이용약관을 기능보다 먼저 공개하고,
 `backend` 폴더에서 `python -m scripts.seed_help`를 실행해 변경 안내 공지를 갱신합니다. 운영 R2 버킷 위치는
 아시아·태평양(APAC) 기준으로 방침에 적혀 있으므로 버킷 위치나 관할을 바꾸면 국외 이전 안내도 함께 고칩니다.
+
+### 완주 기록·기록 카드 배포 순서
+
+완주 기록·기록 카드 API는 `RECORD_FEATURES_ENABLED`로 배포와 기능 공개 시점을 분리합니다.
+백엔드를 먼저 배포하더라도 아래 준비가 끝나기 전에는 Render에서 `false`로 유지합니다.
+
+1. Supabase 운영 DB에 `11_run_record.sql`, `12_record_card.sql`을 순서대로 적용합니다.
+2. Render에 `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`이 설정되어 있는지 확인합니다.
+3. 회원 탈퇴 시 `uploads/{user_id}/`, `avatars/{user_id}/`, `record-cards/{user_id}/` 정리와 두 탈퇴 경로
+   (`DELETE /api/me`, 카카오 연결 해제 웹훅)가 정상 동작하는지 확인합니다.
+4. 완주 기록·기록 카드의 수집 항목, 보유 기간, R2 위탁·국외 이전 내용을 반영한 개인정보처리방침과 이용약관을 먼저 배포하고,
+   `backend`에서 `python -m scripts.seed_help`를 실행해 변경 공지를 갱신합니다.
+5. 마이페이지의 완주 기록·기록 카드 저장 프론트 연동까지 배포합니다.
+6. 위 조건을 모두 확인한 뒤 Render의 `RECORD_FEATURES_ENABLED=true`로 변경하고 재배포합니다.
+
+준비가 끝나기 전에는 `RECORD_FEATURES_ENABLED=false`를 유지합니다. 이 상태에서는
+`/api/records`, `/api/record-cards`가 `503`을 반환하므로 아직 공개하지 않은 저장 기능이 먼저 열리지 않습니다.
 
 외부 API에서 데이터를 받아오는 스크립트는 `backend/scripts/`에 있습니다.
 `backend` 폴더에서 모듈로 실행해야 합니다. 파일 경로로 직접 실행하면
@@ -231,7 +250,7 @@ Slack 알림과 별개로 확인 당번은 **매주 월요일·목요일** 아�
 - 회원번호를 확인하기 전 실패는 운영팀 채널로 `[어디까지왔니] 연결 끊기 웹훅 처리 실패, Render 로그 확인 필요`
   알림을 보냅니다. 회원번호 확인 뒤 R2 정리나 DB 회원 삭제가 실패하면 실패 단계, 내부 `user_id`와 세 R2 prefix를
   같은 채널에 보냅니다.
-  
+
 - Render 로그. 어느 쪽인지에 따라 다릅니다.
   - `[ERROR] 연결 끊기 웹훅 회원 삭제 실패(직접 삭제 필요): kakao_id=... user_id=... prefixes=...` — 아래 절차로
     R2 객체를 먼저 정리한 뒤 `app_user` 행을 삭제합니다.
