@@ -1,12 +1,14 @@
 import hmac
 import json
+from datetime import datetime, timezone
 from urllib.parse import parse_qsl
+from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
 from ...core.config import settings
 from ...crud import user as user_crud
-from ...deps import db_connection
+from ...deps import CurrentUser, db_connection, get_current_user
 from ...schemas.user import KakaoLoginRequest, LoginResponse, UserOut
 from ...services import auth_token, kakao_oauth, slack_notify
 from ...services.rate_limit import SlidingWindowLimiter, client_key
@@ -54,9 +56,27 @@ def login_with_kakao(body: KakaoLoginRequest, request: Request):
         raise HTTPException(status_code=502, detail="카카오 로그인을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")
 
     # 카카오 확인이 끝난 요청만 DB에 연결한다(inquiries.py와 같은 이유).
+    now = datetime.now(timezone.utc)
+    session_id = uuid4()
     with db_connection() as conn:
         user = user_crud.upsert_kakao_user(conn, kakao_id=kakao_user.kakao_id, nickname=kakao_user.nickname)
-    return LoginResponse(access_token=auth_token.create_access_token(user["id"]), user=UserOut(**user))
+        user_crud.create_session(
+            conn,
+            user_id=user["id"],
+            session_id=session_id,
+            expires_at=now + auth_token.ACCESS_TOKEN_TTL,
+        )
+    return LoginResponse(
+        access_token=auth_token.create_access_token(user["id"], session_id, now=now),
+        user=UserOut(**user),
+    )
+
+
+@router.post("/logout", status_code=204)
+def logout(current_user: CurrentUser = Depends(get_current_user)):
+    """현재 요청에 사용한 로그인 세션만 삭제한다."""
+    with db_connection() as conn:
+        user_crud.delete_session(conn, user_id=current_user.id, session_id=current_user.session_id)
 
 
 # 카카오 콘솔에 등록하는 주소라 공개 문서(/docs)에는 싣지 않는다.

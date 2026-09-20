@@ -1,33 +1,113 @@
 // @vitest-environment jsdom
+//
+// 헤더 오른쪽이 로그인 상태에 따라 로그인 버튼과 마이페이지 링크로 바뀌는지 본다.
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { useAuth, useKakaoLogin, type AuthState } from "../../features/auth";
 import AppHeader from "./AppHeader";
 import { MAIN_CONTENT_ID } from "./mainContent";
 
+vi.mock("../../features/auth", () => ({ useAuth: vi.fn(), useKakaoLogin: vi.fn() }));
+// 사이드바는 이 테스트의 대상이 아니다.
+vi.mock("./SidebarDrawer", () => ({ default: () => null }));
+
+const mockedUseAuth = vi.mocked(useAuth);
+const mockedUseKakaoLogin = vi.mocked(useKakaoLogin);
+const login = vi.fn();
+
+function renderHeader(auth: AuthState, path = "/") {
+  mockedUseAuth.mockReturnValue(auth);
+  mockedUseKakaoLogin.mockReturnValue({ login, dialog: null });
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <AppHeader />
+    </MemoryRouter>,
+  );
+}
+
 beforeAll(() => {
-  // 헤더가 스크롤바 폭 보정에 쓰는 API. jsdom에는 없다.
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    disconnect() {}
-    unobserve() {}
-  };
+  // jsdom에는 ResizeObserver가 없다. 스크롤바 보정은 이 테스트의 대상이 아니다.
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 function LocationProbe() {
   const { pathname, hash } = useLocation();
   return <output data-testid="location">{pathname + hash}</output>;
 }
 
-describe("AppHeader 주요 메뉴", () => {
-  it("지금 보는 페이지의 메뉴에만 aria-current=page를 둔다", () => {
+describe("AppHeader", () => {
+  it("로고를 이름이 있는 홈 링크로 그리고, 메뉴에 홈은 없다", () => {
+    renderHeader({ status: "signedOut", user: null });
+
+    const homeLink = screen.getByRole("link", { name: "어디까지왔니" });
+    expect(homeLink.getAttribute("href")).toBe("/");
+    expect(homeLink.getAttribute("aria-current")).toBe("page");
+    expect(screen.queryByRole("link", { name: "홈" })).toBeNull();
+  });
+
+  it("로그아웃 상태면 로그인 버튼이 지금 보던 경로로 돌아오게 로그인을 시작한다", () => {
+    renderHeader({ status: "signedOut", user: null }, "/courses?region=11");
+
+    fireEvent.click(screen.getByRole("button", { name: "로그인" }));
+
+    expect(login).toHaveBeenCalledWith("/courses?region=11");
+    expect(screen.queryByRole("link", { name: /마이페이지/ })).toBeNull();
+  });
+
+  it("로그인 훅이 만든 만 14세 확인 대화상자를 그린다", () => {
+    mockedUseAuth.mockReturnValue({ status: "signedOut", user: null });
+    mockedUseKakaoLogin.mockReturnValue({
+      login,
+      dialog: <div role="dialog" aria-label="만 14세 이상 확인" />,
+    });
+
     render(
-      <MemoryRouter initialEntries={["/races"]}>
+      <MemoryRouter>
         <AppHeader />
       </MemoryRouter>,
     );
+
+    expect(screen.getByRole("dialog", { name: "만 14세 이상 확인" })).toBeTruthy();
+  });
+
+  it("로그인 상태를 확인하는 동안에는 로그인 버튼을 숨긴다", () => {
+    renderHeader({ status: "loading", user: null });
+
+    expect(screen.queryByRole("button", { name: "로그인" })).toBeNull();
+    expect(screen.queryByRole("link", { name: /마이페이지/ })).toBeNull();
+  });
+
+  it("로그인 상태면 로그인 버튼 대신 닉네임과 마이페이지 링크를 보여준다", () => {
+    renderHeader({ status: "signedIn", user: { id: 1, nickname: "달리는채은" } });
+
+    const link = screen.getByRole("link", { name: /마이페이지/ });
+    expect(link.getAttribute("href")).toBe("/mypage");
+    expect(link.textContent).toContain("달리는채은");
+    expect(screen.queryByRole("button", { name: "로그인" })).toBeNull();
+  });
+
+  it("닉네임이 없으면 대신 '회원'을 보여준다", () => {
+    renderHeader({ status: "signedIn", user: { id: 1, nickname: null } });
+
+    expect(screen.getByRole("link", { name: /마이페이지/ }).textContent).toContain("회원");
+  });
+});
+
+describe("AppHeader 주요 메뉴", () => {
+  it("지금 보는 페이지의 메뉴에만 aria-current=page를 둔다", () => {
+    renderHeader({ status: "signedOut", user: null }, "/races");
 
     const nav = screen.getByRole("navigation", { name: "주요 메뉴" });
     const current = [...nav.querySelectorAll("[aria-current]")];
@@ -42,24 +122,15 @@ describe("AppHeader 하위 경로의 현재 메뉴", () => {
     ["/courses/1", "코스 탐색"],
     ["/courses/1/", "코스 탐색"],
     ["/courses", "코스 탐색"],
-    ["/", "홈"],
   ])("%s에서는 %s만 현재 페이지다", (path, label) => {
-    render(
-      <MemoryRouter initialEntries={[path]}>
-        <AppHeader />
-      </MemoryRouter>,
-    );
+    renderHeader({ status: "signedOut", user: null }, path);
 
     const nav = screen.getByRole("navigation", { name: "주요 메뉴" });
     expect([...nav.querySelectorAll('[aria-current="page"]')].map((link) => link.textContent)).toEqual([label]);
   });
 
   it("비슷하게 시작하는 다른 경로는 현재 메뉴로 보지 않는다", () => {
-    render(
-      <MemoryRouter initialEntries={["/courses-archive"]}>
-        <AppHeader />
-      </MemoryRouter>,
-    );
+    renderHeader({ status: "signedOut", user: null }, "/courses-archive");
 
     const nav = screen.getByRole("navigation", { name: "주요 메뉴" });
     expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(0);
@@ -68,16 +139,13 @@ describe("AppHeader 하위 경로의 현재 메뉴", () => {
 
 describe("AppHeader 본문 바로가기", () => {
   it("헤더에서 가장 먼저 나오는 링크다", () => {
-    render(
-      <MemoryRouter>
-        <AppHeader />
-      </MemoryRouter>,
-    );
+    renderHeader({ status: "signedOut", user: null });
 
     expect(screen.getAllByRole("link")[0].textContent).toBe("본문 바로가기");
   });
 
   it("누르면 주소를 바꾸지 않고 본문으로 초점을 옮긴다", () => {
+    mockedUseAuth.mockReturnValue({ status: "signedOut", user: null });
     render(
       <MemoryRouter initialEntries={["/courses"]}>
         <AppHeader />

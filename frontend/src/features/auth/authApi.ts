@@ -10,6 +10,14 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 export interface User {
   id: number;
   nickname: string | null;
+  /** 한 줄 소개(40자). 적지 않았으면 null. 서버에 칸이 생기기 전 응답에는 없을 수 있다. */
+  bio?: string | null;
+}
+
+/** 프로필 수정 요청. 보낸 칸만 바뀐다. bio를 빈 문자열로 보내면 지운다. */
+export interface ProfileChanges {
+  nickname?: string;
+  bio?: string;
 }
 
 export interface LoginResponse {
@@ -33,6 +41,25 @@ export async function fetchMe(): Promise<User> {
   const res = await fetchOrNetworkError(`${API_BASE}/api/me`, { headers: authHeaders() });
   if (!res.ok) throw new HttpError(res.status, `회원 정보 조회 실패 (${res.status})`);
   return res.json();
+}
+
+/** 닉네임·한 줄 소개를 바꾼다. 서버가 앞뒤 공백을 지운 값을 돌려주므로 화면은 응답 값을 쓴다. */
+export async function updateMe(body: ProfileChanges): Promise<User> {
+  const res = await fetchOrNetworkError(`${API_BASE}/api/me`, {
+    method: "PATCH",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new HttpError(res.status, `회원 정보 수정 실패 (${res.status})`);
+  return res.json();
+}
+
+export async function logout(): Promise<void> {
+  const res = await fetchOrNetworkError(`${API_BASE}/api/auth/logout`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new HttpError(res.status, `로그아웃 실패 (${res.status})`);
 }
 
 export async function deleteMe(): Promise<void> {

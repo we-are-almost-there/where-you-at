@@ -480,13 +480,14 @@ alter table inquiry      enable row level security;
 -- ============================================
 -- 카카오 로그인으로 가입한 회원. 인증은 Supabase Auth가 아니라 FastAPI가 직접 처리한다.
 --   DB를 옮겨도 회원 데이터와 인증이 그대로 따라가도록 우리 스키마의 일반 테이블로 둔다.
--- 이미 운영 중인 공용 DB에는 08_app_user.sql로 같은 내용을 적용한다. 바꾸면 두 곳을 함께 고친다.
+-- 이미 운영 중인 공용 DB에는 08_app_user.sql과 09_auth_session.sql로 같은 내용을 적용한다.
 
 
 -- 1. app_user (회원)
 -- 이름을 user로 하지 않는 이유: Postgres 예약어라 매번 따옴표로 감싸야 한다.
 -- kakao_id: 카카오 회원번호. 로그인할 때 이 값으로 회원을 찾고, 없으면 새로 만든다.
--- nickname: 로그인할 때마다 카카오 값으로 갱신한다.
+-- nickname: 처음 가입할 때 카카오 값으로 채우고, 이후에는 마이페이지에서 바꾼 값을 유지한다(로그인이 덮어쓰지 않는다).
+-- bio: 한 줄 소개(선택, 40자). 마이페이지에서 적는다. 비우면 null. 쪽지·리뷰에서 작성자 소개로 쓸 예정이다.
 -- 프로필 사진은 받지 않는다. 화면에 꼭 필요하지 않아 수집하는 개인정보를 줄였다.
 -- 보유 기간: 탈퇴할 때까지 (개인정보처리방침과 같아야 한다). 탈퇴하면 행을 삭제한다.
 -- 회원에 딸린 테이블(기록, 저장, 리뷰 등)은 app_user(id)를 on delete cascade로 참조해 탈퇴 시 함께 지운다.
@@ -494,6 +495,7 @@ create table app_user (
   id                bigint generated always as identity primary key,
   kakao_id          bigint not null unique,
   nickname          varchar(50),
+  bio               varchar(40),
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
 );
@@ -506,3 +508,18 @@ create trigger trg_app_user_updated_at
 -- 행 수준 보안(RLS)
 -- 이유와 주의사항은 지원금/환급 섹션 끝의 RLS 주석 참고. 새 테이블을 추가하면 여기에도 한 줄 추가한다.
 alter table app_user enable row level security;
+
+
+-- 2. auth_session (로그인 세션)
+-- JWT의 sid와 연결된다. 세션 행이 있어야 토큰이 유효하며, 로그아웃하면 현재 행만 삭제한다.
+-- 회원 탈퇴나 연결 끊기 웹훅으로 app_user가 삭제되면 해당 회원의 모든 세션도 함께 삭제된다.
+create table auth_session (
+  id                uuid primary key,
+  user_id           bigint not null references app_user(id) on delete cascade,
+  expires_at        timestamptz not null
+);
+
+-- app_user 삭제 시 FK 연쇄 삭제가 세션을 빠르게 찾도록 한다.
+create index idx_auth_session_user_id on auth_session(user_id);
+
+alter table auth_session enable row level security;

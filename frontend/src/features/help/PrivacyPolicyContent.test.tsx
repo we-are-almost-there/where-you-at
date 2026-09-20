@@ -73,4 +73,44 @@ describe("PrivacyPolicyContent", () => {
     expect(destruction.textContent).toContain("Slack 메시지를 직접 삭제");
     expect(destruction.textContent).toContain("90일 보존 설정에 따라 자동으로 삭제");
   });
+
+  it("회원 정보의 항목·법적 근거·보유 기간·파기를 안내한다", () => {
+    render(<PrivacyPolicyContent />);
+
+    const items = screen.getByRole("region", { name: /처리하는 개인정보의 항목/ });
+    expect(items.textContent).toContain("카카오 회원번호, 닉네임");
+    expect(items.textContent).toContain("한 줄 소개 (이용자가 마이페이지에서 직접 적은 경우에만)");
+    expect(items.textContent).toContain("로그인 세션 번호, 회원 번호, 만료 시각");
+    expect(items.textContent).toContain("제15조제1항제4호(계약의 체결·이행)");
+    expect(items.textContent).not.toContain("회원가입 없이");
+
+    const retention = screen.getByRole("region", { name: /개인정보의 처리 및 보유 기간/ });
+    expect(retention.textContent).toContain("회원 정보 (카카오 회원번호, 닉네임, 한 줄 소개)");
+    expect(retention.textContent).toContain("회원 탈퇴 시까지(카카오에서 서비스와의 연결을 끊은 경우 포함)");
+    expect(retention.textContent).toContain("로그인 세션 (로그인 세션 번호, 회원 번호, 만료 시각)");
+    expect(retention.textContent).toContain("7일이 지나 만료된 세션은 같은 회원이 다음에 로그인할 때 삭제");
+
+    const destruction = screen.getByRole("region", { name: /개인정보의 파기 절차 및 방법/ });
+    expect(destruction.textContent).toContain("카카오에 연결 해제를 요청한 뒤 데이터베이스의 회원");
+    // 카카오 쪽에서 연결을 끊어도 연결 해제 웹훅으로 지운다(#164).
+    expect(destruction.textContent).toContain("카카오로부터 알림을 받으면 회원 정보를 바로 삭제");
+    expect(destruction.textContent).toContain("로그아웃하면 현재 세션을 삭제");
+
+    const children = screen.getByRole("region", { name: /14세 미만 아동/ });
+    expect(children.textContent).toContain("회원 가입(카카오 로그인)은 만 14세 이상만");
+
+    const autoCollect = screen.getByRole("region", { name: /자동 수집 장치/ });
+    expect(autoCollect.textContent).toContain("로그인 토큰을 브라우저 저장소(localStorage)");
+    expect(autoCollect.textContent).toContain("회원 번호, 로그인 세션 번호와 발급·만료 시각");
+  });
+
+  it("이전 방침을 적용 기간과 함께 새 탭 링크로 연결한다", () => {
+    render(<PrivacyPolicyContent />);
+
+    const changes = screen.getByRole("region", { name: /개인정보처리방침의 변경/ });
+    const link = changes.querySelector("a");
+    expect(link?.getAttribute("href")).toBe("/privacy/2026-09-17");
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.textContent).toContain("2026년 9월 17일 ~ 2026년 9월 19일 적용");
+  });
 });

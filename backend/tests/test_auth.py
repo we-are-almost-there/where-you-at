@@ -14,6 +14,7 @@ import io
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import MagicMock, patch
+from uuid import UUID
 
 import httpx
 from fastapi.testclient import TestClient
@@ -37,7 +38,7 @@ KAKAO_USER = {
     },
 }
 
-SAVED_USER = {"id": 7, "nickname": "길손"}
+SAVED_USER = {"id": 7, "nickname": "길손", "bio": None}
 
 
 def _response(status_code, json=None, *, text=None):
@@ -72,6 +73,9 @@ class TestKakaoLogin(unittest.TestCase):
         connect_patcher = patch("app.deps.get_db_connection", return_value=MagicMock())
         self.connect = connect_patcher.start()
         self.addCleanup(connect_patcher.stop)
+        session_patcher = patch("app.crud.user.create_session")
+        self.create_session = session_patcher.start()
+        self.addCleanup(session_patcher.stop)
 
     def _login(self, code="auth-code"):
         return self.client.post("/api/auth/kakao", json={"code": code})
@@ -86,9 +90,13 @@ class TestKakaoLogin(unittest.TestCase):
         body = res.json()
         self.assertEqual(body["user"], SAVED_USER)
         self.assertEqual(body["token_type"], "bearer")
-        self.assertEqual(auth_token.decode_access_token(body["access_token"]), 7)
+        claims = auth_token.decode_access_token(body["access_token"])
+        self.assertEqual(claims.user_id, 7)
+        self.assertIsInstance(claims.session_id, UUID)
         mock_upsert.assert_called_once()
         self.assertEqual(mock_upsert.call_args.kwargs, {"kakao_id": 4321, "nickname": "길손"})
+        self.assertEqual(self.create_session.call_args.kwargs["user_id"], 7)
+        self.assertEqual(self.create_session.call_args.kwargs["session_id"], claims.session_id)
         self.assertEqual(mock_get.call_args.kwargs["headers"], {"Authorization": "Bearer kakao-token"})
 
     def test_token_exchange_uses_server_settings(self, mock_post, mock_get, mock_upsert):

@@ -1,11 +1,13 @@
 import { Link } from "react-router";
 import { Items, LegalSection, LegalToc, P, type LegalSectionInfo } from "./LegalDocument";
-import { CONTEST, EFFECTIVE_DATE, OPERATOR, SERVICE } from "./legalInfo";
+import { CONTEST, EFFECTIVE_DATE, OPERATOR, PREVIOUS_VERSIONS, SERVICE } from "./legalInfo";
 
 /*
  * 이용약관 본문. 구조(목차 → 조항)와 모양은 개인정보처리방침과 같다(LegalDocument).
  *
- * 회원가입·결제가 없는 무료 서비스라 계약 해지·요금·환불 조항은 두지 않았다.
+ * 결제가 없는 무료 서비스라 요금·환불 조항은 두지 않았다. 회원 가입은 카카오 로그인으로 하는 선택 기능이라
+ * 가입·탈퇴와 프로필(닉네임·한 줄 소개)은 조의2·조의3으로 덧붙였다. 뒤 조항 번호를 밀면 다른 문서·주석의 조항
+ * 인용(제7조, 제10조, 제13조 등)이 어긋나서다. 쪽지·리뷰가 생기면 게시물 조항을 같은 방식으로 더한다.
  * 대신 이 서비스에서 실제로 문제가 될 수 있는 것을 조항으로 정했다.
  * - 공공데이터를 그대로 보여 주므로 실제와 다를 수 있다는 점(제7조) — 푸터 고지와 같은 내용
  * - 이동 중 안전(제10조), 코스 이용 중 사고의 책임(제13조) — 푸터 고지와 같은 내용
@@ -28,6 +30,8 @@ const S = {
   recordCard: { id: "terms-record-card", label: "제9조(기록 카드)" },
   duties: { id: "terms-duties", label: "제10조(이용자의 의무)" },
   inquiry: { id: "terms-inquiry", label: "제11조(1:1 문의)" },
+  membership: { id: "terms-membership", label: "제11조의2(회원 가입과 탈퇴)" },
+  profile: { id: "terms-profile", label: "제11조의3(프로필)" },
   copyright: { id: "terms-copyright", label: "제12조(저작권과 데이터 출처)" },
   liability: { id: "terms-liability", label: "제13조(책임의 제한)" },
   disputes: { id: "terms-disputes", label: "제14조(분쟁 해결과 준거법)" },
@@ -54,7 +58,13 @@ export default function TermsContent() {
             &lsquo;서비스&rsquo;란 운영팀이 웹사이트로 제공하는 걷기·자전거 코스 탐색과 따라가기, 대회 행사, 방문 혜택,
             자전거 대여소 안내와 고객지원 기능을 말합니다.
           </li>
-          <li>&lsquo;이용자&rsquo;란 이 약관에 따라 서비스를 이용하는 사람을 말합니다. 서비스는 회원가입 없이 이용합니다.</li>
+          <li>
+            &lsquo;이용자&rsquo;란 이 약관에 따라 서비스를 이용하는 사람을 말합니다. 서비스는 로그인하지 않고도 이용할
+            수 있습니다.
+          </li>
+          <li>
+            &lsquo;회원&rsquo;이란 카카오 로그인으로 가입해 마이페이지를 이용하는 이용자를 말합니다.
+          </li>
           <li>
             &lsquo;공공데이터&rsquo;란 서비스가 보여 주는 코스, 관광 정보, 대회 행사, 자전거 대여소 정보의 출처가 되는
             공공기관의 데이터를 말합니다.
@@ -68,7 +78,8 @@ export default function TermsContent() {
           <li>운영팀은 「약관의 규제에 관한 법률」 등 관계 법령을 위반하지 않는 범위에서 이 약관을 바꿀 수 있습니다.</li>
           <li>
             약관을 바꿀 때는 적용일과 바꾸는 이유를 밝혀 적용일 7일 전부터 공지사항으로 알립니다. 이용자에게 불리하게
-            바꾸는 경우에는 적용일 30일 전부터 알립니다.
+            바꾸는 경우에는 적용일 30일 전부터 알립니다. 다만 새 기능을 추가하는 등 이용자에게 불리하지 않은 변경은
+            공지한 날부터 적용할 수 있습니다.
           </li>
           <li>
             이용자는 바뀐 약관에 동의하지 않으면 서비스 이용을 멈출 수 있습니다. 적용일 이후에도 서비스를 계속 이용하면
@@ -106,11 +117,16 @@ export default function TermsContent() {
             <strong>자전거 대여</strong>: 자전거 대여소 위치·운영 정보와 실시간 대여 가능 수 안내
           </li>
           <li>
+            <strong>마이페이지</strong>: 회원의 프로필(닉네임·한 줄 소개) 관리, 찜한 코스·완주 기록·지역 스탬프 모아
+            보기
+          </li>
+          <li>
             <strong>고객지원</strong>: 공지사항, 자주 묻는 질문, 1:1 문의
           </li>
         </Items>
         <P>
-          서비스는 무료이며 회원가입 없이 이용할 수 있습니다. 서비스는 {CONTEST} 출품작으로 운영됩니다.
+          서비스는 무료이며 로그인하지 않고도 이용할 수 있습니다. 마이페이지는 회원만 이용할 수 있습니다. 서비스는{" "}
+          {CONTEST} 출품작으로 운영됩니다.
         </P>
       </LegalSection>
 
@@ -213,6 +229,52 @@ export default function TermsContent() {
         </Items>
       </LegalSection>
 
+      <LegalSection section={S.membership}>
+        <Items ordered>
+          <li>
+            이용자는 카카오 로그인으로 회원 가입을 할 수 있으며, 가입하지 않아도 마이페이지를 뺀 서비스를 이용할 수
+            있습니다.
+          </li>
+          <li>
+            서비스는 법정대리인의 동의를 받는 절차를 제공하지 않으므로 회원 가입은 만 14세 이상만 할 수 있습니다.
+            운영팀은 14세 미만 아동이 가입한 사실을 알게 되면 회원 정보를 삭제하고 가입을 취소할 수 있습니다.
+          </li>
+          <li>
+            회원은 마이페이지에서 언제든지 탈퇴할 수 있습니다. 탈퇴하면 카카오 계정과의 연결이 해제되고 회원 정보와
+            마이페이지에 모인 기록이 삭제되며, 삭제한 정보는 되돌릴 수 없습니다.
+          </li>
+          <li>
+            회원이 카카오 계정관리나 카카오톡에서 서비스와의 연결을 끊거나 카카오계정을 탈퇴하면 탈퇴한 것으로 보고, 회원
+            정보와 마이페이지에 모인 기록을 삭제합니다.
+          </li>
+          <li>
+            회원은 자신의 카카오 계정을 안전하게 관리해야 하며, 다른 사람의 계정으로 로그인해서는 안 됩니다. 회원이 처리하는
+            개인정보에 관한 자세한 내용은{" "}
+            <Link to="/privacy" className="underline underline-offset-4">
+              개인정보처리방침
+            </Link>
+            에서 안내합니다.
+          </li>
+        </Items>
+      </LegalSection>
+
+      <LegalSection section={S.profile}>
+        <Items ordered>
+          <li>
+            회원은 마이페이지에서 닉네임과 한 줄 소개를 정하고 바꿀 수 있습니다. 한 줄 소개는 선택 항목이며, 쪽지·리뷰 등
+            앞으로 추가되는 기능에서 다른 이용자에게 보일 수 있습니다.
+          </li>
+          <li>
+            회원은 닉네임과 한 줄 소개에 다음 내용을 적어서는 안 됩니다: 다른 사람의 개인정보나 다른 사람을 사칭하는
+            내용, 다른 사람의 명예나 권리를 침해하는 내용, 욕설·음란·혐오 표현, 광고, 그 밖에 관계 법령을 위반하는 내용.
+          </li>
+          <li>
+            운영팀은 제2항에 해당하는 닉네임이나 한 줄 소개를 알게 되면 회원에게 알리고 수정을 요청하거나, 해당 내용을
+            지우고 기본값으로 바꿀 수 있습니다.
+          </li>
+        </Items>
+      </LegalSection>
+
       <LegalSection section={S.copyright}>
         <Items ordered>
           <li>
@@ -256,6 +318,16 @@ export default function TermsContent() {
 
       <LegalSection section={S.addendum}>
         <P>이 약관은 {EFFECTIVE_DATE}부터 시행합니다.</P>
+        <P>이전 이용약관</P>
+        <ul className="mt-1 list-disc pl-5 text-[14px] leading-relaxed text-ink">
+          {PREVIOUS_VERSIONS.map((version) => (
+            <li key={version.termsPath}>
+              <Link to={version.termsPath} className="text-accent underline underline-offset-4">
+                {version.period} 적용
+              </Link>
+            </li>
+          ))}
+        </ul>
       </LegalSection>
     </div>
   );
