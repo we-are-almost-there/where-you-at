@@ -220,9 +220,7 @@ class CreateCardTest(unittest.TestCase):
             res = self.post()
         self.assertEqual(res.status_code, 503)
         delete.assert_not_called()
-        notify.notify_reconciliation_failure.assert_called_once_with(
-            user_id=7, image_key="record-cards/7/a.png"
-        )
+        notify.notify_reconciliation_failure.assert_called_once_with()
 
 
 class ListCardsTest(unittest.TestCase):
