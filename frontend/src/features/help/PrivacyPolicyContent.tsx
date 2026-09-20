@@ -17,11 +17,10 @@ import { EFFECTIVE_DATE, OPERATOR, PREVIOUS_VERSIONS, SERVICE } from "./legalInf
  *   backend/app/services/rate_limit.py
  * - 새 문의 Slack 알림: 문의 유형·이메일·내용을 보낸다(backend/app/services/inquiry_notify.py). 항목·업체·보존 설정이
  *   바뀌면 7·8번과 README "새 문의 알림"을 함께 고친다.
- * - 완주 기록·기록 카드 항목(2번 ②), 위탁(7번), 보유 기간(4번), 국외 이전(8번의 Cloudflare 행):
- *   backend/app/schemas/record.py, sql/11_run_record.sql, sql/12_record_card.sql,
- *   backend/app/services/storage.py(R2 업로드), backend/app/services/account_deletion.py(탈퇴 시 R2 정리).
- *   보유 기간·국외 이전 문구는 탈퇴 시 R2 정리 절차(계정 잠금 → R2 전체 삭제 확인 → DB 회원 삭제)를 그대로 반영했다.
- *   record_features_enabled 플래그로 API는 별도로 막아 둔다(backend/app/core/config.py).
+ * - 완주 기록·기록 카드 항목(2번 ②)과 위탁(7번): backend/app/schemas/record.py, sql/11_run_record.sql,
+ *   sql/12_record_card.sql, backend/app/services/storage.py(R2 업로드). 보유 기간(4번)과 8번의 Cloudflare 국외
+ *   이전 항목은 탈퇴 시 R2 정리 방식이 확정되면 채운다(README 참고). 그 전에는 record_features_enabled 플래그로
+ *   API를 막아 둔다(backend/app/core/config.py).
  * - 운영팀 서버로 보내지 않고 기기 안에서 처리하는 곳(2번 ④): 가까운 순 정렬(홈, 코스 탐색, 자전거 대여),
  *   features/map/useCourseTracking.ts, features/support/components/SupportDetail.tsx(localStorage)
  * - 배포 환경: Vercel(웹사이트), Render 싱가포르(API 서버), Supabase 서울 Free 요금제(DB), Cloudflare R2(기록 카드 이미지).
@@ -238,10 +237,8 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
               "서버 접속 기록 (접속 IP 주소, 요청 일시, 요청 주소)",
               "각 업체가 Hobby 요금제에서 제공하는 로그 보관 기간은 API 서버(Render) 7일, 웹사이트(Vercel) 1시간입니다.",
             ],
-            [
-              "완주 기록 및 기록 카드 이미지",
-              "회원 탈퇴 시까지. 기록 카드 이미지는 회원 탈퇴 처리 중 Cloudflare R2에서 삭제가 확인된 뒤에 탈퇴가 완료되며, 삭제에 실패하면 탈퇴 자체가 완료되지 않고 다시 시도합니다.",
-            ],
+            // TODO(record-card-retention): 탈퇴 시 R2 정리 절차가 확정되는 대로 이 표에 "완주 기록 및 기록 카드"
+            // 행을 추가한다. 그 전까지는 탈퇴해도 완주 기록·기록 카드가 남을 수 있어 문구를 확정할 수 없다.
           ]}
         />
         <P>
@@ -308,7 +305,8 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
           근거는 제28조의8제1항제3호가목(서비스 제공을 위한 처리위탁·보관 + 처리방침 공개)로 정했다. 웹사이트 접속만으로도
           접속 기록이 이전되어 1:1 문의 동의(제1호)로는 모든 이전을 다룰 수 없기 때문이다. 1:1 문의 동의 안내에는
           국외 이전 사실을 한 줄로 알린다(ContactPage).
-          Cloudflare(R2)의 객체 저장 위치는 버킷 생성 시 아시아·태평양(APAC)으로 지정했다(회사 소재지인 미국과는 별개). */}
+          TODO(record-card-retention): Cloudflare(R2) 행은 탈퇴 시 정리 절차가 확정되면 보유·이용 기간 열을 채워
+          추가한다. 그 전에는 마지막 열을 정확히 쓸 수 없다. */}
         <P>
           운영팀은 7번의 처리업무 위탁에 따라 다음과 같이 개인정보를 국외로 이전하고 있으며, 「개인정보 보호법」
           제28조의8제2항에 따라 다음과 같이 안내합니다.
@@ -342,14 +340,6 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
               "데이터베이스 운영과 장애 대응 등 기술 지원이 필요할 때 원격으로 접근",
               "데이터베이스(클라우드) 운영과 기술 지원",
               "회원 정보는 회원 탈퇴 시까지, 1:1 문의는 문의 처리 완료 후 1년 (4번과 같음)",
-            ],
-            [
-              "Cloudflare, Inc. (privacyquestions@cloudflare.com / dpo@cloudflare.com)",
-              "미국 (처리 주체), 아시아·태평양(APAC) (객체 저장 위치)",
-              "기록 카드 이미지",
-              "이미지를 마이페이지에 저장할 때 네트워크를 통해 전송",
-              "기록 카드 이미지 저장(오브젝트 스토리지 운영)",
-              "회원 탈퇴 시까지 (4번과 같음)",
             ],
             [
               "Slack Technologies Limited (privacy@slack.com / dpo@slack.com)",
