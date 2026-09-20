@@ -1,23 +1,13 @@
-import { Link } from "react-router";
-import { Items, LegalSection, LegalToc, P, type LegalSectionInfo } from "./LegalDocument";
-import { CONTEST, EFFECTIVE_DATE, OPERATOR, PREVIOUS_VERSIONS, SERVICE } from "./legalInfo";
-
 /*
- * 이용약관 본문. 구조(목차 → 조항)와 모양은 개인정보처리방침과 같다(LegalDocument).
- *
- * 결제가 없는 무료 서비스라 요금·환불 조항은 두지 않았다. 회원 가입은 카카오 로그인으로 하는 선택 기능이라
- * 가입·탈퇴와 프로필(닉네임·한 줄 소개)은 조의2·조의3으로 덧붙였다. 뒤 조항 번호를 밀면 다른 문서·주석의 조항
- * 인용(제7조, 제10조, 제13조 등)이 어긋나서다. 쪽지·리뷰가 생기면 게시물 조항을 같은 방식으로 더한다.
- * 대신 이 서비스에서 실제로 문제가 될 수 있는 것을 조항으로 정했다.
- * - 공공데이터를 그대로 보여 주므로 실제와 다를 수 있다는 점(제7조) — 푸터 고지와 같은 내용
- * - 이동 중 안전(제10조), 코스 이용 중 사고의 책임(제13조) — 푸터 고지와 같은 내용
- * - 위치 기능(제8조), 기록 카드 이미지의 저장·삭제(제9조) — 저장을 선택하면 Cloudflare R2로 전송되며
- *   자세한 내용은 개인정보처리방침 2·7·8번을 따른다.
- *
- * 제13조(책임의 제한): 「약관의 규제에 관한 법률」 제7조에 따라 사업자의 고의·중대한 과실로 인한 책임을
- * 배제하는 조항은 무효라서 단서로 그 경우를 뺐다. 면책 범위가 넓으면 같은 조의 "상당한 이유 없는 책임 제한"으로
- * 다툼이 될 수 있으니 문구를 넓히기 전에 검토한다.
+ * 이용약관 이전 버전 (2026년 9월 20일 시행본). 새 버전을 시행하면서 그대로 보관한다.
+ * 방침 14번(이전 방침을 적용 기간과 함께 볼 수 있게 한다)과 약관 제3조를 지키기 위한 사본이라 내용을 고치지 않는다.
+ * 원본에서 바꾼 것은 import 경로와, 공용 상수(legalInfo.ts의 운영 주체·서비스 이름·공모전 이름·시행일) 대신 당시 값을
+ * 글자로 적은 것, 그리고 "이전 이용약관" 목록(그 시점에는 하나뿐이었다)을 뺀 것뿐이다.
+ * 현재 상수를 바꿔도 이 문서는 바뀌지 않아야 한다.
  */
+
+import { Link } from "react-router";
+import { Items, LegalSection, LegalToc, P, type LegalSectionInfo } from "../LegalDocument";
 
 const S = {
   purpose: { id: "terms-purpose", label: "제1조(목적)" },
@@ -41,14 +31,14 @@ const S = {
 
 const SECTIONS = Object.values(S);
 
-export default function TermsContent() {
+export default function Terms20260920() {
   return (
     <div>
       <LegalToc label="이용약관 목차" sections={SECTIONS} />
 
       <LegalSection section={S.purpose}>
         <P>
-          이 약관은 {OPERATOR}(이하 &lsquo;운영팀&rsquo;)이 제공하는 {SERVICE} 서비스(이하 &lsquo;서비스&rsquo;)의 이용
+          이 약관은 거의 다왔어 팀(이하 &lsquo;운영팀&rsquo;)이 제공하는 어디까지왔니 서비스(이하 &lsquo;서비스&rsquo;)의 이용
           조건과 절차, 운영팀과 이용자의 권리·의무 및 책임에 관한 사항을 정하는 것을 목적으로 합니다.
         </P>
       </LegalSection>
@@ -118,16 +108,16 @@ export default function TermsContent() {
             <strong>자전거 대여</strong>: 자전거 대여소 위치·운영 정보와 실시간 대여 가능 수 안내
           </li>
           <li>
-            <strong>마이페이지</strong>: 회원의 프로필(닉네임·한 줄 소개) 관리, 찜한 코스·완주 기록·기록 카드·지역
-            스탬프 모아 보기
+            <strong>마이페이지</strong>: 회원의 프로필(닉네임·한 줄 소개) 관리, 찜한 코스·완주 기록·지역 스탬프 모아
+            보기
           </li>
           <li>
             <strong>고객지원</strong>: 공지사항, 자주 묻는 질문, 1:1 문의
           </li>
         </Items>
         <P>
-          서비스는 무료이며 로그인하지 않고도 이용할 수 있습니다. 마이페이지는 회원만 이용할 수 있습니다. 서비스는{" "}
-          {CONTEST} 출품작으로 운영됩니다.
+          서비스는 무료이며 로그인하지 않고도 이용할 수 있습니다. 마이페이지는 회원만 이용할 수 있습니다. 서비스는 2026
+          관광데이터 활용 공모전 출품작으로 운영됩니다.
         </P>
       </LegalSection>
 
@@ -192,13 +182,8 @@ export default function TermsContent() {
       <LegalSection section={S.recordCard}>
         <Items ordered>
           <li>
-            기록 카드는 이용자가 고른 사진과 코스 기록으로 이미지를 만드는 기능입니다. 이미지를 마이페이지에 저장하면
-            운영팀 서버(Cloudflare R2)로 전송되어 보관되며, 저장하지 않고 기기에 내려받거나 공유만 하는 경우에는
-            운영팀 서버로 보내지 않습니다. 자세한 항목과 보유 기간은{" "}
-            <Link to="/privacy" className="underline underline-offset-4">
-              개인정보처리방침
-            </Link>
-            에서 안내합니다.
+            기록 카드는 이용자가 고른 사진과 코스 기록으로 이미지를 만드는 기능입니다. 사진과 만든 이미지는 이용자의 기기
+            안에서만 처리하며 운영팀 서버로 보내지 않습니다.
           </li>
           <li>
             기록 카드에 넣는 사진에 대한 권리와 책임은 이용자에게 있습니다. 이용자는 다른 사람의 초상권이나 저작권을
@@ -323,17 +308,7 @@ export default function TermsContent() {
       </LegalSection>
 
       <LegalSection section={S.addendum}>
-        <P>이 약관은 {EFFECTIVE_DATE}부터 시행합니다.</P>
-        <P>이전 이용약관</P>
-        <ul className="mt-1 list-disc pl-5 text-[14px] leading-relaxed text-ink">
-          {PREVIOUS_VERSIONS.map((version) => (
-            <li key={version.termsPath}>
-              <Link to={version.termsPath} className="text-accent underline underline-offset-4">
-                {version.period} 적용
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <P>이 약관은 2026년 9월 20일부터 시행합니다.</P>
       </LegalSection>
     </div>
   );

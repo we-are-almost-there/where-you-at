@@ -108,9 +108,14 @@ describe("PrivacyPolicyContent", () => {
     render(<PrivacyPolicyContent />);
 
     const changes = screen.getByRole("region", { name: /개인정보처리방침의 변경/ });
-    const link = changes.querySelector("a");
-    expect(link?.getAttribute("href")).toBe("/privacy/2026-09-17");
-    expect(link?.getAttribute("target")).toBe("_blank");
-    expect(link?.textContent).toContain("2026년 9월 17일 ~ 2026년 9월 19일 적용");
+    const links = changes.querySelectorAll("a");
+
+    expect(links[0]?.getAttribute("href")).toBe("/privacy/2026-09-20");
+    expect(links[0]?.getAttribute("target")).toBe("_blank");
+    expect(links[0]?.textContent).toContain("2026년 9월 20일 ~ 2026년 9월 20일 적용");
+
+    expect(links[1]?.getAttribute("href")).toBe("/privacy/2026-09-17");
+    expect(links[1]?.getAttribute("target")).toBe("_blank");
+    expect(links[1]?.textContent).toContain("2026년 9월 17일 ~ 2026년 9월 19일 적용");
   });
 });

@@ -1,51 +1,12 @@
-import { Items, LegalSection, LegalToc, P, SubTitle, Table, type LegalSectionInfo } from "./LegalDocument";
-import { NewTabHint } from "../../components/common/a11y";
-import { EFFECTIVE_DATE, OPERATOR, PREVIOUS_VERSIONS, SERVICE } from "./legalInfo";
-
 /*
- * 개인정보처리방침 본문. /privacy 페이지와 1:1 문의의 동의 팝업(PrivacyPolicyDialog)이 함께 써서
- * 두 곳의 문안이 어긋나지 않게 한다.
- *
- * 작성 기준: 개인정보보호위원회 「개인정보 처리방침 작성지침」(2026.4. 개정)
- * - 순서는 서문 → 목차 → 본문. 목차를 누르면 해당 항목으로 이동한다(권장 사항).
- * - 해당하지 않는 항목(민감정보, 가명정보, 자동화된 결정, 국내대리인, 영상정보처리기기 등)은 넣지 않았다.
- *   제3자 제공·자동 수집 장치는 "하지 않는다"는 사실을 적는 편이 이용자에게 분명해서 남겼다.
- *
- * 방침은 실제 처리 현황과 일치해야 한다. 아래가 바뀌면 이 문서도 함께 고친다.
- * - 1:1 문의 항목·보유 기간: ContactPage 동의 안내, backend/app/schemas/inquiry.py, sql/01_schema.sql inquiry
- * - 접속 IP 주소(요청 제한): backend/app/api/routers/inquiries.py, backend/app/api/routers/auth.py,
- *   backend/app/services/rate_limit.py
- * - 새 문의 Slack 알림: 문의 유형·이메일·내용을 보낸다(backend/app/services/inquiry_notify.py). 항목·업체·보존 설정이
- *   바뀌면 7·8번과 README "새 문의 알림"을 함께 고친다.
- * - 완주 기록·기록 카드 항목(2번 ②)과 위탁(7번): backend/app/schemas/record.py, sql/11_run_record.sql,
- *   sql/12_record_card.sql, backend/app/services/storage.py(R2 업로드). 보유 기간(4번)과 8번의 Cloudflare 국외
- *   이전 항목은 탈퇴 시 R2 정리 방식이 확정되면 채운다(README 참고). 그 전에는 record_features_enabled 플래그로
- *   API를 막아 둔다(backend/app/core/config.py).
- * - 운영팀 서버로 보내지 않고 기기 안에서 처리하는 곳(2번 ④): 가까운 순 정렬(홈, 코스 탐색, 자전거 대여),
- *   features/map/useCourseTracking.ts, features/support/components/SupportDetail.tsx(localStorage)
- * - 배포 환경: Vercel(웹사이트), Render 싱가포르(API 서버), Supabase 서울 Free 요금제(DB), Cloudflare R2(기록 카드 이미지).
- *   서버 접속 기록 보관 기간은 Vercel·Render Hobby 요금제 기준이다. 요금제나 업체를 바꾸면 2·4·5·7·8번을 고친다
- *   (5번: Supabase Free에는 자동 백업이 없다는 전제로 적었다).
- * - 파기: Supabase Cron 예약 작업이 매일 보유 기간이 지난 문의를 지운다(sql/05_inquiry_retention.sql).
- *   이 작업이 DB에 등록돼 있어야 5번이 사실이다.
- * - 회원 정보(2번 ②): 카카오 로그인으로 받는 항목은 backend/app/services/kakao_oauth.py(회원번호·닉네임만 읽는다),
- *   저장하는 칸은 sql/01_schema.sql app_user(kakao_id·nickname·bio), 수정은 PATCH /api/me(schemas/user.py).
- *   카카오 접근 토큰은 회원 확인에만 쓰고 저장하지 않는다. 운영팀 로그인 토큰(회원 번호·세션 번호·발급·만료 시각, 7일)은
- *   services/auth_token.py가 만들고 프론트가 localStorage에 둔다(lib/authToken.ts, 10번). 로그인 세션(세션 번호·회원
- *   번호·만료 시각)은 sql/01_schema.sql auth_session에 저장하고, 로그아웃·탈퇴·다음 로그인 때 정리한다(4·5번).
- *   탈퇴(DELETE /api/me)는 카카오 연결 해제 후 회원 행을 지운다(5번). 카카오 동의 항목·저장 칸이 바뀌면 2·4·7·8번을 고친다.
- *   이용자가 카카오 쪽에서 연결을 끊으면 연결 해제 웹훅(backend/app/api/routers/auth.py /kakao/unlink)이 같은
- *   delete_user로 지운다(4·5번). 삭제가 실패하면 회원번호 없이 Slack으로 알리고 운영팀이 직접 지운다(README).
- * - 법적 근거: 회원 정보는 제15조제1항제4호(계약 이행)로 정했다. 로그인해서 마이페이지를 쓰는 것이 이용 계약이고,
- *   한 줄 소개는 이용자가 직접 적고 언제든 지우는 선택 항목이라 별도 동의 화면을 두지 않았다. 완주 기록과 기록 카드도
- *   같은 이유(마이페이지 기능)로 별도 동의 화면을 두지 않았다.
- *   로그인 요청 제한은 가입 전 요청에도 적용되므로 계약 이행이 아니라 제15조제1항제6호(정당한 이익)로 정했다.
- *
- * 현재 위치: 가까운 순 정렬은 서버로 좌표를 보내지 않고 브라우저에서 계산한다(위치기반서비스사업 신고 대상에서
- * 벗어나기 위한 결정, #97). 보장하는 범위는 "원본 좌표를 운영팀 서버로 보내지 않는다"까지다.
- * 지도(카카오)와 코스 사진(한국관광공사)은 외부 서버에서 불러오므로, 지도를 옮긴 위치나 불러온 사진으로 대략적인
- * 지역이 그 서버에 드러날 수 있다(10번 아래 문단). "어떤 서버에도 위치가 전달되지 않는다"로 읽히게 쓰지 않는다.
+ * 개인정보처리방침 이전 버전 (2026년 9월 20일 시행본). 새 버전을 시행하면서 그대로 보관한다.
+ * 방침 14번(이전 방침을 적용 기간과 함께 볼 수 있게 한다)과 약관 제3조를 지키기 위한 사본이라 내용을 고치지 않는다.
+ * 원본에서 바꾼 것은 import 경로와, 공용 상수(legalInfo.ts의 운영 주체·서비스 이름·시행일) 대신 당시 값을
+ * 글자로 적은 것, 그리고 "이전 개인정보처리방침" 목록(그 시점에는 없었다)을 뺀 것뿐이다.
+ * 현재 상수를 바꿔도 이 문서는 바뀌지 않아야 한다.
  */
+
+import { Items, LegalSection, LegalToc, P, SubTitle, Table, type LegalSectionInfo } from "../LegalDocument";
 
 const S = {
   purpose: { id: "privacy-purpose", label: "1. 개인정보의 처리 목적" },
@@ -66,18 +27,11 @@ const S = {
 
 const SECTIONS = Object.values(S);
 
-interface Props {
-  /** 항목 제목의 단계. 페이지는 h1 아래라 2, 팝업은 팝업 제목(h2) 아래라 3. */
-  headingLevel?: 2 | 3;
-}
-
-export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
-  const level = headingLevel;
-
+export default function PrivacyPolicy20260920() {
   return (
     <div>
       <p className="break-keep text-[14px] leading-relaxed text-ink">
-        {OPERATOR}(이하 &lsquo;운영팀&rsquo;)은 {SERVICE} 서비스(이하 &lsquo;서비스&rsquo;)를 이용하는 분의 자유와 권리를
+        거의 다왔어 팀(이하 &lsquo;운영팀&rsquo;)은 어디까지왔니 서비스(이하 &lsquo;서비스&rsquo;)를 이용하는 분의 자유와 권리를
         보호하기 위해 「개인정보 보호법」 및 관계 법령이 정한 바를 지켜 개인정보를 적법하게 처리하고 안전하게
         관리합니다. 이에 「개인정보 보호법」 제30조에 따라 개인정보의 처리와 보호에 관한 절차 및 기준을 안내하고,
         관련 고충을 신속하고 원활하게 처리하기 위해 다음과 같이 개인정보처리방침을 수립·공개합니다.
@@ -85,7 +39,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
 
       <LegalToc label="개인정보처리방침 목차" sections={SECTIONS} />
 
-      <LegalSection section={S.purpose} level={level}>
+      <LegalSection section={S.purpose}>
         <P>
           운영팀은 다음 목적으로만 개인정보를 처리합니다. 처리한 개인정보는 이 목적 외의 용도로 쓰지 않으며, 목적이
           바뀌면 「개인정보 보호법」 제18조에 따라 별도의 동의를 받는 등 필요한 조치를 하겠습니다.
@@ -93,7 +47,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         <Items ordered>
           <li>
             <strong>회원 관리</strong>: 카카오 로그인으로 회원 가입과 본인 식별, 로그인 상태 유지, 마이페이지 제공(닉네임·한
-            줄 소개 표시와 수정, 완주 기록·기록 카드 모아 보기), 회원 탈퇴 처리
+            줄 소개 표시와 수정), 회원 탈퇴 처리
           </li>
           <li>
             <strong>1:1 문의 접수 및 답변</strong>: 문의 내용 확인, 입력한 이메일로 답변 회신, 문의 처리 상태 관리
@@ -108,7 +62,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         </Items>
       </LegalSection>
 
-      <LegalSection section={S.items} level={level}>
+      <LegalSection section={S.items}>
         <P>
           서비스는 로그인하지 않고도 이용할 수 있으며, 마이페이지는 카카오 로그인으로 가입한 회원만 이용합니다. 이름,
           전화번호, 주소 같은 정보는 받지 않습니다. 운영팀은 처리 목적에 필요한 최소한의 개인정보만 다음과 같이
@@ -144,11 +98,6 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             [
               "로그인 상태 유지 (필수)",
               "로그인 세션 번호, 회원 번호, 만료 시각",
-              "「개인정보 보호법」 제15조제1항제4호(계약의 체결·이행)",
-            ],
-            [
-              "완주 기록 및 기록 카드 (선택)",
-              "완주한 코스, 경로 유형, 거리, 소요 시간, 페이스, 완주 시각 (코스 따라가기를 마친 경우), 기록 카드 이미지 (이용자가 마이페이지에 저장하도록 선택한 경우에만)",
               "「개인정보 보호법」 제15조제1항제4호(계약의 체결·이행)",
             ],
           ]}
@@ -190,13 +139,16 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             화면을 벗어나면 더 이상 쓰지 않습니다.
           </li>
           <li>
+            <strong>기록 카드</strong>: 이용자가 고른 사진과 만든 이미지. 저장과 공유는 이용자의 기기에서 이루어집니다.
+          </li>
+          <li>
             <strong>방문 혜택 체크리스트</strong>: 항목별 체크 상태. 브라우저 저장소에 남으며, 브라우저에서 사이트
             데이터를 삭제하면 지워집니다.
           </li>
         </Items>
       </LegalSection>
 
-      <LegalSection section={S.children} level={level}>
+      <LegalSection section={S.children}>
         <P>
           서비스는 이용자의 나이를 확인하지 않으며, 14세 미만 아동의 개인정보를 알면서 수집하지 않습니다. 14세 미만
           아동이 1:1 문의를 하려면 법정대리인이 대신 문의해 주세요. 14세 미만 아동이 보낸 문의임을 알게 되면 해당
@@ -209,7 +161,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         </P>
       </LegalSection>
 
-      <LegalSection section={S.retention} level={level}>
+      <LegalSection section={S.retention}>
         <P>
           운영팀은 법령에 따른 보유·이용 기간 또는 개인정보를 수집할 때 동의받은 보유·이용 기간 안에서 개인정보를
           처리·보유합니다.
@@ -237,8 +189,6 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
               "서버 접속 기록 (접속 IP 주소, 요청 일시, 요청 주소)",
               "각 업체가 Hobby 요금제에서 제공하는 로그 보관 기간은 API 서버(Render) 7일, 웹사이트(Vercel) 1시간입니다.",
             ],
-            // TODO(record-card-retention): 탈퇴 시 R2 정리 절차가 확정되는 대로 이 표에 "완주 기록 및 기록 카드"
-            // 행을 추가한다. 그 전까지는 탈퇴해도 완주 기록·기록 카드가 남을 수 있어 문구를 확정할 수 없다.
           ]}
         />
         <P>
@@ -246,7 +196,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         </P>
       </LegalSection>
 
-      <LegalSection section={S.destruction} level={level}>
+      <LegalSection section={S.destruction}>
         <Items ordered>
           <li>
             운영팀은 보유 기간이 지나거나 처리 목적을 달성해 개인정보가 필요 없게 되면 지체 없이 해당 개인정보를
@@ -262,10 +212,6 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             알림과 데이터베이스의 문의를 직접 찾아 지체 없이 삭제합니다. 서버 접속 기록은 각 업체가 정한 로그 보관
             기간(4번)에 따라 처리됩니다.
           </li>
-          {/* "복구할 수 없도록 삭제"는 수탁자 시스템에 남을 수 있는 사본까지 운영팀이 보장할 수 없어 쓰지 않는다.
-            운영팀이 복원할 수 없다는 것은 Supabase Free 요금제에 자동 백업이 없어서 사실이다
-            (https://supabase.com/docs/guides/platform/backups, 2026.9. 확인). Pro 이상으로 바꾸면 일일 백업이 생기므로
-            이 항목에 백업 보관 기간을 적는다. */}
           <li>
             <strong>파기 방법</strong>: 전자 파일 형태로 저장된 개인정보는 데이터베이스에서 삭제해 운영팀이 다시 조회하거나
             복원할 수 없게 합니다. 운영팀은 개인정보가 담긴 데이터베이스를 따로 내려받아 백업해 두지 않으며, 종이 문서로도
@@ -276,14 +222,14 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         </Items>
       </LegalSection>
 
-      <LegalSection section={S.provision} level={level}>
+      <LegalSection section={S.provision}>
         <P>
           운영팀은 개인정보를 제3자에게 제공하지 않습니다. 다만 정보주체가 별도로 동의한 경우나 법률에 특별한 규정이
           있는 경우 등 「개인정보 보호법」 제17조 및 제18조에 해당하는 경우에는 제공할 수 있습니다.
         </P>
       </LegalSection>
 
-      <LegalSection section={S.outsourcing} level={level}>
+      <LegalSection section={S.outsourcing}>
         <P>운영팀은 서비스 운영을 위해 다음과 같이 개인정보 처리업무를 위탁하고 있습니다.</P>
         <Table
           head={["위탁받는 자(수탁자)", "위탁하는 업무"]}
@@ -291,22 +237,13 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             ["Supabase, Inc.", "회원 정보와 1:1 문의 정보를 보관하는 데이터베이스(클라우드) 운영"],
             ["Vercel Inc.", "웹사이트 호스팅 (웹사이트 전송 과정에서 서버 접속 기록 처리)"],
             ["Render Services, Inc.", "API 서버 운영 (회원 정보, 1:1 문의 정보, 서버 접속 기록 처리)"],
-            ["Cloudflare, Inc.", "기록 카드 이미지를 보관하는 오브젝트 스토리지(R2) 운영"],
             ["Slack Technologies Limited", "새 1:1 문의 접수 알림 전송 및 보관"],
           ]}
         />
         <P>위탁하는 업무의 내용이나 수탁자가 바뀌면 지체 없이 이 개인정보처리방침을 통해 알리겠습니다.</P>
       </LegalSection>
 
-      <LegalSection section={S.overseas} level={level}>
-        {/* Vercel·Render·Supabase는 미국 법인이고 Render에는 서울 리전이 없어(2026.9. 기준 오리건·오하이오·버지니아·
-          프랑크푸르트·싱가포르), 7번의 처리위탁이 국외 이전에 해당한다. 작성지침 Ⅲ-10의 기재 사항(근거, 항목, 국가,
-          시기·방법, 이전받는 자와 연락처, 목적, 보유 기간, 거부 방법)을 표로 적는다.
-          근거는 제28조의8제1항제3호가목(서비스 제공을 위한 처리위탁·보관 + 처리방침 공개)로 정했다. 웹사이트 접속만으로도
-          접속 기록이 이전되어 1:1 문의 동의(제1호)로는 모든 이전을 다룰 수 없기 때문이다. 1:1 문의 동의 안내에는
-          국외 이전 사실을 한 줄로 알린다(ContactPage).
-          TODO(record-card-retention): Cloudflare(R2) 행은 탈퇴 시 정리 절차가 확정되면 보유·이용 기간 열을 채워
-          추가한다. 그 전에는 마지막 열을 정확히 쓸 수 없다. */}
+      <LegalSection section={S.overseas}>
         <P>
           운영팀은 7번의 처리업무 위탁에 따라 다음과 같이 개인정보를 국외로 이전하고 있으며, 「개인정보 보호법」
           제28조의8제2항에 따라 다음과 같이 안내합니다.
@@ -324,7 +261,6 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
             ],
             [
               "Render Services, Inc. (legal@render.com)",
-              // API 서버 리전은 DB(Supabase 서울)와 가장 가까운 싱가포르로 정했다. 리전을 바꾸면 여기도 고친다.
               "싱가포르",
               "회원 정보(카카오 회원번호, 닉네임, 한 줄 소개), 1:1 문의 정보(이메일, 문의 유형, 문의 내용), 서버 접속 기록(접속 IP 주소, 요청 일시, 요청 주소)",
               "서비스를 이용할 때 네트워크를 통해 전송",
@@ -332,8 +268,6 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
               "회원 정보와 1:1 문의 정보는 요청을 처리한 뒤 저장하지 않음. 로그 보관 기간 7일 (Hobby 요금제 기준)",
             ],
             [
-              // 데이터는 서울 리전에 저장하지만, Supabase DPA는 Supabase와 하위 처리자가 시설을 둔 곳에서 처리될 수
-              // 있다고 정한다. 운영·지원을 위한 원격 접근 가능성을 보수적으로 국외 이전으로 적는다.
               "Supabase, Inc. (privacy@supabase.com)",
               "미국 (데이터는 대한민국 서울 지역 서버에 저장)",
               "회원 정보(카카오 회원번호, 닉네임, 한 줄 소개, 가입·수정 일시), 1:1 문의 정보(이메일, 문의 유형, 문의 내용, 접수·동의·처리 일시)",
@@ -361,27 +295,24 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         </P>
       </LegalSection>
 
-      <LegalSection section={S.security} level={level}>
+      <LegalSection section={S.security}>
         <P>운영팀은 개인정보의 안전성 확보를 위해 다음과 같은 조치를 하고 있습니다.</P>
         <Items ordered>
           <li>
             <strong>관리적 조치</strong>: 개인정보에 접근할 수 있는 사람을 운영팀원 3명으로 제한
           </li>
           <li>
-            {/* HTTPS: Vercel·Render는 배포한 주소에 HTTPS 인증서를 자동으로 적용한다. 프론트가 API를 부를 때도
-              https 주소를 쓴다(coursesApi.ts의 https 올림 처리 참고). 배포 환경을 바꾸면 다시 확인한다.
-              기록 카드 이미지는 발급받은 URL로만 R2에 직접 올리고 내려받으며, URL은 만료 시간이 있는 presigned URL이다. */}
             <strong>기술적 조치</strong>: 데이터베이스 접속 정보를 코드와 분리해 관리, 데이터베이스 행 수준 보안(RLS)으로
             외부에 공개된 접근 경로 차단, 반복 전송 제한, 보유 기간이 지난 개인정보 자동 파기, 암호화된 통신(HTTPS)으로
-            전송, 기록 카드 이미지는 만료 시간이 있는 임시 주소로만 업로드·다운로드
+            전송
           </li>
           <li>
-            <strong>물리적 조치</strong>: 개인정보를 수탁자(Supabase, Cloudflare)가 관리하는 데이터센터에 저장
+            <strong>물리적 조치</strong>: 개인정보를 수탁자(Supabase)가 관리하는 데이터센터에 저장
           </li>
         </Items>
       </LegalSection>
 
-      <LegalSection section={S.autoCollect} level={level}>
+      <LegalSection section={S.autoCollect}>
         <P>
           운영팀은 쿠키 등 개인정보를 자동으로 수집하는 장치를 설치·운영하지 않으며, 광고나 이용 분석을 위해 제3자가
           행태정보를 수집하도록 허용하지 않습니다.
@@ -407,15 +338,15 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         </P>
       </LegalSection>
 
-      <LegalSection section={S.rights} level={level}>
+      <LegalSection section={S.rights}>
         <Items ordered>
           <li>
             정보주체는 운영팀에 언제든지 개인정보 열람·정정·삭제·처리정지 및 동의 철회를 요구(이하 &lsquo;권리
             행사&rsquo;)할 수 있습니다.
           </li>
           <li>
-            회원은 마이페이지에서 닉네임과 한 줄 소개를 직접 확인하고 고칠 수 있으며, 완주 기록과 기록 카드를 확인하고
-            회원 탈퇴로 삭제를 요구할 수 있습니다.
+            회원은 마이페이지에서 닉네임과 한 줄 소개를 직접 확인하고 고칠 수 있으며, 회원 탈퇴로 회원 정보의 삭제를
+            요구할 수 있습니다.
           </li>
           <li>
             그 밖의 권리 행사는 아래 개인정보 보호책임자의 이메일이나 1:1 문의로 할 수 있으며, 운영팀은 요청을 받은
@@ -437,7 +368,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         </Items>
       </LegalSection>
 
-      <LegalSection section={S.officer} level={level}>
+      <LegalSection section={S.officer}>
         <P>
           운영팀은 개인정보 처리 업무를 총괄하고 개인정보와 관련한 문의, 불만 처리, 피해 구제를 위해 아래와 같이 개인정보
           보호책임자를 지정하고 있습니다.
@@ -453,7 +384,7 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         </P>
       </LegalSection>
 
-      <LegalSection section={S.remedy} level={level}>
+      <LegalSection section={S.remedy}>
         <P>
           개인정보 침해로 인한 분쟁 해결이나 상담 등 피해 구제가 필요하면 아래 기관에 신고하거나 상담을 신청할 수
           있습니다.
@@ -465,31 +396,12 @@ export default function PrivacyPolicyContent({ headingLevel = 2 }: Props) {
         </Items>
       </LegalSection>
 
-      <LegalSection section={S.changes} level={level}>
+      <LegalSection section={S.changes}>
         <Items ordered>
-          <li>이 개인정보처리방침은 {EFFECTIVE_DATE}부터 적용됩니다.</li>
+          <li>이 개인정보처리방침은 2026년 9월 20일부터 적용됩니다.</li>
           <li>
             내용을 바꿀 때는 시행 전에 공지사항으로 알리고, 이전 개인정보처리방침은 적용 기간과 함께 이 페이지에서 볼 수
             있게 하겠습니다.
-          </li>
-          <li>
-            이전 개인정보처리방침
-            <ul className="mt-1 list-disc pl-5">
-              {PREVIOUS_VERSIONS.map((version) => (
-                <li key={version.privacyPath}>
-                  {/* 새 탭으로 연다. 1:1 문의의 동의 팝업에서도 이 본문을 쓰는데, 같은 탭에서 옮기면 적던 문의가 사라진다. */}
-                  <a
-                    href={version.privacyPath}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-accent underline underline-offset-4"
-                  >
-                    {version.period} 적용
-                    <NewTabHint />
-                  </a>
-                </li>
-              ))}
-            </ul>
           </li>
         </Items>
       </LegalSection>
