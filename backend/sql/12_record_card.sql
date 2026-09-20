@@ -14,10 +14,13 @@
 create table if not exists public.record_card (
   id          bigint generated always as identity primary key,
   user_id     bigint not null references public.app_user(id) on delete cascade,
-  record_id   bigint not null references public.run_record(id) on delete cascade,
+  record_id   bigint not null,
   -- R2 키(record-cards/{user_id}/...). URL은 만료되므로 저장하지 않고 조회 때 발급한다.
   image_key   varchar(200) not null,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  -- 카드의 user_id와 기록의 user_id가 같다는 것을 DB가 보장한다.
+  constraint record_card_record_owner_fk foreign key (record_id, user_id)
+    references public.run_record(id, user_id) on delete cascade
 );
 
 -- 마이페이지 목록: 내 카드를 최근 순으로
@@ -37,5 +40,5 @@ alter table public.record_card enable row level security;
 -- 테이블과 RLS: relrowsecurity가 true여야 한다.
 -- select relname, relrowsecurity from pg_class where relname = 'record_card';
 --
--- 외래키 삭제 정책: 두 행 모두 confdeltype이 c(cascade)여야 한다.
+-- 외래키: user_id는 app_user, (record_id, user_id)는 run_record를 참조하고 둘 다 confdeltype이 c(cascade)여야 한다.
 -- select conname, confdeltype from pg_constraint where conrelid = 'public.record_card'::regclass and contype = 'f';

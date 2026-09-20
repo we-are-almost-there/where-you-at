@@ -562,7 +562,8 @@ create table run_record (
   duration_ms       bigint not null check (duration_ms > 0),
   pace_sec_per_km   numeric(8, 2) check (pace_sec_per_km > 0),
   finished_at       timestamptz not null,
-  created_at        timestamptz not null default now()
+  created_at        timestamptz not null default now(),
+  unique (id, user_id)
 );
 
 -- 마이페이지 목록: 내 기록을 최근 순으로
@@ -577,9 +578,12 @@ alter table run_record enable row level security;
 create table record_card (
   id          bigint generated always as identity primary key,
   user_id     bigint not null references app_user(id) on delete cascade,
-  record_id   bigint not null references run_record(id) on delete cascade,
+  record_id   bigint not null,
   image_key   varchar(200) not null,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  -- 카드의 user_id와 기록의 user_id가 같다는 것을 DB가 보장한다.
+  constraint record_card_record_owner_fk foreign key (record_id, user_id)
+    references run_record(id, user_id) on delete cascade
 );
 
 -- 마이페이지 목록: 내 카드를 최근 순으로

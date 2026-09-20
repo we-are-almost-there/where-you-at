@@ -20,7 +20,9 @@ create table if not exists public.run_record (
   duration_ms       bigint not null check (duration_ms > 0),
   pace_sec_per_km   numeric(8, 2) check (pace_sec_per_km > 0),
   finished_at       timestamptz not null,
-  created_at        timestamptz not null default now()
+  created_at        timestamptz not null default now(),
+  -- record_card가 (record_id, user_id)로 참조할 수 있게 한다. id가 이미 유일해서 값은 안 바뀐다.
+  unique (id, user_id)
 );
 
 -- 마이페이지 목록: 내 기록을 최근 순으로
