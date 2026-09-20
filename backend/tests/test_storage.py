@@ -6,10 +6,12 @@
     python -m unittest tests.test_storage
 """
 import unittest
+from io import BytesIO
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from botocore.stub import Stubber
+from PIL import Image
 
 from app.core.config import settings
 from app.services import storage
@@ -22,6 +24,12 @@ R2_SETTINGS = {
     "r2_secret_access_key": "test-secret-key",
     "r2_bucket": "test-uploads",
 }
+
+
+def _image_bytes(format_name: str) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (2, 2), "purple").save(output, format=format_name)
+    return output.getvalue()
 
 
 class StorageTestCase(unittest.TestCase):
@@ -63,15 +71,23 @@ class NewKeyTest(unittest.TestCase):
                 storage.new_key(Folder.AVATAR, 7, content_type)
 
 
-class DetectImageContentTypeTest(unittest.TestCase):
-    def test_detects_supported_magic_bytes(self):
-        self.assertEqual(storage.detect_image_content_type(b"\xff\xd8\xffimage"), "image/jpeg")
-        self.assertEqual(storage.detect_image_content_type(b"\x89PNG\r\n\x1a\nimage"), "image/png")
-        self.assertEqual(storage.detect_image_content_type(b"RIFF\x10\x00\x00\x00WEBPVP8 image"), "image/webp")
+class DecodedImageContentTypeTest(unittest.TestCase):
+    def test_decodes_supported_images(self):
+        self.assertEqual(storage.decoded_image_content_type(_image_bytes("JPEG")), "image/jpeg")
+        self.assertEqual(storage.decoded_image_content_type(_image_bytes("PNG")), "image/png")
+        self.assertEqual(storage.decoded_image_content_type(_image_bytes("WEBP")), "image/webp")
 
-    def test_does_not_trust_arbitrary_or_partial_headers(self):
-        for data in (b"", b"<script>bad</script>", b"RIFF1234WEBP", b"GIF89a"):
-            self.assertIsNone(storage.detect_image_content_type(data), data)
+    def test_rejects_arbitrary_signature_only_and_truncated_files(self):
+        files = (
+            b"",
+            b"<script>bad</script>",
+            b"\xff\xd8\xffnot a jpeg",
+            b"\x89PNG\r\n\x1a\nnot a png",
+            b"RIFF\x10\x00\x00\x00WEBPVP8 not a webp",
+            _image_bytes("PNG")[:20],
+        )
+        for data in files:
+            self.assertIsNone(storage.decoded_image_content_type(data), data[:20])
 
 
 class CheckR2Test(unittest.TestCase):

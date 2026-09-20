@@ -15,6 +15,7 @@ httpx==0.28.1
 idna==3.18
 jmespath==1.1.0
 psycopg2-binary==2.9.12
+pillow==12.3.0
 pydantic==2.13.4
 pydantic-settings==2.14.1
 pydantic_core==2.46.4

@@ -25,10 +25,12 @@ import uuid
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
+from io import BytesIO
 
 import boto3
 from botocore.client import Config
 from botocore.exceptions import BotoCoreError, ClientError
+from PIL import Image, UnidentifiedImageError
 
 from ..core.config import settings
 
@@ -102,23 +104,26 @@ def new_key(folder: Folder, user_id: int, content_type: str) -> str:
     return f"{folder.value}/{user_id}/{uuid.uuid4().hex}.{ext}"
 
 
-def detect_image_content_type(data: bytes) -> str | None:
-    """파일 앞부분의 표준 시그니처로 지원 이미지 형식을 판별한다.
+def decoded_image_content_type(data: bytes) -> str | None:
+    """전체 픽셀을 실제로 디코딩해 유효한 지원 이미지의 MIME 타입을 돌려준다.
 
-    요청 Content-Type이나 객체 메타데이터는 올리는 사람이 정할 수 있으므로 파일 형식의 근거로
-    사용하지 않는다. JPG/PNG/WEBP 이외의 파일은 None이다.
+    요청 Content-Type이나 파일 시그니처만으로 판정하지 않는다. 헤더 뒤에 임의 데이터를 붙인 파일,
+    잘린 파일, 지나치게 큰 압축 이미지는 R2에 저장하기 전에 거부한다.
     """
-    if data.startswith(b"\xff\xd8\xff"):
-        return "image/jpeg"
-    if data.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png"
-    if len(data) >= 16 and data[:4] == b"RIFF" and data[8:12] == b"WEBP" and data[12:16] in {
-        b"VP8 ",
-        b"VP8L",
-        b"VP8X",
-    }:
-        return "image/webp"
-    return None
+    formats = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
+    try:
+        with Image.open(BytesIO(data)) as image:
+            content_type = formats.get(image.format or "")
+            if content_type is None or image.width <= 0 or image.height <= 0:
+                return None
+            # 프로필 편집기는 작은 정사각형을 만든다. 직접 API를 호출해 고압축 거대 이미지를 보내더라도
+            # 디코더가 과도한 메모리를 쓰지 않도록 픽셀 수를 먼저 제한한다.
+            if image.width * image.height > 4096 * 4096:
+                return None
+            image.load()
+            return content_type
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError, SyntaxError, ValueError):
+        return None
 
 
 def put(key: str, data: bytes, content_type: str) -> None:

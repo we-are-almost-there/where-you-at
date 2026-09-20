@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from ...crud import user as user_crud
 from ...deps import CurrentUser, db_connection, get_current_user, unauthorized_error
@@ -78,11 +79,16 @@ async def upload_avatar(request: Request, current_user: CurrentUser = Depends(ge
         raise HTTPException(status_code=400, detail="JPG, PNG, WEBP 사진만 올릴 수 있습니다.")
 
     data = await _avatar_body(request)
-    detected_type = storage.detect_image_content_type(data)
+    return await run_in_threadpool(_store_avatar, current_user.id, data, declared_type)
+
+
+def _store_avatar(user_id: int, data: bytes, declared_type: str) -> UserOut:
+    """이미지를 검증하고 R2·DB에 반영하는 동기 작업. async 라우터는 이 함수를 스레드풀에서 실행한다."""
+    detected_type = storage.decoded_image_content_type(data)
     if detected_type is None or detected_type != declared_type:
         raise HTTPException(status_code=400, detail="파일 형식과 확장자가 맞는 JPG, PNG, WEBP 사진만 올려 주세요.")
 
-    avatar_key = storage.new_key(storage.Folder.AVATAR, current_user.id, detected_type)
+    avatar_key = storage.new_key(storage.Folder.AVATAR, user_id, detected_type)
     try:
         storage.put(avatar_key, data, detected_type)
     except storage.StorageError:
@@ -90,7 +96,7 @@ async def upload_avatar(request: Request, current_user: CurrentUser = Depends(ge
 
     try:
         with db_connection() as conn:
-            user, previous_key = user_crud.set_avatar(conn, current_user.id, avatar_key)
+            user, previous_key = user_crud.set_avatar(conn, user_id, avatar_key)
     except Exception:
         # DB에 연결하지 못했다면 새 최종 파일이 고아로 남지 않게 되돌린다.
         try:
@@ -110,7 +116,7 @@ async def upload_avatar(request: Request, current_user: CurrentUser = Depends(ge
             storage.delete(previous_key)
         except storage.StorageError as exc:
             # 새 사진 저장은 이미 끝났다. 이전 파일 정리 실패 때문에 성공을 실패로 바꾸지 않는다.
-            print(f"[WARN] 이전 프로필 사진 삭제 실패: user_id={current_user.id} {type(exc).__name__}")
+            print(f"[WARN] 이전 프로필 사진 삭제 실패: user_id={user_id} {type(exc).__name__}")
     return profile.user_out(user)
 
 

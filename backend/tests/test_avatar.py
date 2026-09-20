@@ -2,11 +2,13 @@
 
 import asyncio
 import unittest
-from unittest.mock import MagicMock, patch
+from io import BytesIO
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.api.routers import me
 from app.api.routers.me import AVATAR_MAX_BYTES
@@ -18,7 +20,16 @@ SECRET = "s" * 32
 SESSION_ID = UUID("11111111-1111-4111-8111-111111111111")
 USER = {"id": 7, "nickname": "길손", "bio": None, "avatar_key": None, "kakao_id": 4321}
 AVATAR_KEY = "avatars/7/" + "a" * 32 + ".webp"
-WEBP = b"RIFF\x10\x00\x00\x00WEBPVP8 " + b"image"
+
+
+def _image_bytes(format_name: str) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (2, 2), "purple").save(output, format=format_name)
+    return output.getvalue()
+
+
+WEBP = _image_bytes("WEBP")
+PNG = _image_bytes("PNG")
 
 
 def _headers(content_type: str | None = None):
@@ -68,6 +79,16 @@ class AvatarApiTest(unittest.TestCase):
         self.assertEqual(mock_set_avatar.call_args.args[1:], (7, AVATAR_KEY))
         mock_delete.assert_called_once_with("avatars/7/old.webp")
 
+    @patch("app.api.routers.me.run_in_threadpool", new_callable=AsyncMock)
+    @patch("app.services.storage.is_configured", return_value=True)
+    def test_offloads_decode_r2_and_db_work_from_event_loop(self, _configured, mock_threadpool):
+        mock_threadpool.return_value = {"id": 7, "nickname": "길손", "bio": None}
+
+        res = self.client.put("/api/me/avatar", headers=_headers("image/webp"), content=WEBP)
+
+        self.assertEqual(res.status_code, 200)
+        mock_threadpool.assert_awaited_once_with(me._store_avatar, 7, WEBP, "image/webp")
+
     def test_stream_limit_does_not_depend_on_content_length_header(self):
         chunks = iter((bytes(AVATAR_MAX_BYTES), b"x"))
 
@@ -87,7 +108,7 @@ class AvatarApiTest(unittest.TestCase):
         res = self.client.put(
             "/api/me/avatar",
             headers=_headers("image/webp"),
-            content=b"<script>not an image</script>",
+            content=b"RIFF\x10\x00\x00\x00WEBPVP8 " + b"not an image",
         )
 
         self.assertEqual(res.status_code, 400)
@@ -99,7 +120,7 @@ class AvatarApiTest(unittest.TestCase):
         res = self.client.put(
             "/api/me/avatar",
             headers=_headers("image/webp"),
-            content=b"\x89PNG\r\n\x1a\nimage",
+            content=PNG,
         )
 
         self.assertEqual(res.status_code, 400)
