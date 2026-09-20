@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createRecord, fetchRecords, fetchRecordCards, saveRecordCard, ServerSaveUnconfirmedError } from "./recordsApi";
 import { HttpError, NetworkError } from "../../lib/http";
-import { RecordApiError } from "./recordsErrors";
+import { RecordApiError, RecordImageValidationError } from "./recordsErrors";
 
 const session = vi.hoisted(() => ({ token: "test-token" }));
 vi.mock("../../lib/authToken", () => ({ readAccessToken: () => session.token }));
@@ -70,8 +70,8 @@ it("R2 PUT 이후 사용자가 바뀌면 다른 사용자의 토큰으로 카드
 });
 
 it("용량이나 형식 제한에 맞지 않는 이미지는 업로드 URL 요청 전에 거부한다", async () => {
-  await expect(saveRecordCard(42, new Blob([new Uint8Array(5 * 1024 * 1024 + 1)], { type: "image/png" }))).rejects.toThrow();
-  await expect(saveRecordCard(42, new Blob(["svg"], { type: "image/svg+xml" }))).rejects.toThrow();
+  await expect(saveRecordCard(42, new Blob([new Uint8Array(5 * 1024 * 1024 + 1)], { type: "image/png" }))).rejects.toBeInstanceOf(RecordImageValidationError);
+  await expect(saveRecordCard(42, new Blob(["svg"], { type: "image/svg+xml" }))).rejects.toBeInstanceOf(RecordImageValidationError);
   expect(fetchMock).not.toHaveBeenCalled();
 });
 

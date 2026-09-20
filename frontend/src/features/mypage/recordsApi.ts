@@ -6,7 +6,7 @@ import { authHeaders, fetchOrNetworkError, HttpError } from "../../lib/http";
 import { readAccessToken } from "../../lib/authToken";
 import type { RouteType } from "../map/types";
 import type { RecordCardPage, RunRecord, SavedRecordCard } from "./types";
-import { isRecordRequestRejected, recordApiError } from "./recordsErrors";
+import { isRecordRequestRejected, recordApiError, RecordImageValidationError } from "./recordsErrors";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
@@ -113,7 +113,7 @@ export async function fetchRecordCards(page = 1, size = 12): Promise<RecordCardP
  */
 export async function saveRecordCard(recordId: number, image: Blob): Promise<SavedRecordCard> {
   if (image.size > 5 * 1024 * 1024 || !["image/png", "image/jpeg", "image/webp"].includes(image.type)) {
-    throw new Error("카드 이미지는 PNG, JPEG, WebP 형식의 5MB 이하 파일이어야 해요.");
+    throw new RecordImageValidationError("카드 이미지는 PNG, JPEG, WebP 형식의 5MB 이하 파일이어야 해요. 사진이나 카드 비율을 변경해 주세요.");
   }
   const token = readAccessToken();
   const headers = { ...authHeaders(), "Content-Type": "application/json" };

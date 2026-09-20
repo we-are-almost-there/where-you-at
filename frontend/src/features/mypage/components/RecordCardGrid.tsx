@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import { formatDate } from "../format";
 import { formatDistance, formatDuration, paceStat } from "../../map/trackingRecord";
-import { saveCardImage } from "../saveCardImage";
+import { prepareCardImage, saveCardImage } from "../saveCardImage";
 import type { SavedRecordCard } from "../types";
 
 /**
@@ -15,7 +15,7 @@ export default function RecordCardGrid({ cards }: { cards: SavedRecordCard[] }) 
     <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
       {cards.map((card) => (
         <li key={card.id}>
-          <CardImage card={card} />
+          <CardImage key={card.imageUrl} card={card} />
         </li>
       ))}
     </ul>
@@ -26,15 +26,28 @@ function CardImage({ card }: { card: SavedRecordCard }) {
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [preparationFailed, setPreparationFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!card.imageUrl || failed) return;
+    const controller = new AbortController();
+    void prepareCardImage(card.imageUrl, controller.signal).then((prepared) => {
+      if (!controller.signal.aborted) setFile(prepared);
+    }).catch(() => {
+      if (!controller.signal.aborted) setPreparationFailed(true);
+    });
+    return () => controller.abort();
+  }, [card.imageUrl, failed, attempt]);
   const label = `${card.record.courseName} 기록 카드, ${formatDate(card.createdAt)}`;
 
   if (card.imageUrl && !failed) {
-    const imageUrl = card.imageUrl;
     const save = async () => {
+      if (!file) return;
       setSaving(true);
       setSaveError(false);
       try {
-        await saveCardImage(imageUrl);
+        await saveCardImage(file);
       } catch {
         setSaveError(true);
       } finally {
@@ -44,21 +57,24 @@ function CardImage({ card }: { card: SavedRecordCard }) {
     return (
       <div>
         <img
-          src={imageUrl}
+          src={card.imageUrl}
           alt={label}
           onError={() => setFailed(true)}
           className="aspect-[4/5] w-full rounded-[10px] object-cover"
         />
         <button
           type="button"
-          onClick={save}
-          disabled={saving}
+          onClick={preparationFailed ? () => {
+            setPreparationFailed(false);
+            setAttempt((value) => value + 1);
+          } : save}
+          disabled={saving || (!file && !preparationFailed)}
           className="mt-1.5 flex h-9 w-full cursor-pointer items-center justify-center gap-1 rounded-[10px] bg-lavender text-[13px] font-bold text-accent disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Download size={14} strokeWidth={2} aria-hidden />
-          {saving ? "저장 중…" : "이미지 저장"}
+          {preparationFailed ? "이미지 준비 재시도" : saving ? "저장 중…" : file ? "이미지 저장" : "이미지 준비 중…"}
         </button>
-        {saveError && (
+        {(saveError || preparationFailed) && (
           <p role="alert" className="mt-1 text-center text-[12px] text-caption">
             저장하지 못했어요. 다시 시도해 주세요.
           </p>

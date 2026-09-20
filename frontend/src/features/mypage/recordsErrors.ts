@@ -4,6 +4,9 @@ import { toUserError, type UserError } from "../../components/error/userError";
 const FEATURE_DISABLED = "아직 제공하지 않는 기능입니다.";
 const QUOTA_EXCEEDED = "저장할 수 있는 기록 카드 수를 넘었어요.";
 
+/** 이미지 편집으로 해결해야 하는 로컬 검증 실패. */
+export class RecordImageValidationError extends Error {}
+
 /** 같은 HTTP 상태라도 원인이 다르므로 백엔드 detail을 함께 보존한다. */
 export class RecordApiError extends HttpError {
   readonly detail: unknown;
@@ -28,6 +31,7 @@ export function isRecordRequestRejected(error: unknown): error is RecordApiError
 
 /** 상한·입력·계정·기능 제한은 같은 카드를 다시 보내도 해결되지 않는다. */
 export function canRetryCardUpload(error: unknown): boolean {
+  if (error instanceof RecordImageValidationError) return false;
   if (!(error instanceof RecordApiError)) return true;
   return !([400, 401, 403, 404, 422].includes(error.status)
     || (error.status === 409 && error.detail === QUOTA_EXCEEDED)
@@ -35,6 +39,7 @@ export function canRetryCardUpload(error: unknown): boolean {
 }
 
 export function toRecordUserError(error: unknown, fallback: string): UserError {
+  if (error instanceof RecordImageValidationError) return { title: error.message, description: "" };
   if (!(error instanceof RecordApiError)) return toUserError(error, fallback);
   let title: string;
   switch (error.status) {

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createRecord, fetchRecordCards } from "./recordsApi";
+import { createRecord, fetchRecordCards, fetchRecords } from "./recordsApi";
 
 vi.mock("./recordsApi", () => ({ createRecord: vi.fn(), fetchRecords: vi.fn(), fetchRecordCards: vi.fn() }));
 afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
@@ -16,13 +16,16 @@ it.each(["true", "false"])("완주 저장은 VITE_MYPAGE_API=%s와 무관하게 
   expect(createRecord).toHaveBeenCalledWith({ ...input, durationMs: 60001 });
 });
 
-it("실제 카드 조회는 요청 페이지와 크기를 서버에 전달한다", async () => {
-  vi.stubEnv("VITE_MYPAGE_API", "true");
+it.each([undefined, "false", "true"])("API 플래그 %s에서도 기록을 조회하고 카드 페이지와 크기를 전달한다", async (enabled) => {
+  vi.stubEnv("VITE_MYPAGE_API", enabled);
   vi.stubEnv("VITE_MYPAGE_PREVIEW", "false");
   vi.resetModules();
   const data = { totalCount: 25, page: 3, size: 12, cards: [] };
   vi.mocked(fetchRecordCards).mockResolvedValueOnce(data);
-  const { fetchMyRecordCards } = await import("./mypageData");
+  vi.mocked(fetchRecords).mockResolvedValueOnce([]);
+  const { fetchMyRecordCards, fetchMyRecords } = await import("./mypageData");
+  expect(await fetchMyRecords()).toEqual([]);
+  expect(fetchRecords).toHaveBeenCalledTimes(1);
   expect(await fetchMyRecordCards(3, 12)).toEqual(data);
   expect(fetchRecordCards).toHaveBeenCalledWith(3, 12);
 });

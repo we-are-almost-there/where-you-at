@@ -24,7 +24,7 @@ import {
   type TextColor,
 } from "../recordCardCanvas";
 import { ServerSaveUnconfirmedError } from "../../mypage/recordsApi";
-import { canRetryCardUpload, toRecordUserError } from "../../mypage/recordsErrors";
+import { canRetryCardUpload, toRecordUserError, RecordImageValidationError } from "../../mypage/recordsErrors";
 
 // 한글 웹폰트는 유니코드 범위별로 100개 넘게 쪼개져 있어 정적으로 import하면
 // 그 @font-face 규칙이 전부 메인 CSS에 실린다(34kB → 809kB). 카드를 열 때만 받아온다.
@@ -153,6 +153,7 @@ export function RecordCard({
   const uploadedVersionsRef = useRef(new Set<number>());
   const uploadPendingRef = useRef(false);
   const uploadUnconfirmedRef = useRef(false);
+  const invalidImageVersionsRef = useRef(new Set<number>());
   const serverUnsavedRef = useRef(false);
   const [uploadPending, setUploadPending] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -512,6 +513,7 @@ export function RecordCard({
 
     // 기다리는 것은 서버 저장만이다. navigator.share는 아래에서 사용자 제스처 안에 즉시 호출한다.
     if (saveToServer && !uploadPendingRef.current && !uploadUnconfirmedRef.current
+      && !invalidImageVersionsRef.current.has(savingVersion)
       && !uploadedVersionsRef.current.has(savingVersion)) {
       uploadPendingRef.current = true;
       serverUnsavedRef.current = true;
@@ -526,7 +528,11 @@ export function RecordCard({
         savedVersionRef.current = Math.max(savedVersionRef.current ?? 0, savingVersion);
       }).catch((error: unknown) => {
         if (!mountedRef.current) return;
-        uploadUnconfirmedRef.current = error instanceof ServerSaveUnconfirmedError || !canRetryCardUpload(error);
+        if (error instanceof RecordImageValidationError) {
+          invalidImageVersionsRef.current.add(savingVersion);
+        } else {
+          uploadUnconfirmedRef.current = error instanceof ServerSaveUnconfirmedError || !canRetryCardUpload(error);
+        }
         setServerError(error instanceof ServerSaveUnconfirmedError ? error.message
           : toRecordUserError(error, "카드 업로드에 실패했어요. 이미지 저장을 다시 누르면 재시도해요.").title);
       }).finally(() => {

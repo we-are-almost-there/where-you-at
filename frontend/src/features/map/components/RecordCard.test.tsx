@@ -5,7 +5,7 @@ import { RecordCard } from "./RecordCard";
 import { StrictMode } from "react";
 import { draw } from "../recordCardCanvas";
 import { saveRecordCard, ServerSaveUnconfirmedError } from "../../mypage/recordsApi";
-import { RecordApiError } from "../../mypage/recordsErrors";
+import { RecordApiError, RecordImageValidationError } from "../../mypage/recordsErrors";
 
 vi.mock("@fontsource/do-hyeon", () => ({}));
 vi.mock("@fontsource/black-han-sans", () => ({}));
@@ -74,6 +74,22 @@ function editFont() {
   fireEvent.click(screen.getByRole("button", { name: "글꼴" }));
   fireEvent.click(screen.getByRole("button", { name: "Do Hyeon" }));
 }
+
+it("용량 검증 실패는 원인을 안내하고 같은 이미지는 차단하되 편집 후에는 저장한다", async () => {
+  const saveToServer = vi.fn().mockRejectedValueOnce(new RecordImageValidationError("5MB 이하 파일이어야 해요."))
+    .mockResolvedValue(undefined);
+  share.mockResolvedValue(undefined);
+  render(<RecordCard record={{ distanceKm: 3, durationMs: 60000, paceSecPerKm: 20 }}
+    routeType="도보" routePoints={[]} onClose={() => {}} saveToServer={saveToServer} />);
+  await save();
+  expect(screen.getByRole("alert").textContent).toContain("5MB");
+  await save();
+  expect(saveToServer).toHaveBeenCalledTimes(1);
+  editFont();
+  await save();
+  expect(saveToServer).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
 
 it.each([
   [409, "저장할 수 있는 기록 카드 수를 넘었어요.", "기록 카드 수", 1],

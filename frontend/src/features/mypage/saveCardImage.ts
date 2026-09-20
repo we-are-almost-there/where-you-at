@@ -4,13 +4,16 @@
 // 다운로드가 시작될 여유를 준 뒤 blob URL을 놓아준다.
 const REVOKE_DELAY_MS = 30_000;
 
-/** 저장에 성공하면 true, 사용자가 공유 시트를 닫았으면 false. 이미지를 받지 못하면 던진다. */
-export async function saveCardImage(imageUrl: string, fileName = "record.png"): Promise<boolean> {
-  const res = await fetch(imageUrl);
+/** 클릭 전에 공유할 파일을 준비한다. */
+export async function prepareCardImage(imageUrl: string, signal?: AbortSignal): Promise<File> {
+  const res = await fetch(imageUrl, { signal });
   if (!res.ok) throw new Error(`이미지 다운로드 실패 (${res.status})`);
   const blob = await res.blob();
-  const file = new File([blob], fileName, { type: blob.type || "image/png" });
+  return new File([blob], "record.png", { type: blob.type || "image/png" });
+}
 
+/** 클릭 핸들러에서 바로 호출한다. 공유 취소 시 false를 반환한다. */
+export async function saveCardImage(file: File): Promise<boolean> {
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
@@ -22,10 +25,10 @@ export async function saveCardImage(imageUrl: string, fileName = "record.png"): 
     }
   }
 
-  const url = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(file);
   const link = document.createElement("a");
   link.href = url;
-  link.download = fileName;
+  link.download = file.name;
   // 일부 브라우저는 문서에 붙지 않은 링크의 클릭을 무시한다.
   document.body.appendChild(link);
   link.click();
