@@ -6,6 +6,16 @@ import SidebarDrawer from "./SidebarDrawer";
 
 afterEach(cleanup);
 
+it("로그인 안내에서 나이 확인을 열고 취소하면 메뉴를 다시 활성화한다", () => {
+  render(<MemoryRouter><SidebarDrawer isOpen onClose={() => {}} /></MemoryRouter>);
+  expect(screen.getByText("로그인이 필요해요")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "카카오로 3초 만에 시작" }));
+  expect(screen.queryByRole("dialog", { name: "메뉴" })).toBeNull();
+  expect(screen.getByRole("dialog", { name: "만 14세 이상만 가입할 수 있어요" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "취소" }));
+  expect(screen.getByRole("dialog", { name: "메뉴" })).toBeTruthy();
+});
+
 it("Escape는 드로어만 닫고 먼저 등록된 배경 팝업 핸들러로 전달하지 않는다", () => {
   const backgroundClose = vi.fn();
   const closeBackground = (event: KeyboardEvent) => {

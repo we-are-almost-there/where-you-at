@@ -1,4 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useLocation } from "react-router";
+import ModalDialog from "../../components/common/ModalDialog";
 import { Footprints, Heart, LogOut, Pencil } from "lucide-react";
 import { StatusMessage } from "../../components/common/a11y";
 import { signOut, type User } from "../auth";
@@ -52,11 +54,29 @@ export default function MyPage() {
 }
 
 function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void }) {
+  const { hash, key } = useLocation();
+  // 로그인 확인 뒤 대시보드가 실제로 그려진 시점에 처리한다.
+  // 같은 주소의 스탬프 링크를 다시 눌러도 이동하도록 navigation key를 구독한다.
+  useEffect(() => {
+    if (hash !== "#mypage-stamps") return;
+    // ScrollToTop과 드로어의 포커스 복귀가 끝난 다음 프레임에 이동한다.
+    const frame = requestAnimationFrame(() => {
+      const heading = document.getElementById("mypage-stamps");
+      if (!heading) return;
+      heading.setAttribute("tabindex", "-1");
+      heading.classList.add("outline-none");
+      heading.focus({ preventScroll: true });
+      heading.scrollIntoView({ block: "start", behavior: "instant" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [hash, key]);
+
   const saved = useSavedCourses();
   // API가 생기면 useSavedCourses처럼 불러오고 로딩·오류 상태를 둔다. 지금은 빈 값(또는 미리보기 예시)이다.
   const [records] = useState(getRecords);
   const [stamps] = useState(getStamps);
-  const [dialog, setDialog] = useState<"edit" | "withdraw" | "stampMap" | null>(null);
+  const [dialog, setDialog] = useState<"edit" | "withdraw" | "stampMap" | "signOut" | null>(null);
+  const cancelSignOutRef = useRef<HTMLButtonElement>(null);
   const [status, setStatus] = useState("");
   const [signingOut, setSigningOut] = useState(false);
 
@@ -74,6 +94,7 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
     setSigningOut(true);
     try {
       await signOut();
+      setDialog(null);
     } catch {
       // #172부터 로그아웃은 서버 세션 삭제가 성공해야 로컬 상태를 지운다. 실패를 삼키면 버튼이
       // 아무 반응 없이 보이므로 로그인 상태를 유지한 채 다시 시도할 수 있게 알린다.
@@ -133,7 +154,10 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
               </button>
               <button
                 type="button"
-                onClick={handleSignOut}
+                onClick={() => {
+                  setStatus("");
+                  setDialog("signOut");
+                }}
                 disabled={signingOut}
                 className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-control-border text-[14px] font-bold text-ink hover:bg-control-hover disabled:cursor-wait disabled:opacity-60"
               >
@@ -231,7 +255,41 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
         </Panel>
       </div>
 
-      <StatusMessage message={status} />
+      <StatusMessage message={dialog === "signOut" ? "" : status} />
+      {dialog === "signOut" && (
+        <ModalDialog
+          title="로그아웃하시겠어요?"
+          titleAlign="center"
+          onClose={() => { setStatus(""); setDialog(null); }}
+          initialFocusRef={cancelSignOutRef}
+          busy={signingOut}
+        >
+          <p className="break-keep text-center text-[13px] leading-5 text-caption">
+            로그아웃 후에도 언제든<br />
+            카카오 계정으로 다시 로그인할 수 있습니다.
+          </p>
+          {status && <p role="alert" className="mt-3 text-[13px] text-danger">{status}</p>}
+          <div className="mt-5 flex gap-2">
+            <button
+              ref={cancelSignOutRef}
+              type="button"
+              onClick={() => { setStatus(""); setDialog(null); }}
+              disabled={signingOut}
+              className="h-11 flex-1 cursor-pointer rounded-lg border border-control-border text-[15px] font-bold text-ink hover:bg-control-hover disabled:cursor-default disabled:opacity-50"
+            >
+              취소
+            </button>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="h-11 flex-1 cursor-pointer rounded-lg bg-accent text-[15px] font-bold text-white hover:bg-accent-strong disabled:cursor-wait disabled:opacity-60"
+            >
+              {signingOut ? "로그아웃 중…" : "로그아웃"}
+            </button>
+          </div>
+        </ModalDialog>
+      )}
       {dialog === "edit" && (
         <ProfileEditDialog
           user={user}
@@ -248,7 +306,7 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
 /** 영역 하나. 제목(h2)의 id로 이름을 붙여 화면낭독기의 영역 목록에서 찾을 수 있게 한다. */
 function Panel({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <section aria-labelledby={id} className={`min-w-0 ${PANEL}`}>
+    <section aria-labelledby={id} className={`min-w-0 ${PANEL} ${id === "mypage-stamps" ? "[&_h2]:scroll-mt-28 md:[&_h2]:scroll-mt-32" : ""}`}>
       {children}
     </section>
   );

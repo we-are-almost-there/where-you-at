@@ -1,7 +1,10 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router";
-import { X } from "lucide-react";
+import { UserRound, X } from "lucide-react";
+import { useAuth, useKakaoLogin } from "../../features/auth";
+import SidebarAccount from "./SidebarAccount";
+import logoUrl from "../../assets/logo.svg";
 
 interface SidebarDrawerProps {
   isOpen: boolean;
@@ -30,7 +33,9 @@ const FOCUSABLE_SELECTOR =
 
 export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerProps) {
   const location = useLocation();
-  const shouldBeInert = !isOpen || Boolean(inert);
+  const auth = useAuth();
+  const { login, dialog: loginDialog } = useKakaoLogin();
+  const shouldBeInert = !isOpen || Boolean(inert) || Boolean(loginDialog);
   const asideRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -46,6 +51,11 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
     return () => {
       if (!wasInert) root.removeAttribute("inert");
     };
+  }, [shouldBeInert]);
+
+  // 로그인 모달의 잠금 해제가 끝난 뒤에도 열린 드로어의 배경 잠금을 유지한다.
+  useEffect(() => {
+    if (!shouldBeInert) document.getElementById("root")?.setAttribute("inert", "");
   }, [shouldBeInert]);
 
   // 열리는 시점의 포커스를 저장해뒀다가, 완전히 닫힐 때 원래 위치로 복귀시킨다.
@@ -127,15 +137,16 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
         aria-modal={shouldBeInert ? undefined : true}
         aria-label="메뉴"
         aria-hidden={shouldBeInert || undefined}
-        className={`fixed inset-y-0 left-0 z-[51] flex w-[320px] flex-col overflow-hidden bg-white transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        className={`fixed inset-y-0 left-0 z-[51] flex w-[360px] max-w-[calc(100vw-24px)] flex-col overflow-hidden bg-white transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         inert={shouldBeInert}
       >
-        <div className="flex items-center justify-between px-6 pt-6">
-          <span className="text-[13px] font-semibold tracking-[0.15em] text-caption">
-            WHERE YOU AT
-          </span>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="flex items-center justify-between px-6 pt-8">
+          <h2>
+            <img src={logoUrl} alt="어디까지왔니" className="h-9 w-auto" />
+          </h2>
           <button
             ref={closeButtonRef}
             type="button"
@@ -143,17 +154,33 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
             aria-label="닫기"
             className="cursor-pointer text-caption transition-colors hover:text-accent"
           >
-            <X size={18} strokeWidth={1.5} />
+            <X size={24} strokeWidth={1.5} />
           </button>
         </div>
 
-        <div className="px-6 pb-6 pt-6">
-          <h2 className="text-[20px] font-bold leading-tight tracking-tight text-ink">
-            어디까지왔니
-          </h2>
-          <p className="mt-1.5 text-[12px] leading-relaxed text-caption">
-            코스 탐색부터 지원혜택까지, 인구감소지역 여행
+        <div className="px-6 pb-6 pt-3">
+          <p className="text-[12px] leading-relaxed text-caption">
+            전국의 코스와 지역의 방문 혜택을 잇는 액티비티 여행
           </p>
+        </div>
+
+        <div className="px-6 pb-4">
+          {auth.status === "loading" ? (
+            <div role="status" className="flex h-[140px] items-center justify-center rounded-2xl bg-lavender/40 text-[13px] text-caption">로그인 정보를 확인하고 있어요…</div>
+          ) : auth.status === "signedIn" ? (
+            isOpen && <SidebarAccount key={auth.user.nickname} user={auth.user} onClose={onClose} />
+          ) : (
+            <>
+              <div className="flex items-center gap-3 rounded-2xl border border-accent/15 p-4">
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-lavender text-accent"><UserRound size={22} aria-hidden="true" /></span>
+                <div>
+                  <p className="text-[16px] font-bold text-ink">로그인이 필요해요</p>
+                  <p className="text-[12px] text-caption">찜·기록·스탬프를 저장할 수 있어요</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => login(location.pathname + location.search)} className="mt-2.5 min-h-11 w-full cursor-pointer rounded-xl bg-accent px-3 py-3 text-[16px] font-bold text-white hover:bg-accent/90">카카오로 3초 만에 시작</button>
+            </>
+          )}
         </div>
 
         {/* 메뉴 — eyebrow와 한글 라벨을 같은 왼쪽 기준선에 맞춤(들여쓰기 제거).
@@ -162,9 +189,9 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
           폭 안에 맞게 살짝 작게 표시한다. 설명 문구는 모바일(터치 디바이스, hover 불가)에서는
           항상 펼쳐진 상태로 보이고, md 이상(마우스 환경)에서만 hover 시 펼쳐진다. 밑줄은
           평소엔 숨겨져 있다가 마우스를 올리거나 활성화되면 나타난다(늘어나는 애니메이션 없음). */}
-        <nav key={isOpen ? "open" : "closed"} className="relative flex-1 overflow-y-auto px-6">
+        <nav key={isOpen ? "open" : "closed"} className="relative px-6">
           {NAV_ITEMS.map((item, i) => {
-            const isActive = item.to !== null && location.pathname === item.to;
+            const isActive = item.to !== null && (location.pathname === item.to || (item.to !== "/" && location.pathname.startsWith(`${item.to}/`)));
             const isDisabled = item.to === null;
 
             const rowContent = (
@@ -174,7 +201,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
                   <span
                     aria-hidden
                     className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 select-none whitespace-nowrap font-black uppercase leading-none tracking-tight text-accent/[0.08]"
-                    style={{ fontSize: `clamp(30px, ${330 / item.eyebrow.length}px, 48px)` }}
+                    style={{ fontSize: `clamp(30px, ${350 / item.eyebrow.length}px, 56px)` }}
                   >
                     {item.eyebrow}
                   </span>
@@ -182,7 +209,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
 
                 <div className="relative flex items-baseline gap-3">
                   <span
-                    className={`text-[9px] font-semibold tracking-[0.15em] transition-colors duration-200 ${
+                    className={`text-[10px] font-semibold tracking-[0.15em] transition-colors duration-200 ${
                       isDisabled
                         ? "text-black/15"
                         : isActive
@@ -195,7 +222,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
                 </div>
 
                 <span
-                  className={`relative mt-0.5 flex items-baseline gap-2 text-[15px] font-bold tracking-tight ${
+                  className={`relative mt-0.5 flex items-baseline gap-2 text-[17px] font-bold tracking-tight ${
                     isDisabled ? "text-black/20" : "text-ink"
                   }`}
                 >
@@ -224,7 +251,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
 
                 {/* 밑줄 — 평소엔 투명, 마우스를 올리거나 활성화되면 나타남(위치·길이는 항상 고정) */}
                 <span
-                  className={`relative mt-2 block h-px bg-accent transition-opacity duration-200 ${
+                  className={`relative mt-2 block h-px bg-divider transition-opacity duration-200 ${
                     isActive ? "opacity-100" : isDisabled ? "opacity-0" : "opacity-0 md:group-hover:opacity-40"
                   }`}
                 />
@@ -246,6 +273,7 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
               <Link
                 key={item.label}
                 to={item.to as string}
+                aria-current={isActive ? "page" : undefined}
                 onClick={onClose}
                 className={rowClass}
                 style={rowStyle}
@@ -255,14 +283,15 @@ export default function SidebarDrawer({ isOpen, onClose, inert }: SidebarDrawerP
             );
           })}
         </nav>
+        </div>
 
-        <div className="px-6 py-4">
-          <div className="mb-2.5 h-px bg-divider" />
+        <div className="shrink-0 border-t border-divider px-6 py-4">
           <div className="flex items-center justify-between">
             <p className="text-[11px] tracking-wide text-caption">Copyright © 2026 거의 다왔어</p>
           </div>
         </div>
       </aside>
+      {loginDialog}
     </>,
     document.body,
   );
