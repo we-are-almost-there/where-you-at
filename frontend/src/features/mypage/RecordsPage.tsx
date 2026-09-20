@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { Footprints, Images } from "lucide-react";
 import { Tabs } from "../../components/common/Tabs";
@@ -9,9 +8,9 @@ import EmptyState from "./components/EmptyState";
 import RecordRows from "./components/RecordRows";
 import RecordCardGrid from "./components/RecordCardGrid";
 import { formatTotalDuration } from "./format";
-import { getRecordCards, getRecords } from "./mypageData";
 import { paginate, usePageParam } from "./usePageParam";
-import type { RunRecord, SavedRecordCard } from "./types";
+import { useRecords } from "./useRecords";
+import type { RecordCardPage, RunRecord } from "./types";
 
 type Tab = "records" | "cards";
 
@@ -29,7 +28,7 @@ const PER_PAGE: Record<Tab, number> = { records: 10, cards: 12 };
 export default function RecordsPage() {
   return (
     <MyPageLayout title="내 기록" back={{ to: "/mypage", label: "마이페이지" }}>
-      {() => <Records />}
+      {(user) => <Records key={user.id} />}
     </MyPageLayout>
   );
 }
@@ -38,15 +37,33 @@ function Records() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab: Tab = searchParams.get("tab") === "cards" ? "cards" : "records";
   const [page, goToPage] = usePageParam();
-  const [records] = useState(getRecords);
-  const [cards] = useState(getRecordCards);
+  const state = useRecords(tab === "cards" ? page : 1, PER_PAGE.cards);
 
   // 탭을 바꾸면 페이지는 1로 돌아간다. 두 목록의 페이지 수가 달라 이어 쓰면 빈 페이지가 나올 수 있다.
   // replace로 바꾸는 것은 의도다. 탭은 다른 화면으로 이동하는 것이 아니라 같은 목록의 보기를 바꾸는 것이라
   // 뒤로가기에 탭 전환을 쌓지 않는다. 페이지 이동(usePageParam)은 탐색 기록으로 남긴다.
   const changeTab = (next: Tab) => setSearchParams(next === "records" ? {} : { tab: next }, { replace: true });
 
-  const counts: Record<Tab, number> = { records: records.length, cards: cards.length };
+  if (state.status === "loading") {
+    return (
+      <p role="status" className="py-16 text-center text-[14px] text-caption">
+        기록을 불러오는 중…
+      </p>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <div className="py-16 text-center">
+        <p className="text-[14px] text-ink">{state.error.title}</p>
+        <button type="button" onClick={state.retry} className="mt-2 cursor-pointer text-[14px] font-bold text-accent hover:opacity-70">
+          다시 시도
+        </button>
+      </div>
+    );
+  }
+
+  const { records, cardPage } = state;
+  const counts: Record<Tab, number> = { records: records.length, cards: cardPage.totalCount };
   const activeIndex = TABS.findIndex((item) => item.value === tab);
 
   return (
@@ -70,7 +87,7 @@ function Records() {
         )}
       />
       <div {...tabPanelProps(TAB_ID_BASE, activeIndex)} className="mt-2">
-        {tab === "records" ? <RecordList records={records} page={page} onPage={goToPage} /> : <CardList cards={cards} page={page} onPage={goToPage} />}
+        {tab === "records" ? <RecordList records={records} page={page} onPage={goToPage} /> : <CardList data={cardPage} onPage={goToPage} />}
       </div>
     </>
   );
@@ -119,8 +136,8 @@ function RecordList({ records, page, onPage }: { records: RunRecord[]; page: num
   );
 }
 
-function CardList({ cards, page, onPage }: { cards: SavedRecordCard[]; page: number; onPage: (page: number) => void }) {
-  if (cards.length === 0) {
+function CardList({ data, onPage }: { data: RecordCardPage; onPage: (page: number) => void }) {
+  if (data.totalCount === 0) {
     return (
       <div className="mt-4">
         <EmptyState
@@ -131,11 +148,11 @@ function CardList({ cards, page, onPage }: { cards: SavedRecordCard[]; page: num
       </div>
     );
   }
-  const { current, totalPages, items } = paginate(cards, page, PER_PAGE.cards);
+  const totalPages = Math.max(1, Math.ceil(data.totalCount / data.size));
   return (
     <div className="mt-4">
-      <RecordCardGrid cards={items} />
-      <Pagination page={current} totalPages={totalPages} onChange={onPage} />
+      <RecordCardGrid cards={data.cards} />
+      <Pagination page={data.page} totalPages={totalPages} onChange={onPage} />
     </div>
   );
 }

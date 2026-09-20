@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../../lib/http";
 import { removeAvatar, signOut, startKakaoLogin, updateAvatar, updateProfile, useAuth, withdraw, type AuthState } from "../auth";
 import MyPage from "./MyPage";
-import { fetchSavedCourses, getRecords, getStamps } from "./mypageData";
+import { fetchMyRecords, fetchSavedCourses, getStamps } from "./mypageData";
 import type { SavedCourse } from "../saved";
 import type { RunRecord } from "./types";
 
@@ -38,8 +38,7 @@ vi.mock("../saved/savedStore", () => ({
 
 vi.mock("./mypageData", () => ({
   fetchSavedCourses: vi.fn(),
-  getRecords: vi.fn(),
-  getRecordCards: vi.fn(),
+  fetchMyRecords: vi.fn(),
   getStamps: vi.fn(),
 }));
 // 스탬프 지도는 도형 파일을 불러오므로 여기서는 열리는지만 본다. 지도 동작은 StampMapDialog.test.tsx가 맡는다.
@@ -104,7 +103,7 @@ function record(id: number): RunRecord {
 beforeEach(() => {
   mockedUseAuth.mockReturnValue(SIGNED_IN);
   vi.mocked(fetchSavedCourses).mockResolvedValue([]);
-  vi.mocked(getRecords).mockReturnValue([]);
+  vi.mocked(fetchMyRecords).mockResolvedValue([]);
   vi.mocked(getStamps).mockReturnValue([]);
 });
 
@@ -190,7 +189,7 @@ describe("MyPage", () => {
 
   it("찜한 코스는 최근 5개, 기록은 최근 7개만 보여 주고 전체 보기로 이어 준다", async () => {
     vi.mocked(fetchSavedCourses).mockResolvedValue(Array.from({ length: 7 }, (_, i) => course(i + 1)));
-    vi.mocked(getRecords).mockReturnValue(Array.from({ length: 9 }, (_, i) => record(i + 1)));
+    vi.mocked(fetchMyRecords).mockResolvedValue(Array.from({ length: 9 }, (_, i) => record(i + 1)));
     renderPage();
 
     const saved = screen.getByRole("region", { name: /찜한 코스/ });
@@ -198,7 +197,7 @@ describe("MyPage", () => {
     expect(within(saved).getByRole("link", { name: "찜한 코스 전체 보기" }).getAttribute("href")).toBe("/mypage/saved");
 
     const records = screen.getByRole("region", { name: /내 기록/ });
-    expect(within(records).getAllByRole("listitem")).toHaveLength(7);
+    await waitFor(() => expect(within(records).getAllByRole("listitem")).toHaveLength(7));
     expect(within(records).getByRole("link", { name: "내 기록 전체 보기" }).getAttribute("href")).toBe("/mypage/records");
   });
 

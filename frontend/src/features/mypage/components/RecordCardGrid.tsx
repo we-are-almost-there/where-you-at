@@ -1,19 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Download } from "lucide-react";
 import { formatDate } from "../format";
 import { formatDistance, formatDuration, paceStat } from "../../map/trackingRecord";
+import { prepareCardImage, saveCardImage } from "../saveCardImage";
 import type { SavedRecordCard } from "../types";
 
 /**
  * 저장한 기록 카드 모아보기. 기록 카드 기본 비율(피드 4:5)에 맞춘 격자다.
  * 이미지가 없거나 불러오지 못하면 기록 수치로 그린 기본 카드를 대신 보여 준다.
- * 누르면 크게 보기·다시 저장·공유를 여는 자리다(카드 저장 기능과 함께 붙인다).
+ * 이미지가 있는 카드에만 "이미지 저장" 버튼이 붙는다. 기본 카드는 저장할 이미지가 없다.
  */
 export default function RecordCardGrid({ cards }: { cards: SavedRecordCard[] }) {
   return (
     <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
       {cards.map((card) => (
         <li key={card.id}>
-          <CardImage card={card} />
+          <CardImage key={card.imageUrl} card={card} />
         </li>
       ))}
     </ul>
@@ -22,16 +24,62 @@ export default function RecordCardGrid({ cards }: { cards: SavedRecordCard[] }) 
 
 function CardImage({ card }: { card: SavedRecordCard }) {
   const [failed, setFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [preparationFailed, setPreparationFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!card.imageUrl || failed) return;
+    const controller = new AbortController();
+    void prepareCardImage(card.imageUrl, controller.signal).then((prepared) => {
+      if (!controller.signal.aborted) setFile(prepared);
+    }).catch(() => {
+      if (!controller.signal.aborted) setPreparationFailed(true);
+    });
+    return () => controller.abort();
+  }, [card.imageUrl, failed, attempt]);
   const label = `${card.record.courseName} 기록 카드, ${formatDate(card.createdAt)}`;
 
   if (card.imageUrl && !failed) {
+    const save = async () => {
+      if (!file) return;
+      setSaving(true);
+      setSaveError(false);
+      try {
+        await saveCardImage(file);
+      } catch {
+        setSaveError(true);
+      } finally {
+        setSaving(false);
+      }
+    };
     return (
-      <img
-        src={card.imageUrl}
-        alt={label}
-        onError={() => setFailed(true)}
-        className="aspect-[4/5] w-full rounded-[10px] object-cover"
-      />
+      <div>
+        <img
+          src={card.imageUrl}
+          alt={label}
+          onError={() => setFailed(true)}
+          className="aspect-[4/5] w-full rounded-[10px] object-cover"
+        />
+        <button
+          type="button"
+          onClick={preparationFailed ? () => {
+            setPreparationFailed(false);
+            setAttempt((value) => value + 1);
+          } : save}
+          disabled={saving || (!file && !preparationFailed)}
+          className="mt-1.5 flex h-9 w-full cursor-pointer items-center justify-center gap-1 rounded-[10px] bg-lavender text-[13px] font-bold text-accent disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download size={14} strokeWidth={2} aria-hidden />
+          {preparationFailed ? "이미지 준비 재시도" : saving ? "저장 중…" : file ? "이미지 저장" : "이미지 준비 중…"}
+        </button>
+        {(saveError || preparationFailed) && (
+          <p role="alert" className="mt-1 text-center text-[12px] text-caption">
+            저장하지 못했어요. 다시 시도해 주세요.
+          </p>
+        )}
+      </div>
     );
   }
 

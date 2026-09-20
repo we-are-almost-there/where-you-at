@@ -1,13 +1,14 @@
 import { getSavedCourses, type SavedCourse } from "../saved";
 import { previewRecordCards, previewRecords, previewStamps } from "./mypagePreview";
-import type { RunRecord, SavedRecordCard, Stamp } from "./types";
+import { createRecord, fetchRecordCards, fetchRecords, type CreateRecordInput } from "./recordsApi";
+import type { RecordCardPage, RunRecord, SavedRecordCard, Stamp } from "./types";
 
 // 마이페이지의 찜·기록·기록 카드·스탬프 데이터.
-// 찜은 서버에서 받아 오고, 기록·기록 카드·스탬프는 아직 서버 API가 없어 빈 목록을 돌려준다.
-// 개발 서버에서 VITE_MYPAGE_PREVIEW=true면 예시 데이터로 채워 내용이 있을 때의 화면을 확인할 수 있다
-// (고객지원의 VITE_HELP_MOCK과 같은 방식).
-// API가 생기면 이 파일의 함수를 fetch로 바꾼다. 지금은 목록 전체를 받아 화면에서 페이지를 나누지만,
-// 기록처럼 계속 늘어나는 목록은 서버에서 나눠 받는 편이 낫다(공지 목록의 page·per_page처럼).
+// 찜·기록·기록 카드 목록은 서버에서 받아 온다.
+// 스탬프는 아직 서버 API가 없어 빈 목록을 돌려준다.
+// 개발 서버에서 VITE_MYPAGE_PREVIEW=true면 예시 데이터로 채워
+// 내용이 있을 때의 화면을 확인할 수 있다 (고객지원의 VITE_HELP_MOCK과 같은 방식).
+// 완주 기록은 전체 목록을 받고, 기록 카드는 서버에서 한 페이지씩 받는다.
 
 // 개발 서버(DEV)에서만 켠다. 배포 환경변수에 실수로 들어가도 운영 화면에 지어낸 기록이 나오지 않게 한다.
 const USE_PREVIEW = import.meta.env.DEV && import.meta.env.VITE_MYPAGE_PREVIEW === "true";
@@ -19,12 +20,25 @@ export async function fetchSavedCourses(): Promise<SavedCourse[]> {
   return getSavedCourses();
 }
 
-/** 완주 기록. 최근 완주순. */
+/** 내 완주 기록. 최근 완주순. */
+export async function fetchMyRecords(): Promise<RunRecord[]> {
+  if (USE_PREVIEW) return previewRecords;
+  return fetchRecords();
+}
+
+/** 내가 저장한 기록 카드. 최근 만든 순. */
+export async function fetchMyRecordCards(page = 1, size = 12): Promise<RecordCardPage> {
+  if (USE_PREVIEW) return { totalCount: previewRecordCards.length, page, size,
+    cards: previewRecordCards.slice((page - 1) * size, page * size) };
+  return fetchRecordCards(page, size);
+}
+
+/** 완주 기록. 최근 완주순. (동기 버전 — 서버 연결 전 화면용. 화면을 useRecords로 옮기면 지운다.) */
 export function getRecords(): RunRecord[] {
   return USE_PREVIEW ? previewRecords : [];
 }
 
-/** 저장한 기록 카드. 최근 만든 순. */
+/** 저장한 기록 카드. 최근 만든 순. (동기 버전 — 위와 같다.) */
 export function getRecordCards(): SavedRecordCard[] {
   return USE_PREVIEW ? previewRecordCards : [];
 }
@@ -32,4 +46,10 @@ export function getRecordCards(): SavedRecordCard[] {
 /** 받은 시군구 스탬프. */
 export function getStamps(): Stamp[] {
   return USE_PREVIEW ? previewStamps : [];
+}
+
+/** 완주 저장은 개발용 미리보기와 무관하다. 비멱등 POST이므로 호출자가 재시도하지 않는다. */
+export async function saveMyRecord(input: CreateRecordInput): Promise<RunRecord> {
+  // 서버 duration_ms가 정수라 소수는 반올림한다.
+  return createRecord({ ...input, durationMs: Math.round(input.durationMs) });
 }
