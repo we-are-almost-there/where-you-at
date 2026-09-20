@@ -87,6 +87,10 @@ class RecordsRouterTest(unittest.TestCase):
             {**BODY, "duration_ms": 0},
             {**BODY, "pace_sec_per_km": 0},
             {**BODY, "distance_km": 1001},
+            {**BODY, "duration_ms": 7 * 24 * 60 * 60 * 1000 + 1},
+            {**BODY, "pace_sec_per_km": 1_000_000},
+            {**BODY, "finished_at": "2026-09-20T00:00:00"},  # 시간대 없음
+            {**BODY, "finished_at": "2999-01-01T00:00:00Z"},  # 먼 미래
         ]
         with patch("app.api.routers.records.crud") as crud:
             for body in bad_bodies:
@@ -103,6 +107,14 @@ class RecordsRouterTest(unittest.TestCase):
         self.assertEqual(data["total_count"], 2)
         self.assertEqual([r["id"] for r in data["records"]], [3, 2])
         self.assertEqual(crud.list_records.call_args.kwargs["user_id"], 7)
+
+    def test_inf_and_nan_are_422(self):
+        for value in ("Infinity", "NaN"):
+            raw = ('{"course_id":5,"route_type":"trail","distance_km":%s,'
+                   '"duration_ms":1000,"finished_at":"2026-09-20T00:00:00Z"}') % value
+            res = self.client.post("/api/records", content=raw, headers={"Content-Type": "application/json"})
+            self.assertEqual(res.status_code, 422, value)
+
 
 class AuthRequiredTest(unittest.TestCase):
     def test_requires_login(self):
