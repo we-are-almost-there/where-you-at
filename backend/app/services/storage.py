@@ -5,12 +5,12 @@ Cloudflare R2 이미지 저장소 (S3 호환 API)
 링크만 알면 누구나 볼 수 있는 공개 버킷은 쓰지 않는다. 둘 다 비공개이고 같은 서버가 다루므로
 버킷을 나눠도 얻는 것이 없다.
 
-파일은 서버를 거치지 않는다.
-  올리기: 서버가 임시 키(uploads/)의 사전 서명 PUT URL을 발급 → 브라우저가 R2에 바로 올림
-          → 서버가 head()로 크기·형식을 확인 → promote()로 검증한 파일만 최종 키에 복사
+프로필 사진은 서버를 거쳐 올린다.
+  올리기: 서버가 요청 본문 크기와 실제 파일 시그니처를 확인 → avatars/에 저장
   보기:   서버가 짧게 유효한 사전 서명 GET URL을 응답에 넣어 줌
-R2는 사전 서명 POST(업로드 크기 제한 정책)를 지원하지 않아, 크기는 올린 뒤 head()로 확인하고
-기준을 넘으면 지운다.
+
+presign_upload(), head(), promote()는 배포 설정을 점검하는 check_r2 스크립트와 앞으로의 다른 이미지
+기능을 위해 남겨 둔다. 프로필 사진 API는 크기를 R2 전송 전에 강제해야 하므로 이 경로를 쓰지 않는다.
 
 사전 서명 URL은 만료 전까지 여러 번 쓸 수 있다. 올린 키를 그대로 저장하면 검증한 뒤에도 같은 URL로
 덮어쓸 수 있으므로, 업로드 URL은 임시 키에만 발급하고 최종 키에는 서버만 쓴다. 복사할 때 head()로 읽은
@@ -32,7 +32,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from ..core.config import settings
 
-# 브라우저가 올릴 수 있는 이미지 형식과 저장할 확장자.
+# 올릴 수 있는 이미지 형식과 저장할 확장자.
 IMAGE_EXTENSIONS = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -100,6 +100,33 @@ def new_key(folder: Folder, user_id: int, content_type: str) -> str:
     if ext is None:
         raise ValueError(f"허용하지 않는 이미지 형식: {content_type}")
     return f"{folder.value}/{user_id}/{uuid.uuid4().hex}.{ext}"
+
+
+def detect_image_content_type(data: bytes) -> str | None:
+    """파일 앞부분의 표준 시그니처로 지원 이미지 형식을 판별한다.
+
+    요청 Content-Type이나 객체 메타데이터는 올리는 사람이 정할 수 있으므로 파일 형식의 근거로
+    사용하지 않는다. JPG/PNG/WEBP 이외의 파일은 None이다.
+    """
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if len(data) >= 16 and data[:4] == b"RIFF" and data[8:12] == b"WEBP" and data[12:16] in {
+        b"VP8 ",
+        b"VP8L",
+        b"VP8X",
+    }:
+        return "image/webp"
+    return None
+
+
+def put(key: str, data: bytes, content_type: str) -> None:
+    """서버에서 검증한 파일을 비공개 버킷에 저장한다."""
+    try:
+        _client().put_object(Bucket=settings.r2_bucket, Key=key, Body=data, ContentType=content_type)
+    except (BotoCoreError, ClientError) as exc:
+        raise StorageError("파일 저장 실패") from exc
 
 
 def presign_upload(key: str, content_type: str) -> str:

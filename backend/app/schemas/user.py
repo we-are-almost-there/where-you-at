@@ -29,24 +29,6 @@ class LoginResponse(BaseModel):
     user: UserOut
 
 
-# 프로필 사진 업로드 (POST /api/me/avatar/*) ───────────
-AvatarContentType = Literal["image/jpeg", "image/png", "image/webp"]
-
-
-class AvatarUploadRequest(BaseModel):
-    content_type: AvatarContentType
-
-
-class AvatarUploadTicket(BaseModel):
-    upload_url: str
-    upload_key: str
-    max_bytes: int
-
-
-class AvatarUploadCompleteRequest(BaseModel):
-    upload_key: str = Field(min_length=1, max_length=200)
-
-
 # 프로필 수정 (PATCH /api/me) ──────────────────────────
 _SPACES = re.compile(r" {2,}")
 

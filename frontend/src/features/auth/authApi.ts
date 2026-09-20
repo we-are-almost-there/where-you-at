@@ -16,11 +16,7 @@ export interface User {
   avatar_url?: string | null;
 }
 
-export interface AvatarUploadTicket {
-  upload_url: string;
-  upload_key: string;
-  max_bytes: number;
-}
+const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
 
 /** 프로필 수정 요청. 보낸 칸만 바뀐다. bio를 빈 문자열로 보내면 지운다. */
 export interface ProfileChanges {
@@ -62,33 +58,18 @@ export async function updateMe(body: ProfileChanges): Promise<User> {
   return res.json();
 }
 
-/** R2 임시 경로용 URL을 받은 뒤 파일을 직접 올리고, 서버 검증·저장을 완료한다. */
+/** 서버가 크기와 실제 파일 형식을 확인한 뒤 비공개 R2에 저장한다. */
 export async function uploadAvatar(file: File): Promise<User> {
-  const ticketRes = await fetchOrNetworkError(`${API_BASE}/api/me/avatar/upload-url`, {
-    method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ content_type: file.type }),
-  });
-  if (!ticketRes.ok) throw new HttpError(ticketRes.status, `프로필 사진 업로드 준비 실패 (${ticketRes.status})`);
-  const ticket: AvatarUploadTicket = await ticketRes.json();
+  // 서버에서도 스트리밍 중 같은 제한을 강제한다. 여기서는 불필요한 네트워크 전송을 먼저 막는다.
+  if (file.size > AVATAR_MAX_BYTES) throw new HttpError(413, "프로필 사진 용량 초과");
 
-  // 서버도 업로드 뒤 다시 확인한다. 여기서는 너무 큰 파일을 R2까지 보내는 낭비를 막는다.
-  if (file.size > ticket.max_bytes) throw new HttpError(413, "프로필 사진 용량 초과");
-
-  const uploadRes = await fetchOrNetworkError(ticket.upload_url, {
+  const res = await fetchOrNetworkError(`${API_BASE}/api/me/avatar`, {
     method: "PUT",
-    headers: { "Content-Type": file.type },
+    headers: { ...authHeaders(), "Content-Type": file.type },
     body: file,
   });
-  if (!uploadRes.ok) throw new HttpError(uploadRes.status, `프로필 사진 전송 실패 (${uploadRes.status})`);
-
-  const completeRes = await fetchOrNetworkError(`${API_BASE}/api/me/avatar/complete`, {
-    method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ upload_key: ticket.upload_key }),
-  });
-  if (!completeRes.ok) throw new HttpError(completeRes.status, `프로필 사진 저장 실패 (${completeRes.status})`);
-  return completeRes.json();
+  if (!res.ok) throw new HttpError(res.status, `프로필 사진 저장 실패 (${res.status})`);
+  return res.json();
 }
 
 /** 현재 프로필 사진 연결을 지우고 기본 이미지로 되돌린다. */

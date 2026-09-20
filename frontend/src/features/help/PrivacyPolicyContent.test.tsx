@@ -88,7 +88,7 @@ describe("PrivacyPolicyContent", () => {
     expect(retention.textContent).toContain("회원 정보 (카카오 회원번호, 닉네임, 한 줄 소개, 프로필 사진과 저장 객체 키)");
     expect(retention.textContent).toContain("회원 탈퇴 시까지(카카오에서 서비스와의 연결을 끊은 경우 포함)");
     expect(retention.textContent).toContain("프로필 사진은 삭제하거나 새 사진으로 바꾸면 기존 파일과 저장 객체 키를 바로 삭제");
-    expect(retention.textContent).toContain("완료되지 않은 임시 업로드 파일은 1일 뒤 자동 삭제");
+    expect(retention.textContent).not.toContain("임시 업로드 파일");
     expect(retention.textContent).toContain("로그인 세션 (로그인 세션 번호, 회원 번호, 만료 시각)");
     expect(retention.textContent).toContain("7일이 지나 만료된 세션은 같은 회원이 다음에 로그인할 때 삭제");
 

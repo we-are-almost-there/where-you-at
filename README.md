@@ -97,7 +97,8 @@ npm run dev --prefix frontend
 
 프로필 사진 기능을 배포할 때는 갱신된 `08_app_user.sql`을 백엔드보다 먼저 다시 실행해
 `app_user.avatar_key` 칸을 추가합니다. 이 칸에는 만료되는 보기 URL이 아니라 비공개 R2의
-`avatars/` 객체 키만 저장됩니다.
+`avatars/` 객체 키만 저장됩니다. 사진 본문은 API 서버가 스트리밍으로 받아 5MB 제한과 실제
+JPG·PNG·WEBP 파일 시그니처를 확인한 뒤 R2에 저장합니다.
 
 또한 프로필 사진 수집·R2 보관 내용을 반영한 개인정보처리방침과 이용약관을 기능보다 먼저 공개하고,
 `backend` 폴더에서 `python -m scripts.seed_help`를 실행해 변경 안내 공지를 갱신합니다. 운영 R2 버킷 위치는

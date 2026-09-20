@@ -1,21 +1,17 @@
-import re
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ...crud import user as user_crud
 from ...deps import CurrentUser, db_connection, get_current_user, unauthorized_error
-from ...schemas.user import (
-    AvatarUploadCompleteRequest,
-    AvatarUploadRequest,
-    AvatarUploadTicket,
-    UserOut,
-    UserUpdate,
-)
+from ...schemas.user import UserOut, UserUpdate
 from ...services import kakao_oauth, profile, storage
+from ...services.rate_limit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
 AVATAR_MAX_BYTES = 5 * 1024 * 1024
+# 인증 회원 한 명이 짧은 시간에 R2 쓰기 비용을 과도하게 만들지 못하게 한다.
+# 메모리 기반 제한의 배포상 한계는 services/rate_limit.py에 적어 두었다.
+avatar_upload_limiter = SlidingWindowLimiter(max_requests=10, window_seconds=60)
 
 
 @router.get("", response_model=UserOut)
@@ -42,63 +38,53 @@ def _storage_unavailable() -> HTTPException:
     return HTTPException(status_code=503, detail="지금은 사진을 올릴 수 없습니다. 잠시 후 다시 시도해 주세요.")
 
 
-def _discard_upload(key: str) -> None:
-    try:
-        storage.delete(key)
-    except storage.StorageError:
-        # uploads/ 수명 주기 규칙이 하루 뒤 정리한다.
-        pass
+async def _avatar_body(request: Request) -> bytes:
+    """요청 본문을 스트리밍으로 읽되 제한을 넘는 순간 중단한다."""
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared_size = int(content_length)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="올바르지 않은 파일 크기입니다.")
+        if declared_size > AVATAR_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="프로필 사진은 5MB 이하만 올릴 수 있습니다.")
 
-
-@router.post("/avatar/upload-url", response_model=AvatarUploadTicket)
-def create_avatar_upload(body: AvatarUploadRequest, current_user: CurrentUser = Depends(get_current_user)):
-    """브라우저가 R2 임시 경로에 직접 올릴 사전 서명 URL을 발급한다."""
-    if not storage.is_configured():
-        raise _storage_unavailable()
-    upload_key = storage.new_key(storage.Folder.UPLOAD, current_user.id, body.content_type)
-    try:
-        upload_url = storage.presign_upload(upload_key, body.content_type)
-    except storage.StorageError:
-        raise _storage_unavailable()
-    return AvatarUploadTicket(upload_url=upload_url, upload_key=upload_key, max_bytes=AVATAR_MAX_BYTES)
-
-
-@router.post("/avatar/complete", response_model=UserOut)
-def complete_avatar_upload(
-    body: AvatarUploadCompleteRequest,
-    current_user: CurrentUser = Depends(get_current_user),
-):
-    """임시 파일을 확인해 avatars/로 옮기고 회원의 현재 사진으로 지정한다."""
-    if not storage.is_configured():
-        raise _storage_unavailable()
-
-    # 다른 회원의 임시 키나 서버가 발급하지 않은 모양의 키를 조회·승격하지 않는다.
-    pattern = rf"^uploads/{current_user.id}/[0-9a-f]{{32}}\.(jpg|png|webp)$"
-    if re.fullmatch(pattern, body.upload_key) is None:
-        raise HTTPException(status_code=400, detail="올바르지 않은 업로드입니다. 사진을 다시 선택해 주세요.")
-
-    try:
-        info = storage.head(body.upload_key)
-    except storage.StorageError:
-        raise _storage_unavailable()
-    if info is None:
-        raise HTTPException(status_code=400, detail="업로드한 사진을 찾을 수 없습니다. 사진을 다시 선택해 주세요.")
-
-    expected_extension = storage.IMAGE_EXTENSIONS.get(info.content_type)
-    if expected_extension is None or not body.upload_key.endswith(f".{expected_extension}"):
-        _discard_upload(body.upload_key)
-        raise HTTPException(status_code=400, detail="JPG, PNG, WEBP 사진만 올릴 수 있습니다.")
-    if info.size <= 0:
-        _discard_upload(body.upload_key)
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > AVATAR_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="프로필 사진은 5MB 이하만 올릴 수 있습니다.")
+        chunks.append(chunk)
+    if size == 0:
         raise HTTPException(status_code=400, detail="빈 파일은 올릴 수 없습니다.")
-    if info.size > AVATAR_MAX_BYTES:
-        _discard_upload(body.upload_key)
-        raise HTTPException(status_code=413, detail="프로필 사진은 5MB 이하만 올릴 수 있습니다.")
+    return b"".join(chunks)
 
+
+@router.put("/avatar", response_model=UserOut)
+async def upload_avatar(request: Request, current_user: CurrentUser = Depends(get_current_user)):
+    """크기와 실제 파일 형식을 서버에서 확인한 뒤 avatars/에 저장한다."""
+    if not avatar_upload_limiter.allow(str(current_user.id)):
+        raise HTTPException(
+            status_code=429,
+            detail="사진 변경 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+            headers={"Retry-After": "60"},
+        )
+    if not storage.is_configured():
+        raise _storage_unavailable()
+
+    declared_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if declared_type not in storage.IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="JPG, PNG, WEBP 사진만 올릴 수 있습니다.")
+
+    data = await _avatar_body(request)
+    detected_type = storage.detect_image_content_type(data)
+    if detected_type is None or detected_type != declared_type:
+        raise HTTPException(status_code=400, detail="파일 형식과 확장자가 맞는 JPG, PNG, WEBP 사진만 올려 주세요.")
+
+    avatar_key = storage.new_key(storage.Folder.AVATAR, current_user.id, detected_type)
     try:
-        avatar_key = storage.promote(body.upload_key, storage.Folder.AVATAR, info)
-    except storage.UploadChangedError:
-        raise HTTPException(status_code=409, detail="업로드가 변경되었습니다. 사진을 다시 선택해 주세요.")
+        storage.put(avatar_key, data, detected_type)
     except storage.StorageError:
         raise _storage_unavailable()
 
@@ -113,7 +99,10 @@ def complete_avatar_upload(
             pass
         raise
     if user is None:
-        _discard_upload(avatar_key)
+        try:
+            storage.delete(avatar_key)
+        except storage.StorageError:
+            pass
         raise unauthorized_error()
 
     if previous_key and previous_key != avatar_key:

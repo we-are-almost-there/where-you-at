@@ -63,6 +63,17 @@ class NewKeyTest(unittest.TestCase):
                 storage.new_key(Folder.AVATAR, 7, content_type)
 
 
+class DetectImageContentTypeTest(unittest.TestCase):
+    def test_detects_supported_magic_bytes(self):
+        self.assertEqual(storage.detect_image_content_type(b"\xff\xd8\xffimage"), "image/jpeg")
+        self.assertEqual(storage.detect_image_content_type(b"\x89PNG\r\n\x1a\nimage"), "image/png")
+        self.assertEqual(storage.detect_image_content_type(b"RIFF\x10\x00\x00\x00WEBPVP8 image"), "image/webp")
+
+    def test_does_not_trust_arbitrary_or_partial_headers(self):
+        for data in (b"", b"<script>bad</script>", b"RIFF1234WEBP", b"GIF89a"):
+            self.assertIsNone(storage.detect_image_content_type(data), data)
+
+
 class CheckR2Test(unittest.TestCase):
     def test_only_explicit_access_denials_count_as_blocked_public_access(self):
         for status in (400, 401, 403, 404):
@@ -122,6 +133,28 @@ class HeadTest(StorageTestCase):
         self.stubber.add_client_error("head_object", service_error_code="403", http_status_code=403)
         with self.assertRaises(storage.StorageError):
             storage.head("avatars/7/a.webp")
+
+
+class PutTest(StorageTestCase):
+    def test_puts_validated_bytes_with_content_type(self):
+        self.stubber.add_response(
+            "put_object",
+            {},
+            {
+                "Bucket": "test-uploads",
+                "Key": "avatars/7/a.webp",
+                "Body": b"image",
+                "ContentType": "image/webp",
+            },
+        )
+
+        storage.put("avatars/7/a.webp", b"image", "image/webp")
+        self.stubber.assert_no_pending_responses()
+
+    def test_put_error_raises_storage_error(self):
+        self.stubber.add_client_error("put_object", service_error_code="AccessDenied", http_status_code=403)
+        with self.assertRaises(storage.StorageError):
+            storage.put("avatars/7/a.webp", b"image", "image/webp")
 
 
 class PromoteTest(StorageTestCase):
