@@ -65,9 +65,10 @@ it("새로고침 후 이어가되 다른 방향·경로와 잘못된 저장값�
   expect(hasCompleted(state, completionPlan(line, "reverse"))).toBe(false);
   expect(hasCompleted({ key: plan.key, next: 999 }, plan)).toBe(false);
   expect(hasCompleted(state, completionPlan([], "forward"))).toBe(false);
-  // 시각이 없거나 잘못된 위치는 통째로 무효한 저장값으로 본다(예전 버전이 남긴 값 등).
-  const legacyStoredValue = JSON.parse('{"key":' + JSON.stringify(plan.key) + ',"next":1,"location":{"lat":37,"lng":127}}');
+  // 진행 거리·시각이 없거나 잘못된 값은 통째로 무효한 저장값으로 본다(예전 버전이 남긴 값 등).
+  const legacyStoredValue = JSON.parse('{"key":' + JSON.stringify(plan.key) + ',"next":1,"progress":{"distanceM":"abc"}}');
   expect(hasCompleted(legacyStoredValue, plan)).toBe(false);
+  expect(advanceCompletion(legacyStoredValue, plan, at(plan.points[0])).next).toBe(1);
 });
 
 it("GPS 오차 범위 안에서 확인 지점을 통과할 수 있다", () => {
@@ -136,21 +137,59 @@ it("일시정지 후 재개하면 정지 중 이동으로는 지점을 통과하
   expect(resumedState.next).toBe(2);
   expect(hasCompleted(resumedState, plan)).toBe(false);
 
-  // 대조: 같은 이동이라도 segmentStart를 안 넘기면(=끊기지 않은 정상 추적이라면) 통과 처리된다.
-  // 즉 segmentStart 플래그 자체가 이 차이를 만든다는 것을 보여준다.
+  // 대조: 같은 이동이라도 segmentStart를 안 넘기면(=끊기지 않은 정상 추적이라면) 앞으로 이동한
+  // 것이므로 지나친 지점들이 정상적으로 한 번에 인정된다. (이후 서술과 무관한 갈래라 시계는 되돌린다.)
+  const clockBeforeBranch = clock;
   const notSeveredState = advanceCompletion(state, plan, at(resumedAt, plan.spacing * 3), false);
   expect(notSeveredState.next).toBeGreaterThan(2);
+  clock = clockBeforeBranch;
 
-  // 끊긴 뒤로는 앞으로만 이동해서는 놓친 지점(next=2)에 다시 닿을 수 없어 완주할 수 없다 —
-  // 정지 중 건너뛴 구간은 거저 인정되지 않는다는 것이 이 설계의 핵심이다.
-  let forwardOnly: CompletionState | null = resumedState;
-  for (const point of plan.points.slice(6)) forwardOnly = advanceCompletion(forwardOnly, plan, at(point, plan.spacing));
-  expect(hasCompleted(forwardOnly, plan)).toBe(false);
-  expect(forwardOnly!.next).toBe(2);
+  // 재개 직후 곧장 더 앞으로 "순간 이동"하면(정지 중 이동과 마찬가지로 그럴듯하지 않은 속도라면)
+  // 여전히 아무것도 인정되지 않는다 — segmentStart로 끊긴 기준점을 곧바로 다시 악용할 수 없다.
+  const instantJump = advanceCompletion(resumedState, plan, instantly(plan.points.at(-1)!));
+  expect(instantJump.next).toBe(2);
+  clock = clockBeforeBranch;
 
   // 다만 재개 뒤 정상적으로 추적하며 놓친 지점 쪽으로 실제로 되돌아가면(예: 확인차 되돌아감),
-  // 그 구간도 순서대로 다시 인정되어 이어서 완주할 수 있다 — 영구히 막히지는 않는다.
+  // 이번에 실제 도착한 지점(2) 하나만 인정된다 — 역주행 구간에 걸친 3·4·5까지 한꺼번에
+  // 인정되지는 않는다(역주행 순서 검사). 이후 순서대로 다시 이동하면 이어서 완주할 수 있다.
   let recovered: CompletionState | null = advanceCompletion(resumedState, plan, at(plan.points[2], plan.spacing * 3));
-  for (const point of plan.points.slice(6)) recovered = advanceCompletion(recovered, plan, at(point, plan.spacing));
+  expect(recovered.next).toBe(3);
+  for (const point of plan.points.slice(3)) recovered = advanceCompletion(recovered, plan, at(point, plan.spacing));
   expect(hasCompleted(recovered, plan)).toBe(true);
 });
+
+it.each(["forward", "reverse"] as const)(
+  "%s 방향에서 앞선 지점으로 건너뛴 뒤 거슬러 오면 실제 도착한 지점 하나만 인정한다",
+  (direction) => {
+    clock = 0;
+    const plan = completionPlan(line, direction);
+    let state = advanceCompletion(null, plan, at(plan.points[0]));
+    state = advanceCompletion(state, plan, at(plan.points[1], plan.spacing));
+    expect(state.next).toBe(2);
+    // 일시정지 후 재개해 앞선 지점(5)에서 다시 시작한다(segmentStart라 이전 위치와 안 잇는다).
+    state = advanceCompletion(state, plan, at(plan.points[5], plan.spacing * 3), true);
+    expect(state.next).toBe(2);
+    // 실제로는 5 → 4 → 3 → 2 순서로 거슬러 왔다. 같은 코스 구간 위에 있다는 이유만으로
+    // 3·4·5까지 한꺼번에 정방향 통과 처리되면 안 되고, 이번에 도착한 2 하나만 인정된다.
+    state = advanceCompletion(state, plan, at(plan.points[2], plan.spacing * 3));
+    expect(state.next).toBe(3);
+  },
+);
+
+it.each(["forward", "reverse"] as const)(
+  "%s 방향의 굽은 코스에서 코너를 건너뛴 성긴 GPS로도 완주한다",
+  (direction) => {
+    clock = 0;
+    // 시작에서 100m 북상한 뒤 100m 동진하는 ㄱ자 코스. 코너는 표본으로 넣지 않는다.
+    const start = { lat: 37, lng: 127 };
+    const corner = { lat: 37 + 100 / 111_320, lng: 127 };
+    const end = { lat: corner.lat, lng: corner.lng + 100 / (111_320 * Math.cos((corner.lat * Math.PI) / 180)) };
+    const plan = completionPlan([start, corner, end], direction);
+    const routeStart = plan.points[0], routeEnd = plan.points.at(-1)!;
+    let state: CompletionState | null = advanceCompletion(null, plan, at(routeStart));
+    // 코너를 건너뛰고 종점만 표본으로 넣는다. 실제 이동 거리(코너를 도는 약 200m)에 맞는 시간을 준다.
+    state = advanceCompletion(state, plan, at(routeEnd, 200));
+    expect(hasCompleted(state, plan)).toBe(true);
+  },
+);
