@@ -24,7 +24,7 @@ export async function recordApiError(response: Response): Promise<RecordApiError
 /** 명확한 거절 응답만 분류한다. 프록시 5xx·깨진 응답은 저장 실패라고 단정할 수 없다. */
 export function isRecordRequestRejected(error: unknown): error is RecordApiError {
   return error instanceof RecordApiError
-    && (([400, 401, 403, 404, 409, 422, 429].includes(error.status)
+    && (([400, 401, 403, 404, 409, 413, 422, 429].includes(error.status)
       && (typeof error.detail === "string" || (error.status === 422 && Array.isArray(error.detail))))
       || (error.status === 503 && error.detail === FEATURE_DISABLED));
 }
@@ -33,7 +33,7 @@ export function isRecordRequestRejected(error: unknown): error is RecordApiError
 export function canRetryCardUpload(error: unknown): boolean {
   if (error instanceof RecordImageValidationError) return false;
   if (!(error instanceof RecordApiError)) return true;
-  return !([400, 401, 403, 404, 422].includes(error.status)
+  return !([400, 401, 403, 404, 413, 422].includes(error.status)
     || (error.status === 409 && error.detail === QUOTA_EXCEEDED)
     || (error.status === 503 && error.detail === FEATURE_DISABLED));
 }
@@ -58,6 +58,7 @@ export function toRecordUserError(error: unknown, fallback: string): UserError {
     case 403: title = "이 기록을 저장하거나 조회할 권한이 없어요."; break;
     case 404: title = "연결할 기록이나 코스를 찾을 수 없어요."; break;
     case 400: title = "이미지 업로드 정보가 올바르지 않아요."; break;
+    case 413: title = "카드 이미지는 5MB 이하로 저장해 주세요."; break;
     default: return toUserError(error, fallback);
   }
   return { title, description: "" };

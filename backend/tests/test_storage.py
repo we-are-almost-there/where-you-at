@@ -6,9 +6,11 @@
     python -m unittest tests.test_storage
 """
 import unittest
+import httpx
 from io import BytesIO
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
+from uuid import UUID
 
 from botocore.stub import Stubber
 from PIL import Image
@@ -94,6 +96,32 @@ class DecodedImageContentTypeTest(unittest.TestCase):
 
 
 class CheckR2Test(unittest.TestCase):
+    def test_server_upload_check_needs_no_browser_put_or_cors(self):
+        key = "record-cards/0/check.png"
+        info = storage.ObjectInfo(len(check_r2._PNG), "image/png", '"etag"')
+        with patch.object(check_r2, "storage") as store, patch.object(check_r2.httpx, "Client") as client:
+            store.new_key.return_value = key
+            store.head.side_effect = [info, None]
+            store.presign_download.return_value = "https://r2.example/check?signature=test"
+            http = client.return_value.__enter__.return_value
+            http.get.side_effect = [httpx.Response(200, content=check_r2._PNG), httpx.Response(403)]
+            self.assertTrue(check_r2._check(None))
+            store.put.assert_called_once_with(key, check_r2._PNG, "image/png")
+            store.delete.assert_called_once_with(key)
+            store.presign_upload.assert_not_called()
+            store.promote.assert_not_called()
+            http.options.assert_not_called()
+            http.put.assert_not_called()
+
+    def test_server_upload_error_still_cleans_up_possible_object(self):
+        with patch.object(check_r2, "storage") as store, patch.object(check_r2.httpx, "Client"):
+            store.new_key.return_value = "record-cards/0/check.png"
+            store.put.side_effect = storage.StorageError("timeout")
+            store.head.return_value = None
+            with self.assertRaises(storage.StorageError):
+                check_r2._check(None)
+            store.delete.assert_called_once_with("record-cards/0/check.png")
+
     def test_only_explicit_access_denials_count_as_blocked_public_access(self):
         for status in (400, 401, 403, 404):
             self.assertIn(status, check_r2._BLOCKED_PUBLIC_STATUSES)
@@ -180,12 +208,13 @@ class PromoteTest(StorageTestCase):
     INFO = storage.ObjectInfo(size=1234, content_type="image/webp", etag='"abc"')
 
     def test_copies_only_verified_file_and_removes_temporary(self):
+        final_key = "avatars/7/" + "1" * 32 + ".webp"
         self.stubber.add_response(
             "copy_object",
             {},
             {
                 "Bucket": "test-uploads",
-                "Key": "avatars/7/a.webp",
+                "Key": final_key,
                 "CopySource": {"Bucket": "test-uploads", "Key": "uploads/7/a.webp"},
                 # 검증한 파일과 ETag가 같을 때만 복사한다.
                 "CopySourceIfMatch": '"abc"',
@@ -193,7 +222,42 @@ class PromoteTest(StorageTestCase):
         )
         self.stubber.add_response("delete_object", {}, {"Bucket": "test-uploads", "Key": "uploads/7/a.webp"})
 
-        self.assertEqual(storage.promote("uploads/7/a.webp", Folder.AVATAR, self.INFO), "avatars/7/a.webp")
+        with patch.object(storage.uuid, "uuid4", return_value=UUID("1" * 32)):
+            self.assertEqual(storage.promote("uploads/7/a.webp", Folder.AVATAR, self.INFO), final_key)
+        self.stubber.assert_no_pending_responses()
+
+    def test_reused_upload_key_gets_independent_final_objects(self):
+        """같은 URL로 새 파일을 올리고 다시 승격해도 이전 최종 객체는 건드리지 않는다."""
+        keys = ["record-cards/7/" + digit * 32 + ".webp" for digit in ("1", "2")]
+        infos = [self.INFO, storage.ObjectInfo(size=4567, content_type="image/webp", etag='"new"')]
+        for key, info in zip(keys, infos):
+            self.stubber.add_response("copy_object", {}, {
+                "Bucket": "test-uploads", "Key": key,
+                "CopySource": {"Bucket": "test-uploads", "Key": "uploads/7/a.webp"},
+                "CopySourceIfMatch": info.etag,
+            })
+            self.stubber.add_response("delete_object", {}, {
+                "Bucket": "test-uploads", "Key": "uploads/7/a.webp",
+            })
+        with patch.object(storage.uuid, "uuid4", side_effect=[UUID("1" * 32), UUID("2" * 32)]):
+            actual = [storage.promote("uploads/7/a.webp", Folder.RECORD_CARD, info) for info in infos]
+        self.assertEqual(actual, keys)
+        self.assertNotEqual(actual[0], actual[1])
+        self.stubber.assert_no_pending_responses()
+
+    def test_cleanup_failure_returns_copied_key_and_logs_warning(self):
+        final_key = "record-cards/7/" + "1" * 32 + ".webp"
+        self.stubber.add_response("copy_object", {}, {
+            "Bucket": "test-uploads", "Key": final_key,
+            "CopySource": {"Bucket": "test-uploads", "Key": "uploads/7/a.webp"},
+            "CopySourceIfMatch": self.INFO.etag,
+        })
+        self.stubber.add_client_error("delete_object", service_error_code="AccessDenied", http_status_code=403,
+                                      expected_params={"Bucket": "test-uploads", "Key": "uploads/7/a.webp"})
+        with patch.object(storage.uuid, "uuid4", return_value=UUID("1" * 32)), patch("builtins.print") as log:
+            self.assertEqual(storage.promote("uploads/7/a.webp", Folder.RECORD_CARD, self.INFO), final_key)
+        log.assert_called_once()
+        self.assertIn("uploads/7/a.webp", log.call_args.args[0])
         self.stubber.assert_no_pending_responses()
 
     def test_changed_or_missing_upload_is_not_promoted(self):

@@ -26,7 +26,9 @@ class Settings(BaseSettings):
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
     r2_bucket: str = ""
-
+    # 방침·약관이 서버 저장(완주 기록, 기록 카드 이미지)을 반영해 시행되기 전에는 false로 둔다.
+    # false면 /api/records, /api/record-cards가 모두 503을 돌려준다. 시행 뒤 배포 환경에서만 true로 켠다.
+    record_features_enabled: bool = False
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
