@@ -20,6 +20,7 @@ def create_record(body: RunRecordCreate, current_user: CurrentUser = Depends(get
             duration_ms=body.duration_ms,
             pace_sec_per_km=body.pace_sec_per_km,
             finished_at=body.finished_at,
+            is_completed=body.is_completed,
         )
     if row is None:
         raise HTTPException(status_code=404, detail="Course not found")

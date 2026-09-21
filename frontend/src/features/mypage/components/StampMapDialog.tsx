@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CircleAlert } from "lucide-react";
 import type { Feature, FeatureCollection } from "geojson";
 import { fetchOrNetworkError } from "../../../lib/http";
+import { stampSaveError, type StampSaveError } from "../stampErrors";
 import { buildProjection, geometryPath, labelPoint } from "../../support/koreaMapGeometry";
 import { STAMP_SIDO, sidoCodeOf } from "../stampRegions";
 import { formatDate } from "../format";
-import type { Stamp } from "../types";
+import type { SigunguStampStatus, Stamp } from "../types";
+import { PRIMARY_BUTTON } from "../buttonStyles";
 import ModalDialog from "../../../components/common/ModalDialog";
 
 // SVG fill은 토큰 클래스를 못 써서 값으로 둔다. 방문 혜택 지도와 같은 색이다.
@@ -59,12 +62,32 @@ export interface SelectedSigungu {
 
 interface Props {
   stamps: Stamp[];
+  statuses?: SigunguStampStatus[];
+  loading?: boolean;
+  saving?: boolean;
+  saveError?: StampSaveError | null;
+  error?: string;
+  onRetry?: () => void;
+  onStamp?: (code: string) => Promise<void>;
   onClose: () => void;
-  /**
-   * 시군구를 골랐을 때. 스탬프 찍기(그 지역만 활성화, 도장 모션)는 기록 담당 작업이라 여기서 하지 않는다.
-   * 그 작업이 붙으면 이 콜백에서 스탬프를 요청하고 모션을 띄운다.
-   */
+  /** 지도 선택 알림. 스탬프 저장은 별도 버튼에서 요청한다. */
   onSelectSigungu?: (region: SelectedSigungu) => void;
+}
+
+function StampErrorNotice({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const [title, ...description] = message.split("\n");
+  return (
+    <div className="mb-4 flex flex-col gap-3 rounded-[14px] border border-divider-soft bg-lavender p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-start gap-3">
+        <CircleAlert size={20} aria-hidden="true" className="mt-0.5 shrink-0 text-accent" />
+        <div role="alert" className="min-w-0">
+          <p className="text-[14px] font-bold leading-relaxed text-ink">{title}</p>
+          {description.length > 0 && <p className="mt-1 whitespace-pre-line text-[13px] leading-relaxed text-caption">{description.join("\n")}</p>}
+        </div>
+      </div>
+      {onRetry && <button type="button" onClick={onRetry} className={`${PRIMARY_BUTTON} w-full shrink-0 sm:w-auto`}>다시 시도</button>}
+    </div>
+  );
 }
 
 /**
@@ -74,7 +97,31 @@ interface Props {
  * 지도는 마우스용이고, 같은 지역을 지도 아래 버튼 목록으로도 둔다. 키보드·화면낭독기로도 고를 수 있고,
  * 세종·광주 구처럼 지도에서 작아 누르기 어려운 곳도 쉽게 고를 수 있다. 목록에 마우스를 올리면 지도에서도 강조된다.
  */
-export default function StampMapDialog({ stamps, onClose, onSelectSigungu }: Props) {
+export default function StampMapDialog({ stamps, statuses = [], loading = false, saving = false, saveError: parentSaveError, error = "", onRetry, onStamp, onClose, onSelectSigungu }: Props) {
+  const [localBusy, setBusy] = useState(false);
+  const busy = saving || localBusy;
+  const [localSaveError, setSaveError] = useState<StampSaveError | null>(null);
+  const saveError = parentSaveError === undefined ? localSaveError : parentSaveError;
+  const pending = useRef(false);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const stampRegion = async (code: string) => {
+    if (!onStamp || saving || pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setSaveError(null);
+    try {
+      await onStamp(code);
+    } catch (err) {
+      if (mounted.current) setSaveError(stampSaveError(code, err));
+    } finally {
+      pending.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  };
   const [files, setFiles] = useState<MapFiles | null>(null);
   const [failed, setFailed] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
@@ -185,6 +232,9 @@ export default function StampMapDialog({ stamps, onClose, onSelectSigungu }: Pro
 
   return (
     <ModalDialog title="스탬프 지도" onClose={onClose} size="lg">
+      {saveError && <StampErrorNotice message={saveError.message} />}
+      {loading && <p role="status" className="mb-4 rounded-[14px] bg-lavender px-4 py-3 text-[14px] text-caption">스탬프를 불러오는 중…</p>}
+      {error && <StampErrorNotice message={error} onRetry={onRetry} />}
       <div className="flex min-h-8 items-center gap-2">
         {!nation && (
           <button
@@ -313,11 +363,19 @@ export default function StampMapDialog({ stamps, onClose, onSelectSigungu }: Pro
                 <p className="text-ink">
                   <span className="font-bold">{selected.name}</span>
                   <span className="ml-2 text-caption">
-                    {selectedStamp ? `${formatDate(selectedStamp.collectedAt)}에 스탬프를 받았어요.` : "아직 스탬프가 없어요."}
+                    {selectedStamp ? `${formatDate(selectedStamp.stampedAt)}에 스탬프를 찍었어요.`
+                      : loading || error ? "스탬프 상태를 확인해 주세요."
+                        : statuses.some((item) => item.sigunguCode === selected.code && item.status === "AVAILABLE")
+                          ? "완주한 지역이에요. 스탬프를 찍어 보세요."
+                          : "아직 완주하지 않아 스탬프를 찍을 수 없어요."}
                   </span>
                 </p>
               ) : (
                 <p className="text-caption">지도나 목록에서 시군구를 고르면 스탬프 현황을 보여 드려요.</p>
+              )}
+              {selected && !loading && !error && !selectedStamp && onStamp && statuses.some((item) => item.sigunguCode === selected.code && item.status === "AVAILABLE") && (
+                <button type="button" className={`${PRIMARY_BUTTON} mt-3 disabled:opacity-50`} disabled={busy}
+                  onClick={() => void stampRegion(selected.code)}>{busy ? "찍는 중…" : "스탬프 찍기"}</button>
               )}
             </div>
           )}

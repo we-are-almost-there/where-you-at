@@ -11,6 +11,7 @@ const record = (distanceKm: number): RunRecord => ({
   durationMs: 1,
   paceSecPerKm: null,
   finishedAt: "2026-09-16T07:40:00+09:00",
+  isCompleted: true,
 });
 
 describe("profileTags", () => {
@@ -24,9 +25,9 @@ describe("profileTags", () => {
 
   it("스탬프가 있으면 받은 시도 수를 붙인다 (같은 시도의 시군구는 하나로 센다)", () => {
     const stamps = [
-      { sigunguCode: "12330", collectedAt: "2026-08-29" },
-      { sigunguCode: "12730", collectedAt: "2026-09-03" },
-      { sigunguCode: "51110", collectedAt: "2026-09-13" },
+      { sigunguCode: "12330", stampedAt: "2026-08-29" },
+      { sigunguCode: "12730", stampedAt: "2026-09-03" },
+      { sigunguCode: "51110", stampedAt: "2026-09-13" },
     ];
     expect(profileTags([record(5)], stamps)).toEqual(["1번완주", "5.0km", "2개시도"]);
   });

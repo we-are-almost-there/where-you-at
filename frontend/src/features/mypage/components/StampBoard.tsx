@@ -39,7 +39,7 @@ export default function StampBoard({ stamps }: { stamps: Stamp[] }) {
           <div className="h-full rounded-full bg-accent" style={{ width: `${percent}%` }} />
         </div>
         {stamps.length === 0 && (
-          <p className="mt-2.5 text-[13px] leading-5 text-muted">코스를 완주하면 그 시군구의 스탬프를 받아요.</p>
+          <p className="mt-2.5 text-[13px] leading-5 text-muted">코스를 완주한 뒤 스탬프 지도에서 직접 찍어 보세요.</p>
         )}
       </div>
 

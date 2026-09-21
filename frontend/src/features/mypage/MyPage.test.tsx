@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../../lib/http";
 import { removeAvatar, signOut, startKakaoLogin, updateAvatar, updateProfile, useAuth, withdraw, type AuthState } from "../auth";
 import MyPage from "./MyPage";
-import { fetchMyRecords, fetchSavedCourses, getStamps } from "./mypageData";
+import { fetchMyRecords, fetchSavedCourses, fetchMyStamps } from "./mypageData";
 import type { SavedCourse } from "../saved";
 import type { RunRecord } from "./types";
 
@@ -39,7 +39,8 @@ vi.mock("../saved/savedStore", () => ({
 vi.mock("./mypageData", () => ({
   fetchSavedCourses: vi.fn(),
   fetchMyRecords: vi.fn(),
-  getStamps: vi.fn(),
+  fetchMyStamps: vi.fn(),
+  stampMyRegion: vi.fn(),
 }));
 // 스탬프 지도는 도형 파일을 불러오므로 여기서는 열리는지만 본다. 지도 동작은 StampMapDialog.test.tsx가 맡는다.
 vi.mock("./components/StampMapDialog", () => ({
@@ -97,6 +98,7 @@ function record(id: number): RunRecord {
     durationMs: 3_000_000,
     paceSecPerKm: 600,
     finishedAt: "2026-09-16T07:40:00+09:00",
+    isCompleted: true,
   };
 }
 
@@ -104,7 +106,7 @@ beforeEach(() => {
   mockedUseAuth.mockReturnValue(SIGNED_IN);
   vi.mocked(fetchSavedCourses).mockResolvedValue([]);
   vi.mocked(fetchMyRecords).mockResolvedValue([]);
-  vi.mocked(getStamps).mockReturnValue([]);
+  vi.mocked(fetchMyStamps).mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -201,25 +203,25 @@ describe("MyPage", () => {
     expect(within(records).getByRole("link", { name: "내 기록 전체 보기" }).getAttribute("href")).toBe("/mypage/records");
   });
 
-  it("스탬프는 현재 행정구역의 16개 시도로 묶어 보여 준다", () => {
-    vi.mocked(getStamps).mockReturnValue([
-      { sigunguCode: "12330", collectedAt: "2026-08-29" },
-      { sigunguCode: "12730", collectedAt: "2026-09-03" },
-      { sigunguCode: "51110", collectedAt: "2026-09-13" },
+  it("스탬프는 현재 행정구역의 16개 시도로 묶어 보여 준다", async () => {
+    vi.mocked(fetchMyStamps).mockResolvedValue([
+      { sigunguCode: "12330", status: "STAMPED", stampedAt: "2026-08-29" },
+      { sigunguCode: "12730", status: "STAMPED", stampedAt: "2026-09-03" },
+      { sigunguCode: "51110", status: "STAMPED", stampedAt: "2026-09-13" },
     ]);
     renderPage();
 
-    expect(screen.getByRole("progressbar", { name: "모은 시도 스탬프" }).getAttribute("aria-valuetext")).toBe(
+    expect((await screen.findByRole("progressbar", { name: "모은 시도 스탬프" })).getAttribute("aria-valuetext")).toBe(
       "시도 16곳 중 2곳, 시군구 230곳 중 3곳",
     );
     expect(screen.getByText("전남광주통합특별시 시군구 27곳 중 2곳")).toBeTruthy();
     expect(screen.getByText("강원특별자치도 시군구 18곳 중 1곳")).toBeTruthy();
   });
 
-  it("스탬프 찍기 버튼은 스탬프 지도를 연다", () => {
+  it("스탬프 지도 보기 버튼은 스탬프 지도를 연다", () => {
     renderPage();
 
-    fireEvent.click(screen.getByRole("button", { name: "스탬프 찍기" }));
+    fireEvent.click(screen.getByRole("button", { name: "스탬프 지도 보기" }));
 
     expect(screen.getByRole("dialog", { name: "스탬프 지도" })).toBeTruthy();
   });

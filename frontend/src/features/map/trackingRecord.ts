@@ -23,7 +23,8 @@ const MAX_ACCURACY_M = 30;
 const MIN_STEP_M = 5;
 // 이보다 빠르면 GPS 튐으로 본다(=108km/h). 실제 튐은 수백 m/s라 이 값으로도 충분히 걸러지고,
 // 자전거 내리막(최고 60km/h대)을 이상치로 오인하지 않는다.
-const MAX_SPEED_MPS = 30;
+// courseCompletion.ts도 성긴 GPS 표본의 이동 구간이 그럴듯한지 판단하는 데 같은 값을 쓴다.
+export const MAX_SPEED_MPS = 30;
 // 이 아래 거리는 페이스를 내도 무의미해 null로 둔다.
 const MIN_PACE_DISTANCE_KM = 0.01;
 

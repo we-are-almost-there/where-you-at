@@ -19,8 +19,15 @@ it.each([["도보", "trail"], ["자전거", "bicycle"]] as const)("%s 기록을 
   const saved = await createRecord({ courseId: 7, routeType, distanceKm: 3, durationMs: 600000,
     paceSecPerKm: null, finishedAt: dto.finished_at });
   expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ course_id: 7, route_type: serverType,
-    distance_km: 3, duration_ms: 600000, pace_sec_per_km: null, finished_at: dto.finished_at });
+    distance_km: 3, duration_ms: 600000, pace_sec_per_km: null, finished_at: dto.finished_at, is_completed: false });
   expect(saved).toMatchObject({ id: 42, courseId: 7, courseName: "코스", routeType, finishedAt: dto.finished_at });
+});
+
+it("완주 판정을 서버에 전달한다", async () => {
+  fetchMock.mockResolvedValue(json(dto, 201));
+  await createRecord({ courseId: 7, routeType: "도보", distanceKm: 3, durationMs: 600000,
+    paceSecPerKm: null, finishedAt: dto.finished_at, isCompleted: true });
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body).is_completed).toBe(true);
 });
 
 it("목록 응답과 중첩 record 및 null 이미지 URL을 매핑한다", async () => {

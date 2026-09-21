@@ -563,6 +563,7 @@ create table run_record (
   duration_ms       bigint not null check (duration_ms > 0),
   pace_sec_per_km   numeric(8, 2) check (pace_sec_per_km > 0),
   finished_at       timestamptz not null,
+  is_completed      boolean not null default false,
   created_at        timestamptz not null default now(),
   unique (id, user_id)
 );
@@ -595,3 +596,17 @@ create index idx_record_card_record_id on record_card (record_id);
 
 alter table record_card enable row level security;
 
+
+-- 시군구 스탬프: 완주한 지역에서 사용자가 직접 찍은 기록
+create table if not exists public.user_sigungu_stamps (
+  id            bigint generated always as identity primary key,
+  user_id       bigint not null references public.app_user(id) on delete cascade,
+  sigungu_code  varchar(10) not null references public.region(region_code),
+  stamped_at    timestamptz not null default now(),
+  -- 같은 회원이 같은 시군구에 여러 번 찍어도 한 행만 저장한다.
+  constraint uq_user_sigungu_stamps unique (user_id, sigungu_code)
+);
+
+-- UNIQUE 인덱스의 첫 컬럼이 user_id라 내 스탬프 조회와 회원 탈퇴 시 연쇄 삭제에도 사용된다.
+-- 같은 컬럼으로 사용자별 조회 인덱스를 따로 만들지 않는다.
+alter table public.user_sigungu_stamps enable row level security;

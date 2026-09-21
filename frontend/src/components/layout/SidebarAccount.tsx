@@ -1,17 +1,18 @@
 import { Link } from "react-router";
 import { ChevronRight, UserRound } from "lucide-react";
 import type { User } from "../../features/auth";
-import { getStamps } from "../../features/mypage/mypageData";
+import { useSigunguStamps } from "../../features/mypage/useSigunguStamps";
 import { useRunRecords } from "../../features/mypage/useRunRecords";
 import { useSavedCourses } from "../../features/mypage/useSavedCourses";
 
 export default function SidebarAccount({ user, onClose }: { user: User; onClose: () => void }) {
   const saved = useSavedCourses();
   const records = useRunRecords();
+  const stamps = useSigunguStamps();
   const stats = [
     { label: "찜한 코스", count: saved.status === "ready" ? saved.courses.length : "—", to: "/mypage/saved" },
     { label: "내 기록", count: records.status === "ready" ? records.records.length : "—", to: "/mypage/records" },
-    { label: "스탬프", count: getStamps().length, to: "/mypage#mypage-stamps" },
+    { label: "스탬프", count: stamps.loading || stamps.error ? "—" : stamps.stamps.length, to: "/mypage#mypage-stamps" },
   ];
 
   return (

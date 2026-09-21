@@ -1,11 +1,12 @@
 import { getSavedCourses, type SavedCourse } from "../saved";
 import { previewRecordCards, previewRecords, previewStamps } from "./mypagePreview";
 import { createRecord, fetchRecordCards, fetchRecords, type CreateRecordInput } from "./recordsApi";
-import type { RecordCardPage, RunRecord, SavedRecordCard, Stamp } from "./types";
+import type { RecordCardPage, RunRecord, SavedRecordCard, SigunguStampStatus } from "./types";
+import { createStamp, fetchStamps } from "./stampsApi";
 
 // 마이페이지의 찜·기록·기록 카드·스탬프 데이터.
 // 찜·기록·기록 카드 목록은 서버에서 받아 온다.
-// 스탬프는 아직 서버 API가 없어 빈 목록을 돌려준다.
+// 스탬프 상태도 서버에서 조회하고, 찍기는 사용자가 직접 요청한다.
 // 개발 서버에서 VITE_MYPAGE_PREVIEW=true면 예시 데이터로 채워
 // 내용이 있을 때의 화면을 확인할 수 있다 (고객지원의 VITE_HELP_MOCK과 같은 방식).
 // 완주 기록은 전체 목록을 받고, 기록 카드는 서버에서 한 페이지씩 받는다.
@@ -20,10 +21,10 @@ export async function fetchSavedCourses(): Promise<SavedCourse[]> {
   return getSavedCourses();
 }
 
-/** 내 완주 기록. 최근 완주순. */
+/** 내 완주 기록만. 최근 완주순. 중간에 끝난 기록은 서버가 함께 저장하지만 여기서 뺀다. */
 export async function fetchMyRecords(): Promise<RunRecord[]> {
   if (USE_PREVIEW) return previewRecords;
-  return fetchRecords();
+  return (await fetchRecords()).filter((record) => record.isCompleted);
 }
 
 /** 내가 저장한 기록 카드. 최근 만든 순. */
@@ -43,9 +44,24 @@ export function getRecordCards(): SavedRecordCard[] {
   return USE_PREVIEW ? previewRecordCards : [];
 }
 
-/** 받은 시군구 스탬프. */
-export function getStamps(): Stamp[] {
-  return USE_PREVIEW ? previewStamps : [];
+const previewStatuses: SigunguStampStatus[] = [
+  ...previewStamps.map((stamp) => ({ ...stamp, status: "STAMPED" as const })),
+  { sigunguCode: "51130", status: "AVAILABLE", stampedAt: null },
+];
+
+/** 스탬프 지도에 표시할 시군구 상태. */
+export async function fetchMyStamps(): Promise<SigunguStampStatus[]> {
+  return USE_PREVIEW ? previewStatuses.map((item) => ({ ...item })) : fetchStamps();
+}
+
+/** 미리보기에서도 직접 찍은 상태는 모달을 다시 열 때 유지한다. */
+export async function stampMyRegion(code: string): Promise<SigunguStampStatus> {
+  if (!USE_PREVIEW) return createStamp(code);
+  const item = previewStatuses.find((stamp) => stamp.sigunguCode === code);
+  if (!item || item.status === "LOCKED") throw new Error("Unavailable preview region");
+  item.status = "STAMPED";
+  item.stampedAt ??= new Date().toISOString();
+  return { ...item };
 }
 
 /** 완주 저장은 개발용 미리보기와 무관하다. 비멱등 POST이므로 호출자가 재시도하지 않는다. */

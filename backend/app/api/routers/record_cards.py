@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.concurrency import run_in_threadpool
 
+from ..upload import read_upload_body
+
 from ...crud import record as crud
 from ...deps import CurrentUser, db_connection, get_current_user, require_record_features
 from ...schemas.record import (
@@ -49,6 +51,7 @@ def _to_card_out(row: dict) -> RecordCardOut:
             duration_ms=row["duration_ms"],
             pace_sec_per_km=row["pace_sec_per_km"],
             finished_at=row["finished_at"],
+            is_completed=row["is_completed"],
         ),
         image_url=image_url,
         created_at=row["card_created_at"],
@@ -83,25 +86,9 @@ def _card_was_committed(*, user_id: int, image_key: str) -> bool | None:
 
 
 async def _card_body(request: Request) -> bytes:
-    """Content-Length가 없거나 틀려도 실제 수신 바이트를 제한한다."""
-    length = request.headers.get("content-length")
-    if length is not None:
-        try:
-            size = int(length)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="올바르지 않은 파일 크기입니다.")
-        if size < 0:
-            raise HTTPException(status_code=400, detail="올바르지 않은 파일 크기입니다.")
-        if size > MAX_CARD_IMAGE_BYTES:
-            raise HTTPException(status_code=413, detail="기록 카드 이미지는 5MB 이하만 올릴 수 있습니다.")
-    data = bytearray()
-    async for chunk in request.stream():
-        if len(data) + len(chunk) > MAX_CARD_IMAGE_BYTES:
-            raise HTTPException(status_code=413, detail="기록 카드 이미지는 5MB 이하만 올릴 수 있습니다.")
-        data.extend(chunk)
-    if not data:
-        raise HTTPException(status_code=400, detail="빈 파일은 올릴 수 없습니다.")
-    return bytes(data)
+    return await read_upload_body(
+        request, max_bytes=MAX_CARD_IMAGE_BYTES, too_large_detail="기록 카드 이미지는 5MB 이하만 올릴 수 있습니다."
+    )
 
 
 @router.post("", response_model=RecordCardOut, status_code=201)

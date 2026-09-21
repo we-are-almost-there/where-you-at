@@ -30,6 +30,20 @@ it.each([undefined, "false", "true"])("API 플래그 %s에서도 기록을 조�
   expect(fetchRecordCards).toHaveBeenCalledWith(3, 12);
 });
 
+it("중간에 끝난 기록은 완주 기록 목록에 포함하지 않는다", async () => {
+  vi.stubEnv("VITE_MYPAGE_PREVIEW", "false");
+  vi.resetModules();
+  const base = { courseId: 1, courseName: "코스", routeType: "도보" as const, distanceKm: 1,
+    durationMs: 1000, paceSecPerKm: 300, finishedAt: "2026-09-20T00:00:00Z" };
+  vi.mocked(fetchRecords).mockResolvedValueOnce([
+    { ...base, id: 1, isCompleted: true },
+    { ...base, id: 2, isCompleted: false },
+  ]);
+  const { fetchMyRecords } = await import("./mypageData");
+  const records = await fetchMyRecords();
+  expect(records.map((record) => record.id)).toEqual([1]);
+});
+
 it("미리보기 목록도 서버와 같은 페이지 응답 형식을 사용한다", async () => {
   vi.stubEnv("DEV", true);
   vi.stubEnv("VITE_MYPAGE_PREVIEW", "true");

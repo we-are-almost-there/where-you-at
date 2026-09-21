@@ -2,10 +2,16 @@
 //
 // 스탬프 지도가 전국(시도) → 시도(시군구)로 들어가고, 받은 스탬프를 구분해 보여 주며,
 // 지도를 못 불러오면 다시 시도할 수 있는지 본다. 도형은 네모 두세 개로 만든 작은 파일로 대신한다.
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { HttpError } from "../../../lib/http";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Feature } from "geojson";
 import StampMapDialog from "./StampMapDialog";
+import { useState } from "react";
+import { useSigunguStamps } from "../useSigunguStamps";
+import { fetchMyStamps, stampMyRegion } from "../mypageData";
+
+vi.mock("../mypageData", () => ({ fetchMyStamps: vi.fn(), stampMyRegion: vi.fn() }));
 
 const square = (lng: number, lat: number, properties: Record<string, string>): Feature => ({
   type: "Feature",
@@ -68,7 +74,7 @@ describe("StampMapDialog", () => {
     vi.stubGlobal("fetch", mapFetch);
     const onSelect = vi.fn();
     render(
-      <StampMapDialog stamps={[{ sigunguCode: "51110", collectedAt: "2026-09-13" }]} onClose={() => {}} onSelectSigungu={onSelect} />,
+      <StampMapDialog stamps={[{ sigunguCode: "51110", stampedAt: "2026-09-13" }]} onClose={() => {}} onSelectSigungu={onSelect} />,
     );
 
     // 전국: 받은 시군구가 있는 시도는 이름에 받음 표시가 붙는다.
@@ -84,11 +90,11 @@ describe("StampMapDialog", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "전국으로" }));
 
     fireEvent.click(screen.getByRole("button", { name: "춘천시 (스탬프 받음)" }));
-    expect(screen.getByText("2026.09.13에 스탬프를 받았어요.")).toBeTruthy();
+    expect(screen.getByText("2026.09.13에 스탬프를 찍었어요.")).toBeTruthy();
     expect(onSelect).toHaveBeenCalledWith({ code: "51110", name: "춘천시", sidoName: "강원특별자치도" });
 
     fireEvent.click(screen.getByRole("button", { name: "원주시" }));
-    expect(screen.getByText("아직 스탬프가 없어요.")).toBeTruthy();
+    expect(screen.getByText("아직 완주하지 않아 스탬프를 찍을 수 없어요.")).toBeTruthy();
   });
 
   it("전국으로 돌아오면 시도 목록 첫 버튼으로 초점을 옮긴다", async () => {
@@ -99,5 +105,102 @@ describe("StampMapDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "전국으로" }));
 
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "서울" }));
+  });
+
+  it("AVAILABLE에만 찍기 버튼이 있고 요청 중 중복 클릭을 막는다", async () => {
+    vi.stubGlobal("fetch", mapFetch);
+    let resolve!: () => void;
+    const onStamp = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+    const { rerender } = render(<StampMapDialog stamps={[]} statuses={[
+      { sigunguCode: "51130", status: "AVAILABLE", stampedAt: null },
+    ]} onStamp={onStamp} onClose={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "강원" }));
+    fireEvent.click(screen.getByRole("button", { name: "춘천시" }));
+    expect(screen.queryByRole("button", { name: "스탬프 찍기" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "원주시" }));
+    fireEvent.click(screen.getByRole("button", { name: "스탬프 찍기" }));
+    const pendingButton = screen.getByRole("button", { name: "찍는 중…" }) as HTMLButtonElement;
+    expect(pendingButton.disabled).toBe(true);
+    fireEvent.click(pendingButton);
+    expect(onStamp).toHaveBeenCalledTimes(1);
+    await act(async () => resolve());
+    rerender(<StampMapDialog stamps={[{ sigunguCode: "51130", stampedAt: "2026-09-21T00:00:00Z" }]}
+      statuses={[{ sigunguCode: "51130", status: "STAMPED", stampedAt: "2026-09-21T00:00:00Z" }]}
+      onStamp={onStamp} onClose={() => {}} />);
+    expect(screen.getByText("2026.09.21에 스탬프를 찍었어요.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "스탬프 찍기" })).toBeNull();
+  });
+
+  it("저장 중 지도를 닫았다 열어도 중복 요청을 막고 완료 결과를 표시한다", async () => {
+    vi.stubGlobal("fetch", mapFetch);
+    vi.mocked(fetchMyStamps).mockResolvedValue([{ sigunguCode: "51130", status: "AVAILABLE", stampedAt: null }]);
+    let finish!: () => void;
+    vi.mocked(stampMyRegion).mockImplementation(() => new Promise((resolve) => {
+      finish = () => resolve({ sigunguCode: "51130", status: "STAMPED", stampedAt: "2026-09-21T00:00:00Z" });
+    }));
+    function Harness() {
+      const state = useSigunguStamps();
+      const [open, setOpen] = useState(true);
+      return <>
+        <button onClick={() => setOpen(!open)}>지도 열기 전환</button>
+        {open && <StampMapDialog {...state} onStamp={state.stamp} onClose={() => setOpen(false)} />}
+      </>;
+    }
+    render(<Harness />);
+    fireEvent.click(await screen.findByRole("button", { name: "강원" }));
+    fireEvent.click(screen.getByRole("button", { name: "원주시" }));
+    fireEvent.click(await screen.findByRole("button", { name: "스탬프 찍기" }));
+    fireEvent.click(screen.getByRole("button", { name: "지도 열기 전환" }));
+    fireEvent.click(screen.getByRole("button", { name: "지도 열기 전환" }));
+    fireEvent.click(await screen.findByRole("button", { name: "강원" }));
+    fireEvent.click(screen.getByRole("button", { name: "원주시" }));
+    const button = screen.getByRole("button", { name: "찍는 중…" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(stampMyRegion).toHaveBeenCalledTimes(1);
+    await act(async () => finish());
+    expect(screen.getByText("2026.09.21에 스탬프를 찍었어요.")).toBeTruthy();
+  });
+
+  it.each([true, false])("닫힌 동안 저장 실패 안내를 보존하고 재시도하면 지운다 (실패 전 재진입: %s)", async (reopenFirst) => {
+    vi.stubGlobal("fetch", mapFetch);
+    vi.mocked(fetchMyStamps).mockResolvedValue([{ sigunguCode: "51130", status: "AVAILABLE", stampedAt: null }]);
+    let fail!: (error: Error) => void;
+    vi.mocked(stampMyRegion).mockReset().mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }))
+      .mockResolvedValue({ sigunguCode: "51130", status: "STAMPED", stampedAt: "2026-09-21T00:00:00Z" });
+    function Harness() {
+      const state = useSigunguStamps();
+      const [open, setOpen] = useState(true);
+      return <>
+        <button onClick={() => setOpen(!open)}>지도 열기 전환</button>
+        {open && <StampMapDialog {...state} onStamp={state.stamp} onClose={() => setOpen(false)} />}
+      </>;
+    }
+    render(<Harness />);
+    fireEvent.click(await screen.findByRole("button", { name: "강원" }));
+    fireEvent.click(screen.getByRole("button", { name: "원주시" }));
+    fireEvent.click(await screen.findByRole("button", { name: "스탬프 찍기" }));
+    fireEvent.click(screen.getByRole("button", { name: "지도 열기 전환" }));
+    if (reopenFirst) fireEvent.click(screen.getByRole("button", { name: "지도 열기 전환" }));
+    await act(async () => fail(new HttpError(500, "failed")));
+    if (!reopenFirst) fireEvent.click(screen.getByRole("button", { name: "지도 열기 전환" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("잠시 후 다시 시도해 주세요.");
+    fireEvent.click(await screen.findByRole("button", { name: "강원" }));
+    fireEvent.click(screen.getByRole("button", { name: "원주시" }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "스탬프 찍기" })));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("2026.09.21에 스탬프를 찍었어요.")).toBeTruthy();
+  });
+
+  it.each([409, 500])("찍기 오류 %s를 구분해 안내하고 재시도할 수 있다", async (status) => {
+    vi.stubGlobal("fetch", mapFetch);
+    const onStamp = vi.fn().mockRejectedValue(new HttpError(status, "failed"));
+    render(<StampMapDialog stamps={[]} statuses={[{ sigunguCode: "51130", status: "AVAILABLE", stampedAt: null }]}
+      onStamp={onStamp} onClose={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "강원" }));
+    fireEvent.click(screen.getByRole("button", { name: "원주시" }));
+    fireEvent.click(screen.getByRole("button", { name: "스탬프 찍기" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(status === 409 ? "완주 기록이 아직 없어요" : "잠시 후 다시 시도해 주세요.");
+    expect((screen.getByRole("button", { name: "스탬프 찍기" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

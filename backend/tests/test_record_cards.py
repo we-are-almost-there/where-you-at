@@ -44,6 +44,7 @@ CARD_ROW = {
     "duration_ms": 3000000,
     "pace_sec_per_km": 600.0,
     "finished_at": NOW,
+    "is_completed": True,
 }
 
 
@@ -186,10 +187,8 @@ class CreateCardTest(unittest.TestCase):
         insert.assert_not_called()
 
     def test_old_direct_upload_api_is_unavailable(self):
-        with patch("app.api.routers.record_cards.storage.presign_upload") as presign:
-            self.assertEqual(self.client.post("/api/record-cards/upload-url",
-                                             json={"content_type": "image/png"}).status_code, 404)
-        presign.assert_not_called()
+        self.assertEqual(self.client.post("/api/record-cards/upload-url",
+                                         json={"content_type": "image/png"}).status_code, 404)
 
     def test_record_deleted_after_check_rolls_back_image(self):
         with patch("app.api.routers.record_cards.crud") as crud, patch(

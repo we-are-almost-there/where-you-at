@@ -109,7 +109,7 @@ export function rawProgress(waypoints: LatLng[], location: LatLng, direction: Di
 
 // 현재 위치를 선분 [a,b] 위로 정사영한 점. 짧은 거리라 경도만 위도 수렴(cos)으로 보정한
 // 평면 근사로 t를 구한 뒤, 그 t로 실제 좌표를 선형보간한다. t는 [0,1]로 잘라 선분 밖은 끝점에 붙인다.
-function projectOntoSegment(location: LatLng, a: LatLng, b: LatLng): LatLng {
+export function projectOntoSegment(location: LatLng, a: LatLng, b: LatLng): LatLng {
   const cosLat = Math.cos(toRad((a.lat + b.lat) / 2));
   const ax = a.lng * cosLat;
   const bx = b.lng * cosLat;

@@ -414,7 +414,7 @@ describe("세션 복원", () => {
         activeMs: 60_000, status: "paused", currentLocation,
       }));
       const hook = renderHook(() => useCourseTracking("restore-test"));
-      expect(hook.result.current.currentLocation).toEqual({ lat: 37.5, lng: 127, accuracy: 10, heading: null });
+      expect(hook.result.current.currentLocation).toEqual({ lat: 37.5, lng: 127, accuracy: 10, heading: null, timestamp: now });
       expect(hook.result.current.status).toBe("paused");
       expect(watchers).toHaveLength(0);
       expect(hook.result.current.sampleRecord()?.durationMs).toBe(60_000);
@@ -423,7 +423,7 @@ describe("세션 복원", () => {
   );
 
   it("저장된 이동 방향도 복원하고 종료 시 위치와 저장값을 지운다", () => {
-    const location = { lat: 37.5, lng: 127, accuracy: 10, heading: 90 };
+    const location = { lat: 37.5, lng: 127, accuracy: 10, heading: 90, timestamp: now };
     sessionStorage.setItem("restore-test", JSON.stringify({
       points: [], activeMs: 1000, status: "paused", currentLocation: location,
     }));

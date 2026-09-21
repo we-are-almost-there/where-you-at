@@ -10,6 +10,7 @@ import { getCourseGpx } from "./coursesApi";
 import type { LatLng } from "./types";
 import { useAuth } from "../auth";
 import { saveMyRecord } from "../mypage/mypageData";
+import { completionPlan } from "./courseCompletion";
 import { saveRecordCard } from "../mypage/recordsApi";
 import { RecordApiError } from "../mypage/recordsErrors";
 import { clearAccessToken, writeAccessToken } from "../../lib/authToken";
@@ -28,7 +29,7 @@ const cardState = vi.hoisted(() => ({ props: null as ComponentProps<typeof Recor
 
 const tracking = vi.hoisted(() => ({
   status: "paused" as "idle" | "tracking" | "paused",
-  currentLocation: null as LatLng | null,
+  currentLocation: null as (LatLng & { timestamp?: number; segmentStart?: boolean }) | null,
   error: null,
   wakeLockFailed: false,
   storageFailed: false,
@@ -111,7 +112,7 @@ afterEach(() => {
 });
 
 const SAVED = { id: 42, courseId: 1, courseName: "테스트 코스", routeType: "도보" as const,
-  distanceKm: 3, durationMs: 60000, paceSecPerKm: 20, finishedAt: "2026-09-20T01:02:03Z" };
+  distanceKm: 3, durationMs: 60000, paceSecPerKm: 20, finishedAt: "2026-09-20T01:02:03Z", isCompleted: true };
 function login(id = 7) {
   vi.mocked(useAuth).mockReturnValue({ status: "signedIn", user: { id, nickname: "길손" } });
   writeAccessToken(`token-${id}`);
@@ -122,6 +123,45 @@ async function finishRecord() {
   await mount();
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "■ 종료" })));
 }
+
+it.each([50, 99.4, 99.9, 100])("위치 진행률 %s만 복원해서는 완주로 저장하지 않는다", async (progress) => {
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({ progress }));
+  vi.mocked(saveMyRecord).mockResolvedValue(SAVED);
+  await finishRecord();
+  expect(saveMyRecord).toHaveBeenCalledWith(expect.objectContaining({ isCompleted: false }));
+});
+
+it("경로를 순서대로 통과하면 완주 음성과 저장에 같은 판정을 쓴다", async () => {
+  login();
+  const path = [{ lat: 37.5, lng: 127 }, { lat: 37.502, lng: 127 }];
+  const plan = completionPlan(path, "forward");
+  vi.mocked(getCourseGpx).mockResolvedValue(path);
+  vi.mocked(saveMyRecord).mockResolvedValue(SAVED);
+  tracking.stopTracking.mockReturnValue({ distanceKm: 0.22, durationMs: 60000, paceSecPerKm: 272 });
+  tracking.status = "tracking";
+  const router = await mount();
+  for (const [index, point] of plan.points.entries()) {
+    // 걷기 페이스(약 3m/s)에 맞는 시각을 줘야 advanceCompletion이 이동 구간을 그럴듯하다고 본다.
+    tracking.currentLocation = { ...point, timestamp: index * (plan.spacing / 3) * 1000 };
+    await act(async () => { await router.navigate(`/courses/1?tab=course&sample=${index}`); });
+  }
+  expect(announce).toHaveBeenCalledWith("코스를 완주했어요");
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "■ 종료" })));
+  expect(saveMyRecord).toHaveBeenCalledWith(expect.objectContaining({ isCompleted: true }));
+});
+
+it("완주 확인 지점을 복원하면 저장 자격을 유지하고 음성은 반복하지 않는다", async () => {
+  const path = [{ lat: 37.5, lng: 127 }, { lat: 37.502, lng: 127 }];
+  const plan = completionPlan(path, "forward");
+  vi.mocked(getCourseGpx).mockResolvedValue(path);
+  sessionStorage.setItem("course-tracking:1:view", JSON.stringify({
+    progress: 100, completion: { key: `도보:${plan.key}`, next: plan.points.length },
+  }));
+  vi.mocked(saveMyRecord).mockResolvedValue(SAVED);
+  await finishRecord();
+  expect(announce).not.toHaveBeenCalledWith("코스를 완주했어요");
+  expect(saveMyRecord).toHaveBeenCalledWith(expect.objectContaining({ isCompleted: true }));
+});
 
 it("완주 POST 성공으로 얻은 ID를 카드에 연결하고 복원 데이터에 보존한다", async () => {
   vi.mocked(saveMyRecord).mockResolvedValue(SAVED);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
 import { CircleAlert, CircleCheck } from "lucide-react";
 import { KakaoMap } from "./KakaoMap";
@@ -21,6 +21,7 @@ import { readAccessToken } from "../../lib/authToken";
 import { WAKE_LOCK_FAILURE_LINES } from "./useWakeLock";
 import { advanceProgress, distanceToCourse, nearestPointOnCourse, type Direction } from "./courseProgress";
 import { announce, primeSpeech } from "./speech";
+import { advanceCompletion, completionPlan, hasCompleted, type CompletionState } from "./courseCompletion";
 import { useEndpointAddresses } from "./endpointAddress";
 import { DirectionSelector } from "./components/DirectionSelector";
 import { TrackingStats } from "./components/TrackingStats";
@@ -190,6 +191,7 @@ function CourseDetailSession() {
   const [restored] = useState(() => readSession<{
     direction: Direction; progress: number; startChecked: boolean; tooFarMeters?: number | null;
     record: SavedRecord | null;
+    completion?: CompletionState;
   }>(viewKey));
 
   const [detail, setDetail] = useState<CourseDetailData | null>(null);
@@ -282,10 +284,14 @@ function CourseDetailSession() {
   const [direction, setDirection] = useState<Direction>(restored?.direction === "reverse" ? "reverse" : "forward"); // 기본 정방향, 토글로 역방향
   const [progress, setProgress] = useState(restored && Number.isFinite(restored.progress)
     && restored.progress >= 0 && restored.progress <= 100 ? restored.progress : 0); // 0~100, 최고 진행률 유지
-  // 코스 끝에 닿았다는 뜻. 진행률은 최고치를 유지하므로 한 번 서면 되돌아가지 않는다.
-  // 화면과 같은 반올림을 쓴다 — 표본이 마지막 지점에 정확히 떨어지는 일은 없어서 99.9%에 멈추는데,
-  // 화면은 그걸 100%로 보여준다. 기준이 어긋나면 사용자 눈에는 완주인데 이탈 경고가 계속 뜬다.
-  const isFinished = Math.round(progress) >= 100;
+  const completionRoute = useMemo(() => {
+    const plan = completionPlan(waypoints, direction);
+    return { ...plan, key: `${routeType}:${plan.key}` };
+  }, [waypoints, direction, routeType]);
+  const [completion, setCompletion] = useState<CompletionState | null>(restored?.completion ?? null);
+  // 위치 기준 진행률과 별개로 시작·중간·종점을 순서대로 확인해야 완주다.
+  const isFinished = hasCompleted(completion, completionRoute);
+  const restoredCompletion = useRef(restored?.completion ?? null);
   const [now, setNow] = useState(() => sessionActive ? Date.now() : 0); // 예상 종료 시각 계산의 기준 시각(추적 중에만 갱신)
   const [livePace, setLivePace] = useState<number | null>(() => {
     const sample = sampleRecord();
@@ -324,10 +330,10 @@ function CourseDetailSession() {
   const [viewStorageFailed, setViewStorageFailed] = useState(false);
   useEffect(() => {
     const hasPersistableState = sessionActive || record != null;
-    const success = writeSession(viewKey, hasPersistableState ? { direction, progress, startChecked, tooFarMeters, record } : null);
+    const success = writeSession(viewKey, hasPersistableState ? { direction, progress, completion, startChecked, tooFarMeters, record } : null);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setViewStorageFailed(hasPersistableState && !success);
-  }, [viewKey, sessionActive, direction, progress, startChecked, tooFarMeters, record]);
+  }, [viewKey, sessionActive, direction, progress, completion, startChecked, tooFarMeters, record]);
   // 다른 화면으로 이동하면 추적 기록과 화면 상태를 함께 지운다.
   // 새로고침에서는 React 정리가 실행되지 않아 복원할 저장값이 유지된다.
   useEffect(() => () => {
@@ -398,6 +404,7 @@ function CourseDetailSession() {
   if (currentLocation !== lastLocation) {
     setLastLocation(currentLocation);
     if (isTracking && currentLocation && waypoints.length > 0 && tooFarMeters == null) {
+      setCompletion((previous) => advanceCompletion(previous, completionRoute, currentLocation, currentLocation.segmentStart));
       // 시작 거리 경고가 열려 있는 동안에는 판정과 진행률 갱신을 보류한다.
       if (!startChecked) {
         // 첫 위치가 잡힌 순간에만 "코스에서 너무 멂"을 판정한다.
@@ -461,9 +468,9 @@ function CourseDetailSession() {
   // 완주한 순간에도 한 번만 알린다. 화면을 안 보고 걷는 사람에게는 이게 유일한 신호다.
   // 진행률이 100에 선 뒤로는 계속 참이므로 직전 상태를 기억해 반복을 막는다.
   useEffect(() => {
-    if (isFinished && !wasFinishedRef.current) announce("코스를 완주했어요");
+    if (isFinished && !wasFinishedRef.current && !hasCompleted(restoredCompletion.current, completionRoute)) announce("코스를 완주했어요");
     wasFinishedRef.current = isFinished;
-  }, [isFinished]);
+  }, [isFinished, completionRoute]);
 
   // URL로 요청한 주행 방식이 없는 코스라면 보유한 첫 경로로 URL을 교정한다.
   useEffect(() => {
@@ -480,6 +487,8 @@ function CourseDetailSession() {
     // 그때 화면은 그대로라 추적이 살아 있는 채 코스만 바뀐다.
     setSearchParams(nextParams, { replace: true });
     setProgress(0); // 코스 자체가 달라지므로 초기화
+    setCompletion(null);
+    restoredCompletion.current = null;
   };
 
   const changeInfoTab = (next: "course" | "nearby") => {
@@ -517,6 +526,8 @@ function CourseDetailSession() {
   // 배너·유도선은 showOffCourse가 isTracking을 요구하므로 값이 남아 있어도 그려지지 않는다.
   const handleStartTracking = () => {
     setProgress(0);
+    setCompletion(null);
+    restoredCompletion.current = null;
     setNow(Date.now());
     setLivePace(null); // 지난 세션의 페이스가 새 세션 첫 30초 동안 남아 있으면 안 된다
     setStartChecked(false);
@@ -548,6 +559,7 @@ function CourseDetailSession() {
       durationMs: summary.durationMs,
       paceSecPerKm: summary.paceSecPerKm,
       finishedAt: new Date().toISOString(),
+      isCompleted: isFinished,
     })
       .then((saved) => {
         setRecord((current) => current?.summary === summary ? { ...current, serverId: saved.id } : current);
@@ -572,7 +584,11 @@ function CourseDetailSession() {
   }, [stopTracking]);
 
   // 방향 선택은 추적 시작 전에만 노출되고, 시작 시 진행률이 어차피 0으로 초기화된다.
-  const toggleDirection = () => setDirection((d) => (d === "forward" ? "reverse" : "forward"));
+  const toggleDirection = () => {
+    setDirection((d) => (d === "forward" ? "reverse" : "forward"));
+    setCompletion(null);
+    restoredCompletion.current = null;
+  };
 
   const retry = () => {
     setLoading(true);
@@ -900,6 +916,7 @@ function CourseDetailSession() {
                       direction={direction}
                       onToggle={toggleDirection}
                     />
+                    <p className="mt-2 text-xs text-caption">시작점에서 출발해 코스를 순서대로 따라 종점에 도착하면 완주로 인정돼요. 중간부터 따라간 이동도 기록으로 저장할 수 있어요.</p>
                   </div>
                 )}
 

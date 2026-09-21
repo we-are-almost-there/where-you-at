@@ -8,6 +8,9 @@ export interface TrackedLocation extends LatLng {
   accuracy: number;
   // 이동 방향(도, 북쪽=0, 시계방향). 정지 상태거나 기기가 못 주면 null.
   heading: number | null;
+  timestamp: number;
+  /** 일시정지 후 재개(또는 새로고침 후 자동 재개)해 새로 시작한 구간의 첫 표본. */
+  segmentStart?: boolean;
 }
 
 const GEOLOCATION_OPTIONS: PositionOptions = {
@@ -49,14 +52,18 @@ function restoreLocation(saved: SavedTracking | null): TrackedLocation | null {
     && Number.isFinite(location.lat) && Math.abs(location.lat) <= 90
     && Number.isFinite(location.lng) && Math.abs(location.lng) <= 180
     && Number.isFinite(location.accuracy) && location.accuracy >= 0
+    && Number.isFinite(location.timestamp)
     && (location.heading === null
       || (Number.isFinite(location.heading) && location.heading >= 0 && location.heading < 360))) {
-    return { lat: location.lat, lng: location.lng, accuracy: location.accuracy, heading: location.heading };
+    return {
+      lat: location.lat, lng: location.lng, accuracy: location.accuracy,
+      heading: location.heading, timestamp: location.timestamp,
+    };
   }
   // 위치를 따로 저장하지 않은 기존 세션은 마지막 기록 표본으로 마커를 복원한다.
   const point = saved?.points.at(-1);
   return point && Math.abs(point.lat) <= 90 && Math.abs(point.lng) <= 180 && point.accuracy >= 0
-    ? { lat: point.lat, lng: point.lng, accuracy: point.accuracy, heading: null } : null;
+    ? { lat: point.lat, lng: point.lng, accuracy: point.accuracy, heading: null, timestamp: point.timestamp } : null;
 }
 
 export function useCourseTracking(sessionKey?: string) {
@@ -136,11 +143,14 @@ export function useCourseTracking(sessionKey?: string) {
       watchIdRef.current = navigator.geolocation.watchPosition(
         ({ coords, timestamp }) => {
           if (generation !== watchGenerationRef.current) return;
+          const segmentStart = resumedRef.current;
           const location: TrackedLocation = {
             lat: coords.latitude,
             lng: coords.longitude,
             accuracy: coords.accuracy,
             heading: coords.heading,
+            timestamp,
+            ...(segmentStart && { segmentStart: true }),
           };
           currentLocationRef.current = location;
           setCurrentLocation(location);
@@ -149,7 +159,7 @@ export function useCourseTracking(sessionKey?: string) {
             lng: coords.longitude,
             accuracy: coords.accuracy,
             timestamp,
-            ...(resumedRef.current && { segmentStart: true }),
+            ...(segmentStart && { segmentStart: true }),
           });
           resumedRef.current = false;
           if (pointsRef.current.length >= MAX_TRACKING_POINTS) {

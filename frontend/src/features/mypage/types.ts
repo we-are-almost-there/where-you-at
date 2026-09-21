@@ -1,7 +1,3 @@
-// 마이페이지에 모아 보여 줄 데이터의 화면용 모양.
-// 기록·기록 카드·스탬프는 아직 서버 API가 없다(9/18 기준). 담당 작업이 올라오면 응답을 이 모양으로 바꿔 넣거나,
-// 응답 모양에 맞춰 이 타입을 고친다. 찜한 코스는 API가 생겨 features/saved의 SavedCourse를 쓴다.
-
 import type { RouteType } from "../map/types";
 
 export interface RunRecord {
@@ -14,6 +10,8 @@ export interface RunRecord {
   /** 평균 페이스(초/km). 거리가 너무 짧으면 null. 자전거는 화면에서 km/h로 바꿔 쓴다. */
   paceSecPerKm: number | null;
   finishedAt: string;
+  /** 시작·중간·종점을 순서대로 통과해 완주로 인정된 기록인지. false는 중간 종료 기록이다. */
+  isCompleted: boolean;
 }
 
 /** 완주 뒤 만들어 저장한 기록 카드. 한 기록으로 여러 장을 만들 수 있다. */
@@ -33,9 +31,16 @@ export interface RecordCardPage {
   cards: SavedRecordCard[];
 }
 
-/** 시군구 스탬프 하나. 그 시군구의 코스를 처음 완주한 날 받는다. */
+/** 완주한 시군구에서 사용자가 직접 찍은 스탬프 하나. */
 export interface Stamp {
   /** 시군구 코드(5자리). 지도 도형 파일(korea-all-regions.json)의 sgg_code와 같은 체계다. */
   sigunguCode: string;
-  collectedAt: string;
+  stampedAt: string;
+}
+
+export type StampStatus = "LOCKED" | "AVAILABLE" | "STAMPED";
+export interface SigunguStampStatus {
+  sigunguCode: string;
+  status: StampStatus;
+  stampedAt: string | null;
 }
