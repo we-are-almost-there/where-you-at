@@ -29,7 +29,7 @@ const cardState = vi.hoisted(() => ({ props: null as ComponentProps<typeof Recor
 
 const tracking = vi.hoisted(() => ({
   status: "paused" as "idle" | "tracking" | "paused",
-  currentLocation: null as LatLng | null,
+  currentLocation: null as (LatLng & { timestamp?: number; segmentStart?: boolean }) | null,
   error: null,
   wakeLockFailed: false,
   storageFailed: false,
@@ -141,7 +141,8 @@ it("경로를 순서대로 통과하면 완주 음성과 저장에 같은 판정
   tracking.status = "tracking";
   const router = await mount();
   for (const [index, point] of plan.points.entries()) {
-    tracking.currentLocation = point;
+    // 걷기 페이스(약 3m/s)에 맞는 시각을 줘야 advanceCompletion이 이동 구간을 그럴듯하다고 본다.
+    tracking.currentLocation = { ...point, timestamp: index * (plan.spacing / 3) * 1000 };
     await act(async () => { await router.navigate(`/courses/1?tab=course&sample=${index}`); });
   }
   expect(announce).toHaveBeenCalledWith("코스를 완주했어요");

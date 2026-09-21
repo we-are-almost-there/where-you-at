@@ -1,22 +1,26 @@
 import { haversineMeters, projectOntoSegment, type Direction } from "./courseProgress";
+import { MAX_SPEED_MPS } from "./trackingRecord";
 import type { LatLng } from "./types";
 
 export interface CompletionPlan {
   key: string;
   points: LatLng[];
   radius: number;
-  /** 확인 지점 사이의 목표 간격(m). 표본 사이 이동 구간을 인정할지 판단하는 상한 계산에 쓴다. */
+  /** 확인 지점 사이의 목표 간격(m). 지금은 판정에 안 쓰지만 코스 성격을 나타내는 값이라 남겨 둔다. */
   spacing: number;
 }
+
+/** 시각이 있는 위치 표본. 이동 구간의 그럴듯한 속도를 판단하는 데 시각이 필요하다. */
+export interface TimedLocation extends LatLng {
+  timestamp: number;
+}
+
 export interface CompletionState {
   key: string;
   next: number;
-  /** 마지막으로 인정된 원시 위치. 다음 호출에서 이동 구간을 만드는 데 쓴다. 이전 저장값엔 없을 수 있다. */
-  location?: LatLng;
+  /** 마지막으로 인정된 원시 위치·시각. 다음 호출에서 이동 구간을 만드는 데 쓴다. 이전 저장값엔 없을 수 있다. */
+  location?: TimedLocation;
 }
-
-// 이 배수보다 먼 이동은 순간 이동(부정 통과)으로 보고 구간 판정을 쓰지 않는다.
-const MAX_GAP_SPACING_MULTIPLIER = 3;
 
 /** GPX 점 밀도와 관계없이 최대 100m 간격으로 시작·중간·종점 확인 지점을 만든다. */
 export function completionPlan(path: LatLng[], direction: Direction): CompletionPlan {
@@ -51,24 +55,36 @@ export function validCompletion(value: unknown, plan: CompletionPlan): value is 
     return false;
   }
   if (state.location !== undefined) {
-    const { lat, lng } = state.location;
-    if (typeof lat !== "number" || typeof lng !== "number") return false;
+    const { lat, lng, timestamp } = state.location;
+    if (typeof lat !== "number" || typeof lng !== "number" || typeof timestamp !== "number") return false;
   }
   return true;
 }
 
 /**
- * 다음 확인 지점들을 순서대로 검사한다. 직전에 인정된 위치와 이번 위치를 잇는 이동 구간이 확인
- * 지점에 반경 이내로 붙어 있으면 통과로 인정한다 — GPS 표본이 성겨 지점 사이를 건너뛰어도,
- * 순서대로 지난 지점 여러 개를 한 번에 인정할 수 있다.
- * 이동 구간이 지점 간격의 몇 배를 넘으면(순간 이동 의심) 다음 지점 하나만 이번 위치로 직접
- * 검사하는 예전 방식으로 되돌아가, 시작점에서 종점으로 곧장 건너뛰는 부정 통과를 막는다.
+ * 다음 확인 지점들을 순서대로 검사한다. 직전에 인정된 위치·시각과 이번 위치·시각을 잇는 이동
+ * 구간의 평균 속도가 그럴듯하면(트래킹 기록 거리 계산과 같은 상한, trackingRecord.ts 참고)
+ * 그 구간이 확인 지점에 반경 이내로 붙어 있는지로 통과 여부를 본다 — GPS 표본이 아무리 성겨도,
+ * 실제로 이동한 것이라면(구간이 길어도 걸린 시간에 비해 속도가 그럴듯하면) 순서대로 지난
+ * 지점 여러 개를 한 번에 인정한다. 속도가 물리적으로 말이 안 되면(순간 이동 의심) 다음 지점
+ * 하나만 이번 위치로 직접 검사하는 예전 방식으로 되돌아가, 시작점에서 종점으로 곧장 건너뛰는
+ * 부정 통과를 막는다.
+ *
+ * segmentStart가 true면(일시정지 후 재개, 새로고침 후 자동 재개 등 추적하지 않은 구간의 경계)
+ * 이전 위치·시각을 이번 판정에 쓰지 않는다 — 추적하지 않은 이동으로 지점을 통과 처리하지 않고,
+ * 이번 위치를 새 기준점으로만 삼는다.
  */
-export function advanceCompletion(state: CompletionState | null, plan: CompletionPlan, location: LatLng): CompletionState {
+export function advanceCompletion(
+  state: CompletionState | null,
+  plan: CompletionPlan,
+  location: TimedLocation,
+  segmentStart = false,
+): CompletionState {
   const current = validCompletion(state, plan) ? state : { key: plan.key, next: 0 };
-  const from = current.location;
-  const maxGap = plan.spacing * MAX_GAP_SPACING_MULTIPLIER;
-  const useSegment = from !== undefined && haversineMeters(from, location) <= maxGap;
+  const from = segmentStart ? undefined : current.location;
+  const elapsedSeconds = from ? (location.timestamp - from.timestamp) / 1000 : 0;
+  const useSegment = from !== undefined && elapsedSeconds > 0
+    && haversineMeters(from, location) / elapsedSeconds <= MAX_SPEED_MPS;
 
   let next = current.next;
   while (next < plan.points.length) {

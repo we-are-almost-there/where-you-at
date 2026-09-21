@@ -404,7 +404,7 @@ function CourseDetailSession() {
   if (currentLocation !== lastLocation) {
     setLastLocation(currentLocation);
     if (isTracking && currentLocation && waypoints.length > 0 && tooFarMeters == null) {
-      setCompletion((previous) => advanceCompletion(previous, completionRoute, currentLocation));
+      setCompletion((previous) => advanceCompletion(previous, completionRoute, currentLocation, currentLocation.segmentStart));
       // 시작 거리 경고가 열려 있는 동안에는 판정과 진행률 갱신을 보류한다.
       if (!startChecked) {
         // 첫 위치가 잡힌 순간에만 "코스에서 너무 멂"을 판정한다.
