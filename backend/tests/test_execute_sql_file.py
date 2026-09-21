@@ -93,6 +93,28 @@ class TestSeedHelpExitCode(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
         mock_exec.assert_not_called()
 
+    def test_disabled_features_updates_only_disabled_faq(self):
+        with patch("sys.argv", ["seed_help", "--no-record-features"]), patch.object(
+            supabase, "execute_sql_file", return_value=True
+        ) as mock_exec:
+            runpy.run_module("scripts.seed_help", run_name="__main__")
+        mock_exec.assert_called_once_with("sql/help_record_features_disabled.sql")
+
+    def test_disabled_features_failure_exits_with_1(self):
+        with patch("sys.argv", ["seed_help", "--no-record-features"]), patch.object(
+            supabase, "execute_sql_file", return_value=False
+        ), self.assertRaises(SystemExit) as ctx:
+            runpy.run_module("scripts.seed_help", run_name="__main__")
+        self.assertEqual(ctx.exception.code, 1)
+
+    def test_conflicting_options_do_not_write_to_db(self):
+        with patch("sys.argv", ["seed_help", "--record-features", "--no-record-features"]), patch.object(
+            supabase, "execute_sql_file"
+        ) as mock_exec, self.assertRaises(SystemExit) as ctx:
+            runpy.run_module("scripts.seed_help", run_name="__main__")
+        self.assertEqual(ctx.exception.code, 2)
+        mock_exec.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
