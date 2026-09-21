@@ -563,6 +563,7 @@ create table run_record (
   duration_ms       bigint not null check (duration_ms > 0),
   pace_sec_per_km   numeric(8, 2) check (pace_sec_per_km > 0),
   finished_at       timestamptz not null,
+  is_completed      boolean not null default false,
   created_at        timestamptz not null default now(),
   unique (id, user_id)
 );

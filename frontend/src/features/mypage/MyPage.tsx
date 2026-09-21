@@ -264,9 +264,9 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
           />
           <div className="mt-3">
             {stampState.loading ? <p role="status">스탬프를 불러오는 중…</p> : stampState.error ? (
-              <div>
-                <p role="alert">{stampState.error}</p>
-                <button type="button" onClick={stampState.retry}>다시 시도</button>
+              <div className="py-12 text-center">
+                <p role="alert" className="whitespace-pre-line text-[14px] text-ink">{stampState.error}</p>
+                <button type="button" onClick={stampState.retry} className="mt-2 cursor-pointer text-[14px] font-bold text-accent hover:opacity-70">다시 시도</button>
               </div>
             ) : <StampBoard stamps={stamps} />}
           </div>
@@ -318,7 +318,7 @@ function Dashboard({ user, onWithdrawn }: { user: User; onWithdrawn: () => void 
       {dialog === "withdraw" && <WithdrawDialog onClose={() => setDialog(null)} onWithdrawn={onWithdrawn} />}
       {dialog === "stampMap" && <StampMapDialog stamps={stamps} statuses={stampState.statuses}
         loading={stampState.loading} error={stampState.error} onRetry={stampState.retry}
-        onStamp={stampState.stamp} onClose={() => setDialog(null)} />}
+        saving={stampState.saving} saveError={stampState.saveError} onStamp={stampState.stamp} onClose={() => setDialog(null)} />}
     </>
   );
 }

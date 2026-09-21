@@ -428,7 +428,12 @@ Render 로그도 함께 확인합니다. `[ERROR] 기록 카드 커밋 확인 �
 
 ### 시군구 스탬프 배포
 
-기존 완주 기록의 `run_record.user_id`, `course_id`와 `course.region_code`를 조인합니다.
+`run_record.is_completed=true`인 기록의 `user_id`, `course_id`와 `course.region_code`를 조인합니다.
+완주 여부는 프론트에서 시작·중간·종점 확인 지점을 순서대로 통과했는지 판정해 저장합니다. 완주 음성도 같은 판정을 사용합니다.
+확인 지점은 경로상 최대 100m 간격이며, GPS 허용 거리는 최대 40m(짧은 코스는 지점 간격의 1/3)입니다.
+위치 기준 진행률이 100%여도 확인 지점을 건너뛰면 완주로 인정하지 않습니다. 확인 상태는 일시정지·새로고침 후 복원하며 새 따라가기에서 초기화합니다.
+50m 이상 이동한 미완주 기록도 내 기록에 저장하지만 스탬프 자격은 부여하지 않습니다.
+기존 기록은 완주 여부를 알 수 없어 false로 유지하며, 이미 찍은 스탬프는 삭제하지 않습니다.
 지도 파일 `frontend/public/korea-all-regions.json`의 230개 코드만 스탬프 대상이며,
 여러 지역을 지나는 코스도 저장된 출발지 기준 대표 시군구 하나만 인정합니다. NULL 지역은 자격을 부여하지 않습니다.
 `user_sigungu_stamps`에는 회원 번호·시군구 코드·찍은 시각만 저장하며, 회원 탈퇴 시 FK로 연쇄 삭제합니다.
@@ -442,7 +447,7 @@ UNIQUE(user_id, sigungu_code)의 인덱스로 중복 방지와 사용자별 조�
 운영 담당자가 적용할 순서:
 
 1. `RECORD_FEATURES_ENABLED=false` 상태에서 운영 DB의 `11_run_record.sql`, `12_record_card.sql` 적용 여부를 확인합니다.
-2. `13_user_sigungu_stamps.sql`을 적용합니다. 새 DB는 `01_schema.sql`에 포함되어 있습니다.
+2. `13_user_sigungu_stamps.sql`을 백엔드 배포 전에 적용합니다. 스탬프 테이블과 기록의 완주 여부 컬럼을 함께 추가하며, 이전 버전을 실행했다면 다시 실행합니다. 새 DB는 `01_schema.sql`에 포함되어 있습니다.
 3. 2026년 9월 21일 시행 개인정보처리방침·이용약관 통합 문안과 `04_help_seed.sql`의 변경 안내를 반영합니다. 기존 9월 17일 보관본은 유지합니다.
 4. 백엔드와 프론트엔드를 배포하고 기존 기록 기능 공개 조건을 확인한 뒤 `RECORD_FEATURES_ENABLED=true`로 전환합니다.
 5. 실제 완주 기록 → AVAILABLE → 직접 찍기 → STAMPED, 새로고침 후 유지와 회원 탈퇴 시 삭제를 확인합니다.

@@ -60,7 +60,7 @@ class SigunguStampDatabaseTest(unittest.TestCase):
 
     def complete(self, user=7, course=1):
         with self.conn.cursor() as cur:
-            cur.execute("insert into run_record values (%s, %s)", (user, course))
+            cur.execute("insert into run_record values (%s, %s, true)", (user, course))
         self.conn.commit()
 
     def states(self):
@@ -75,6 +75,12 @@ class SigunguStampDatabaseTest(unittest.TestCase):
         self.assertEqual(create_stamp(self.conn, user_id=7, code="51110"), (None, False, 409))
 
     def test_available_stamped_and_repeat(self):
+        # 이전 클라이언트가 완주 여부 없이 저장한 기록은 스탬프 자격이 없다.
+        with self.conn.cursor() as cur:
+            cur.execute("insert into run_record (user_id, course_id) values (7, 1)")
+        self.conn.commit()
+        self.assertEqual(self.states()["51110"]["status"], "LOCKED")
+        self.assertEqual(create_stamp(self.conn, user_id=7, code="51110"), (None, False, 409))
         self.complete()
         self.assertEqual(self.states()["51110"]["status"], "AVAILABLE")
         first, created, status = create_stamp(self.conn, user_id=7, code="51110")

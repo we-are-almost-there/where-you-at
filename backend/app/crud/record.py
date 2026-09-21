@@ -31,15 +31,16 @@ def create_record(
     duration_ms: int,
     pace_sec_per_km: float | None,
     finished_at,
+    is_completed: bool = False,
 ) -> dict | None:
     """완주 기록을 저장하고 코스 이름이 붙은 행을 돌려준다. 코스가 없으면 None."""
     # 코스가 없으면 insert ... select가 0행이라 FK 오류 없이 None으로 끝난다.
     query = f"""
         with inserted as (
             insert into run_record
-                (user_id, course_id, route_type, distance_km, duration_ms, pace_sec_per_km, finished_at)
+                (user_id, course_id, route_type, distance_km, duration_ms, pace_sec_per_km, finished_at, is_completed)
             select %(user_id)s, c.id, %(route_type)s, %(distance_km)s, %(duration_ms)s,
-                   %(pace_sec_per_km)s, %(finished_at)s
+                   %(pace_sec_per_km)s, %(finished_at)s, %(is_completed)s
             from course c
             join course_route cr on cr.course_id = c.id and cr.route_type = %(route_type)s
             where c.id = %(course_id)s
@@ -60,6 +61,7 @@ def create_record(
                 "duration_ms": duration_ms,
                 "pace_sec_per_km": pace_sec_per_km,
                 "finished_at": finished_at,
+                "is_completed": is_completed,
             },
         )
         row = cur.fetchone()

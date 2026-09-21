@@ -6,6 +6,7 @@ crud를 mock으로 바꾸고 인증은 의존성 override로 건너뛴다.
     python -m unittest tests.test_records
 """
 import unittest
+from math import nextafter
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from unittest.mock import patch
@@ -76,12 +77,50 @@ class RecordsRouterTest(unittest.TestCase):
         self.assertEqual(res.status_code, 201)
         self.assertIsNone(res.json()["pace_sec_per_km"])
 
+    def test_completion_is_forwarded_and_legacy_defaults_to_false(self):
+        for fields, expected in (({}, False), ({"is_completed": False}, False), ({"is_completed": True}, True)):
+            with self.subTest(fields=fields), patch("app.api.routers.records.crud") as crud:
+                crud.create_record.return_value = ROW
+                res = self.client.post("/api/records", json={**BODY, **fields})
+                self.assertEqual(res.status_code, 201)
+                self.assertIs(crud.create_record.call_args.kwargs["is_completed"], expected)
+
+    def test_completion_rejects_non_boolean(self):
+        with patch("app.api.routers.records.crud") as crud:
+            for value in ("true", 1, None):
+                res = self.client.post("/api/records", json={**BODY, "is_completed": value})
+                self.assertEqual(res.status_code, 422)
+            crud.create_record.assert_not_called()
+
     def test_pace_database_upper_bound(self):
         with patch("app.api.routers.records.crud") as crud:
             crud.create_record.return_value = {**ROW, "pace_sec_per_km": 999999.99}
             response = self.client.post("/api/records", json={**BODY, "pace_sec_per_km": 999999.99})
             self.assertEqual(response.status_code, 201)
             self.assertEqual(response.json()["pace_sec_per_km"], 999999.99)
+
+    def test_values_rounding_to_zero_are_422_without_insert(self):
+        cases = (
+            ("distance_km", (0.0001, nextafter(0.0005, 0))),
+            ("pace_sec_per_km", (0.001, nextafter(0.005, 0))),
+        )
+        with patch("app.api.routers.records.crud") as crud:
+            for field, values in cases:
+                for value in values:
+                    with self.subTest(field=field, value=value):
+                        response = self.client.post("/api/records", json={**BODY, field: value})
+                        self.assertEqual(response.status_code, 422)
+                        self.assertEqual(response.json()["detail"][0]["loc"], ["body", field])
+            crud.create_record.assert_not_called()
+
+    def test_smallest_inputs_rounding_to_positive_are_accepted(self):
+        for field, minimum in (("distance_km", 0.0005), ("pace_sec_per_km", 0.005)):
+            for value in (minimum, nextafter(minimum, float("inf"))):
+                with self.subTest(field=field, value=value), patch("app.api.routers.records.crud") as crud:
+                    crud.create_record.return_value = ROW
+                    response = self.client.post("/api/records", json={**BODY, field: value})
+                    self.assertEqual(response.status_code, 201)
+                    self.assertEqual(crud.create_record.call_args.kwargs[field], value)
 
     def test_pace_above_database_bound_is_422_without_insert(self):
         with patch("app.api.routers.records.crud") as crud:

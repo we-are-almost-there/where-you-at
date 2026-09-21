@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CircleAlert } from "lucide-react";
 import type { Feature, FeatureCollection } from "geojson";
-import { fetchOrNetworkError, HttpError } from "../../../lib/http";
+import { fetchOrNetworkError } from "../../../lib/http";
+import { stampSaveError, type StampSaveError } from "../stampErrors";
 import { buildProjection, geometryPath, labelPoint } from "../../support/koreaMapGeometry";
 import { STAMP_SIDO, sidoCodeOf } from "../stampRegions";
 import { formatDate } from "../format";
@@ -62,12 +64,30 @@ interface Props {
   stamps: Stamp[];
   statuses?: SigunguStampStatus[];
   loading?: boolean;
+  saving?: boolean;
+  saveError?: StampSaveError | null;
   error?: string;
   onRetry?: () => void;
   onStamp?: (code: string) => Promise<void>;
   onClose: () => void;
   /** 지도 선택 알림. 스탬프 저장은 별도 버튼에서 요청한다. */
   onSelectSigungu?: (region: SelectedSigungu) => void;
+}
+
+function StampErrorNotice({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const [title, ...description] = message.split("\n");
+  return (
+    <div className="mb-4 flex flex-col gap-3 rounded-[14px] border border-divider-soft bg-lavender p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-start gap-3">
+        <CircleAlert size={20} aria-hidden="true" className="mt-0.5 shrink-0 text-accent" />
+        <div role="alert" className="min-w-0">
+          <p className="text-[14px] font-bold leading-relaxed text-ink">{title}</p>
+          {description.length > 0 && <p className="mt-1 whitespace-pre-line text-[13px] leading-relaxed text-caption">{description.join("\n")}</p>}
+        </div>
+      </div>
+      {onRetry && <button type="button" onClick={onRetry} className={`${PRIMARY_BUTTON} w-full shrink-0 sm:w-auto`}>다시 시도</button>}
+    </div>
+  );
 }
 
 /**
@@ -77,9 +97,11 @@ interface Props {
  * 지도는 마우스용이고, 같은 지역을 지도 아래 버튼 목록으로도 둔다. 키보드·화면낭독기로도 고를 수 있고,
  * 세종·광주 구처럼 지도에서 작아 누르기 어려운 곳도 쉽게 고를 수 있다. 목록에 마우스를 올리면 지도에서도 강조된다.
  */
-export default function StampMapDialog({ stamps, statuses = [], loading = false, error = "", onRetry, onStamp, onClose, onSelectSigungu }: Props) {
-  const [busy, setBusy] = useState(false);
-  const [saveError, setSaveError] = useState<{ code: string; message: string } | null>(null);
+export default function StampMapDialog({ stamps, statuses = [], loading = false, saving = false, saveError: parentSaveError, error = "", onRetry, onStamp, onClose, onSelectSigungu }: Props) {
+  const [localBusy, setBusy] = useState(false);
+  const busy = saving || localBusy;
+  const [localSaveError, setSaveError] = useState<StampSaveError | null>(null);
+  const saveError = parentSaveError === undefined ? localSaveError : parentSaveError;
   const pending = useRef(false);
   const mounted = useRef(false);
   useEffect(() => {
@@ -87,16 +109,14 @@ export default function StampMapDialog({ stamps, statuses = [], loading = false,
     return () => { mounted.current = false; };
   }, []);
   const stampRegion = async (code: string) => {
-    if (!onStamp || pending.current) return;
+    if (!onStamp || saving || pending.current) return;
     pending.current = true;
     setBusy(true);
     setSaveError(null);
     try {
       await onStamp(code);
     } catch (err) {
-      if (mounted.current) setSaveError({ code, message: err instanceof HttpError && err.status === 409
-        ? "이 지역의 완주 기록이 아직 없어요. 완주 기록을 확인한 뒤 다시 시도해 주세요."
-        : "스탬프를 찍지 못했어요. 연결을 확인하고 다시 시도해 주세요." });
+      if (mounted.current) setSaveError(stampSaveError(code, err));
     } finally {
       pending.current = false;
       if (mounted.current) setBusy(false);
@@ -212,8 +232,9 @@ export default function StampMapDialog({ stamps, statuses = [], loading = false,
 
   return (
     <ModalDialog title="스탬프 지도" onClose={onClose} size="lg">
-      {loading && <p role="status">스탬프를 불러오는 중…</p>}
-      {error && <div><p role="alert">{error}</p><button type="button" onClick={onRetry}>다시 시도</button></div>}
+      {saveError && <StampErrorNotice message={saveError.message} />}
+      {loading && <p role="status" className="mb-4 rounded-[14px] bg-lavender px-4 py-3 text-[14px] text-caption">스탬프를 불러오는 중…</p>}
+      {error && <StampErrorNotice message={error} onRetry={onRetry} />}
       <div className="flex min-h-8 items-center gap-2">
         {!nation && (
           <button
@@ -356,7 +377,6 @@ export default function StampMapDialog({ stamps, statuses = [], loading = false,
                 <button type="button" className={`${PRIMARY_BUTTON} mt-3 disabled:opacity-50`} disabled={busy}
                   onClick={() => void stampRegion(selected.code)}>{busy ? "찍는 중…" : "스탬프 찍기"}</button>
               )}
-              {selected && saveError?.code === selected.code && <p role="alert" className="mt-2 text-danger">{saveError.message}</p>}
             </div>
           )}
         </>

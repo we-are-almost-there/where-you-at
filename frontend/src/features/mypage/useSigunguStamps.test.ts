@@ -21,6 +21,27 @@ it("획득 수는 찍은 지역만 집계하고 저장 성공을 서버 시각�
   expect(result.current.stamps).toEqual([{ sigunguCode: "51110", stampedAt: stamped.stampedAt }]);
 });
 
+it("저장 중 중복 요청을 막고 실패 후 다시 저장할 수 있다", async () => {
+  vi.mocked(fetchMyStamps).mockResolvedValue([available]);
+  let reject!: (reason: Error) => void;
+  vi.mocked(stampMyRegion).mockReturnValueOnce(new Promise((_, fail) => { reject = fail; })).mockResolvedValueOnce(stamped);
+  const { result } = renderHook(useSigunguStamps);
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  let request!: Promise<void>;
+  act(() => { request = result.current.stamp("51110"); });
+  expect(result.current.saving).toBe(true);
+  await act(() => result.current.stamp("51110"));
+  expect(stampMyRegion).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    reject(new Error("offline"));
+    await expect(request).rejects.toThrow("offline");
+  });
+  expect(result.current.saving).toBe(false);
+  await act(() => result.current.stamp("51110"));
+  expect(stampMyRegion).toHaveBeenCalledTimes(2);
+  expect(result.current.stamps).toHaveLength(1);
+});
+
 it("조회 실패 후 재시도한다", async () => {
   vi.mocked(fetchMyStamps).mockRejectedValueOnce(new Error()).mockResolvedValueOnce([stamped]);
   const { result } = renderHook(useSigunguStamps);

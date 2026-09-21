@@ -73,6 +73,7 @@ export interface CreateRecordInput {
   paceSecPerKm: number | null;
   /** ISO 문자열 */
   finishedAt: string;
+  isCompleted?: boolean;
 }
 
 export async function createRecord(input: CreateRecordInput): Promise<RunRecord> {
@@ -86,6 +87,7 @@ export async function createRecord(input: CreateRecordInput): Promise<RunRecord>
       duration_ms: input.durationMs,
       pace_sec_per_km: input.paceSecPerKm,
       finished_at: input.finishedAt,
+      is_completed: input.isCompleted ?? false,
     }),
   });
   if (!res.ok) throw await recordApiError(res);

@@ -13,7 +13,7 @@ def list_stamps(conn, *, user_id: int) -> list[dict]:
             select target.code as sigungu_code,
                    case when s.id is not null then 'STAMPED'
                         when exists (select 1 from run_record r join course c on c.id = r.course_id
-                                     where r.user_id = %(user_id)s and c.region_code = target.code)
+                                     where r.user_id = %(user_id)s and r.is_completed and c.region_code = target.code)
                         then 'AVAILABLE' else 'LOCKED' end as status,
                    s.stamped_at
             from unnest(%(codes)s::text[]) as target(code)
@@ -33,7 +33,7 @@ def create_stamp(conn, *, user_id: int, code: str) -> tuple[dict | None, bool, i
             return None, False, 404
         cur.execute("""
             select 1 from run_record r join course c on c.id = r.course_id
-            where r.user_id = %(user_id)s and c.region_code = %(code)s limit 1
+            where r.user_id = %(user_id)s and r.is_completed and c.region_code = %(code)s limit 1
         """, params)
         if cur.fetchone() is None:
             return None, False, 409

@@ -1,8 +1,47 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { HttpError } from "../../lib/http";
 import { createStamp, fetchStamps } from "./stampsApi";
+import { clearAccessToken, writeAccessToken } from "../../lib/authToken";
 
-afterEach(() => vi.unstubAllGlobals());
+const { expireAuthSession } = vi.hoisted(() => ({ expireAuthSession: vi.fn() }));
+vi.mock("../auth/useAuth", () => ({ expireAuthSession }));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+  clearAccessToken();
+});
+
+const requests = [fetchStamps, () => createStamp("51110")];
+
+it.each(requests)("기능 비공개 응답의 상세를 보존한다 (%#)", async (request) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "아직 제공하지 않는 기능입니다." }), { status: 503 })));
+  await expect(request()).rejects.toMatchObject({ status: 503, detail: "아직 제공하지 않는 기능입니다." });
+});
+
+it.each(requests)("401이면 만료된 인증 상태를 정리한다 (%#)", async (request) => {
+  writeAccessToken("expired-token");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
+  await expect(request()).rejects.toMatchObject({ status: 401 });
+  expect(expireAuthSession).toHaveBeenCalledTimes(1);
+});
+
+it.each(requests)("이전 요청의 401로 새 로그인 세션을 지우지 않는다 (%#)", async (request) => {
+  writeAccessToken("old-token");
+  let resolve!: (response: Response) => void;
+  vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise<Response>((done) => { resolve = done; })));
+  const pending = request();
+  writeAccessToken("new-token");
+  resolve(new Response(null, { status: 401 }));
+  await expect(pending).rejects.toMatchObject({ status: 401 });
+  expect(expireAuthSession).not.toHaveBeenCalled();
+});
+
+it.each(requests)("서버 오류로는 로그아웃하지 않는다 (%#)", async (request) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 500 })));
+  await expect(request()).rejects.toMatchObject({ status: 500 });
+  expect(expireAuthSession).not.toHaveBeenCalled();
+});
 
 it("서버 상태와 날짜를 camelCase로 변환한다", async () => {
   const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([

@@ -14,12 +14,14 @@ class RunRecordCreate(BaseModel):
 
     course_id: int
     route_type: Literal["trail", "bicycle"]
-    # numeric(7, 3)에 들어가는 범위. inf/nan은 저장·직렬화에서 500이 되므로 막는다.
-    distance_km: float = Field(..., gt=0, le=1000, allow_inf_nan=False)
+    # numeric(7, 3)은 0.0005부터 0.001로 반올림된다. 그 미만은 DB의 > 0 제약에 걸린다.
+    distance_km: float = Field(..., ge=0.0005, le=1000, allow_inf_nan=False)
     duration_ms: int = Field(..., gt=0, le=MAX_DURATION_MS)
-    # numeric(8, 2)에 들어가는 범위(최대 999999.99). 거리가 너무 짧으면 프론트가 null로 보낸다.
-    pace_sec_per_km: float | None = Field(None, gt=0, le=999999.99, allow_inf_nan=False)
+    # numeric(8, 2)은 0.005부터 0.01로 반올림된다. 거리가 너무 짧으면 프론트가 null로 보낸다.
+    pace_sec_per_km: float | None = Field(None, ge=0.005, le=999999.99, allow_inf_nan=False)
     finished_at: datetime
+    # 이전 클라이언트의 기록은 완주 여부를 알 수 없으므로 인정하지 않는다.
+    is_completed: bool = Field(False, strict=True)
 
     @field_validator("finished_at")
     @classmethod
