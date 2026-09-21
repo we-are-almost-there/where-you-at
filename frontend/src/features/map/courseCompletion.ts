@@ -67,6 +67,10 @@ export function completionPlan(path: LatLng[], direction: Direction): Completion
     // 120도 이상 방향을 바꾸는 꼭짓점은 직접 관측해야 한다. 직각 코너는 보간 가능하다.
     if (ax * bx + ay * by <= -0.5 * Math.hypot(ax, ay) * Math.hypot(bx, by)) turns.push(routeDistance);
   }
+  const sharpTurnCount = turns.length;
+  addSmoothTurnarounds(route, lengths, turns, Math.min(30, total / 4));
+  // 반환점 추가로 인덱스가 달라진 코스만 이전 임시 통과 상태를 무효화한다.
+  const planKey = turns.length > sharpTurnCount ? `${key}:smooth-turns-v1` : key;
   // 교차점 자체는 두 차례의 방문을 구분하지 못한다. 두 교차 시점 사이 구간의
   // 중간 지점을 직접 방문해야 그 구간을 건너뛰고 미래 경로로 붙을 수 없다.
   const witnesses = crossingWitnesses(points, pointDistances, spacing);
@@ -85,7 +89,50 @@ export function completionPlan(path: LatLng[], direction: Direction): Completion
   }
   const requiredVisits = visits.map(distance => pointDistances.findIndex(value => Math.abs(value - distance) <= 1e-6));
   const turnarounds = turns.map(distance => pointDistances.findIndex(value => Math.abs(value - distance) <= 1e-6));
-  return { key, points, pointDistances, requiredVisits, turnarounds, radius: Math.min(40, spacing / 3), spacing };
+  return { key: planKey, points, pointDistances, requiredVisits, turnarounds, radius: Math.min(40, spacing / 3), spacing };
+}
+
+/** 한 꼭짓점이 아니라 전후 일정 거리의 방향을 비교해 부드러운 U자 반환을 찾는다. */
+function addSmoothTurnarounds(route: LatLng[], lengths: number[], turns: number[], windowM: number): void {
+  const distances = [0];
+  for (const length of lengths) distances.push(distances.at(-1)! + length);
+  const pointAt = (distance: number): LatLng => {
+    let low = 0, high = lengths.length - 1;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (distances[middle + 1] < distance) low = middle + 1;
+      else high = middle;
+    }
+    const fraction = (distance - distances[low]) / lengths[low];
+    const a = route[low], b = route[low + 1];
+    return { lat: a.lat + (b.lat - a.lat) * fraction, lng: a.lng + (b.lng - a.lng) * fraction };
+  };
+  const candidates: { distance: number; cosine: number }[] = [];
+  for (let i = 1; i < route.length - 1; i++) {
+    const distance = distances[i];
+    if (distance < windowM || distance + windowM > distances.at(-1)!) continue;
+    const before = pointAt(distance - windowM), after = pointAt(distance + windowM);
+    const center = route[i], cosLat = Math.cos(center.lat * Math.PI / 180);
+    const ax = (center.lng - before.lng) * cosLat, ay = center.lat - before.lat;
+    const bx = (after.lng - center.lng) * cosLat, by = after.lat - center.lat;
+    const magnitude = Math.hypot(ax, ay) * Math.hypot(bx, by);
+    if (magnitude === 0) continue;
+    const cosine = (ax * bx + ay * by) / magnitude;
+    if (cosine <= -0.5) candidates.push({ distance, cosine });
+  }
+  // 같은 굽이에 포함된 여러 좌표를 모두 필수 방문점으로 만들지 않는다.
+  // 가장 크게 방향을 바꾸는 위치 하나를 고르고 기존의 날카로운 반환점은 유지한다.
+  for (let i = 0; i < candidates.length;) {
+    let best = candidates[i];
+    let end = i + 1;
+    while (end < candidates.length && candidates[end].distance - candidates[end - 1].distance <= windowM) {
+      if (candidates[end].cosine < best.cosine) best = candidates[end];
+      end += 1;
+    }
+    if (!turns.some(distance => Math.abs(distance - best.distance) <= windowM)) turns.push(best.distance);
+    i = end;
+  }
+  turns.sort((a, b) => a - b);
 }
 
 /** 약 100m 간격으로 줄인 경로에서 교차 전후를 구분할 방문 지점을 만든다. */

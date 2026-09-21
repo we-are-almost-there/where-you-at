@@ -5,6 +5,49 @@ import { haversineMeters } from "./courseProgress";
 
 const line = [{ lat: 37, lng: 127 }, { lat: 37.01, lng: 127 }];
 
+function smoothReturnPath(arcSamples: number): LatLng[] {
+  const xy = (x: number, y: number): LatLng => ({
+    lat: 37 + y / 111_320,
+    lng: 127 + x / (111_320 * Math.cos(37 * Math.PI / 180)),
+  });
+  const path = [xy(0, 0)];
+  for (let y = 50; y <= 1000; y += 50) path.push(xy(0, y));
+  for (let i = 1; i <= arcSamples; i++) {
+    const angle = Math.PI - i * Math.PI / arcSamples;
+    path.push(xy(2 + 2 * Math.cos(angle), 1000 + 2 * Math.sin(angle)));
+  }
+  for (let y = 950; y >= 0; y -= 50) path.push(xy(4, y));
+  return path;
+}
+
+it.each(["forward", "reverse"] as const)("%s 완만한 U자 반환도 좌표 밀도와 관계없이 정상 귀환을 인정한다", (direction) => {
+  for (const arcSamples of [6, 18, 60]) {
+    const path = smoothReturnPath(arcSamples);
+    const plan = completionPlan(path, direction);
+    expect(plan.turnarounds.length).toBe(1);
+    const samples = direction === "forward" ? path : [...path].reverse();
+    let state: CompletionState | null = null;
+    let timestamp = 0;
+    for (let i = 0; i < samples.length; i++) {
+      if (i > 0) timestamp += haversineMeters(samples[i - 1], samples[i]) / 3 * 1000;
+      state = advanceCompletion(state, plan, { ...samples[i], timestamp });
+    }
+    expect(hasCompleted(state, plan)).toBe(true);
+  }
+});
+
+it.each(["forward", "reverse"] as const)("%s 완만한 U자 코스도 반환 전 귀환 길로 옮기면 완주하지 않는다", (direction) => {
+  const path = smoothReturnPath(18);
+  const plan = completionPlan(path, direction);
+  const samples = direction === "forward" ? path : [...path].reverse();
+  let state = advanceCompletion(null, plan, { ...samples[0], timestamp: 0 });
+  state = advanceCompletion(state, plan, { ...samples[10], timestamp: 200_000 });
+  state = advanceCompletion(state, plan, { ...samples.at(-1)!, timestamp: 400_000 });
+  state = advanceCompletion(state, plan, { ...samples.at(-1)!, timestamp: 4_000_000 });
+  expect(hasCompleted(state, plan)).toBe(false);
+  expect(state.next).toBeLessThanOrEqual(plan.turnarounds[0]);
+});
+
 it.each(["forward", "reverse"] as const)("%s 코스 이탈 후 앞선 지점이나 종점에 재진입해도 누락 구간은 인정하지 않는다", (direction) => {
   const plan = completionPlan(line, direction);
   for (const reentry of [plan.points[6], plan.points.at(-1)!]) {
