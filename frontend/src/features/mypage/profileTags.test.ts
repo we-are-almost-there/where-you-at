@@ -11,6 +11,7 @@ const record = (distanceKm: number): RunRecord => ({
   durationMs: 1,
   paceSecPerKm: null,
   finishedAt: "2026-09-16T07:40:00+09:00",
+  isCompleted: true,
 });
 
 describe("profileTags", () => {

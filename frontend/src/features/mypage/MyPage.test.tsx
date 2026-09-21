@@ -98,6 +98,7 @@ function record(id: number): RunRecord {
     durationMs: 3_000_000,
     paceSecPerKm: 600,
     finishedAt: "2026-09-16T07:40:00+09:00",
+    isCompleted: true,
   };
 }
 

@@ -21,10 +21,10 @@ export async function fetchSavedCourses(): Promise<SavedCourse[]> {
   return getSavedCourses();
 }
 
-/** 내 완주 기록. 최근 완주순. */
+/** 내 완주 기록만. 최근 완주순. 중간에 끝난 기록은 서버가 함께 저장하지만 여기서 뺀다. */
 export async function fetchMyRecords(): Promise<RunRecord[]> {
   if (USE_PREVIEW) return previewRecords;
-  return fetchRecords();
+  return (await fetchRecords()).filter((record) => record.isCompleted);
 }
 
 /** 내가 저장한 기록 카드. 최근 만든 순. */

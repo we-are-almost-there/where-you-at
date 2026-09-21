@@ -7,7 +7,7 @@ import type { SavedRecordCard } from "../types";
 const card: SavedRecordCard = {
   id: 1, imageUrl: "https://example.test/card.png", createdAt: "2026-09-20T00:00:00Z",
   record: { id: 1, courseId: 1, courseName: "코스", routeType: "도보", distanceKm: 3,
-    durationMs: 60000, paceSecPerKm: 20, finishedAt: "2026-09-20T00:00:00Z" },
+    durationMs: 60000, paceSecPerKm: 20, finishedAt: "2026-09-20T00:00:00Z", isCompleted: true },
 };
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });

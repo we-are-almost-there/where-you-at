@@ -33,6 +33,7 @@ interface RunRecordDto {
   duration_ms: number;
   pace_sec_per_km: number | null;
   finished_at: string;
+  is_completed: boolean;
 }
 
 interface RecordCardDto {
@@ -52,6 +53,7 @@ function toRunRecord(dto: RunRecordDto): RunRecord {
     durationMs: dto.duration_ms,
     paceSecPerKm: dto.pace_sec_per_km,
     finishedAt: dto.finished_at,
+    isCompleted: dto.is_completed,
   };
 }
 

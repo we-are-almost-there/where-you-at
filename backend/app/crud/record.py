@@ -17,7 +17,8 @@ _RECORD_COLUMNS = """
     r.distance_km::float8 as distance_km,
     r.duration_ms,
     r.pace_sec_per_km::float8 as pace_sec_per_km,
-    r.finished_at
+    r.finished_at,
+    r.is_completed
 """
 
 

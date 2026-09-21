@@ -51,3 +51,22 @@ it("GPS 오차 범위 안에서 확인 지점을 통과할 수 있다", () => {
   for (const point of plan.points) state = advanceCompletion(state, plan, { ...point, lng: point.lng + 0.0001 });
   expect(hasCompleted(state, plan)).toBe(true);
 });
+
+it.each(["forward", "reverse"] as const)(
+  "%s 방향에서 확인 지점 간격보다 성긴 GPS 표본으로도 완주한다",
+  (direction) => {
+    const plan = completionPlan(line, direction);
+    // 확인 지점 간격(spacing)의 약 2배 간격으로만 표본을 넣어 중간 지점 여러 개를 건너뛴다.
+    const step = plan.spacing * 2;
+    const total = plan.spacing * (plan.points.length - 1);
+    let state: CompletionState | null = null;
+    for (let travelled = 0; travelled < total; travelled += step) {
+      const fraction = travelled / total;
+      const start = plan.points[0], end = plan.points.at(-1)!;
+      const sample = { lat: start.lat + (end.lat - start.lat) * fraction, lng: start.lng + (end.lng - start.lng) * fraction };
+      state = advanceCompletion(state, plan, sample);
+    }
+    state = advanceCompletion(state, plan, plan.points.at(-1)!);
+    expect(hasCompleted(state, plan)).toBe(true);
+  },
+);

@@ -29,6 +29,7 @@ export const previewRecords: RunRecord[] = Array.from({ length: 23 }, (_, i) => 
     durationMs: Math.round(distanceKm * paceSecPerKm * 1000),
     paceSecPerKm,
     finishedAt: new Date(LATEST - i * 2.5 * DAY_MS).toISOString(),
+    isCompleted: true,
   };
 });
 

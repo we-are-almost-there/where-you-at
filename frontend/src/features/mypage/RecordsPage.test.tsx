@@ -22,6 +22,7 @@ const record = (id: number): RunRecord => ({
   durationMs: 3_000_000,
   paceSecPerKm: 600,
   finishedAt: "2026-09-16T07:40:00+09:00",
+  isCompleted: true,
 });
 const card = (id: number): SavedRecordCard => ({ id, record: record(id), imageUrl: null, createdAt: "2026-09-16T08:00:00+09:00" });
 

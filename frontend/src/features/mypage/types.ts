@@ -10,6 +10,8 @@ export interface RunRecord {
   /** 평균 페이스(초/km). 거리가 너무 짧으면 null. 자전거는 화면에서 km/h로 바꿔 쓴다. */
   paceSecPerKm: number | null;
   finishedAt: string;
+  /** 시작·중간·종점을 순서대로 통과해 완주로 인정된 기록인지. false는 중간 종료 기록이다. */
+  isCompleted: boolean;
 }
 
 /** 완주 뒤 만들어 저장한 기록 카드. 한 기록으로 여러 장을 만들 수 있다. */

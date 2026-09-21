@@ -112,7 +112,7 @@ afterEach(() => {
 });
 
 const SAVED = { id: 42, courseId: 1, courseName: "테스트 코스", routeType: "도보" as const,
-  distanceKm: 3, durationMs: 60000, paceSecPerKm: 20, finishedAt: "2026-09-20T01:02:03Z" };
+  distanceKm: 3, durationMs: 60000, paceSecPerKm: 20, finishedAt: "2026-09-20T01:02:03Z", isCompleted: true };
 function login(id = 7) {
   vi.mocked(useAuth).mockReturnValue({ status: "signedIn", user: { id, nickname: "길손" } });
   writeAccessToken(`token-${id}`);

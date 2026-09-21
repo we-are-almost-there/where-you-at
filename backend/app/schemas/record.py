@@ -42,6 +42,7 @@ class RunRecordOut(BaseModel):
     duration_ms: int
     pace_sec_per_km: float | None
     finished_at: datetime
+    is_completed: bool
 
 
 class RunRecordListResponse(BaseModel):

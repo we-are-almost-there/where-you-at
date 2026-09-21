@@ -51,6 +51,7 @@ def _to_card_out(row: dict) -> RecordCardOut:
             duration_ms=row["duration_ms"],
             pace_sec_per_km=row["pace_sec_per_km"],
             finished_at=row["finished_at"],
+            is_completed=row["is_completed"],
         ),
         image_url=image_url,
         created_at=row["card_created_at"],

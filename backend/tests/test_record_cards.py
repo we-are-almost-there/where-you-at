@@ -44,6 +44,7 @@ CARD_ROW = {
     "duration_ms": 3000000,
     "pace_sec_per_km": 600.0,
     "finished_at": NOW,
+    "is_completed": True,
 }
 
 

@@ -29,6 +29,7 @@ ROW = {
     "duration_ms": 3000000,
     "pace_sec_per_km": 600.0,
     "finished_at": NOW,
+    "is_completed": True,
 }
 
 BODY = {
@@ -84,6 +85,19 @@ class RecordsRouterTest(unittest.TestCase):
                 res = self.client.post("/api/records", json={**BODY, **fields})
                 self.assertEqual(res.status_code, 201)
                 self.assertIs(crud.create_record.call_args.kwargs["is_completed"], expected)
+
+    def test_completion_status_is_returned_in_response(self):
+        # DB에 저장된 is_completed가 응답에도 실려야, 프론트가 미완주 기록을 완주 횟수에서 뺄 수 있다.
+        for stored in (True, False):
+            with self.subTest(stored=stored), patch("app.api.routers.records.crud") as crud:
+                crud.create_record.return_value = {**ROW, "is_completed": stored}
+                res = self.client.post("/api/records", json=BODY)
+                self.assertEqual(res.json()["is_completed"], stored)
+
+        with patch("app.api.routers.records.crud") as crud:
+            crud.list_records.return_value = (2, [{**ROW, "is_completed": True}, {**ROW, "id": 2, "is_completed": False}])
+            data = self.client.get("/api/records").json()
+        self.assertEqual([r["is_completed"] for r in data["records"]], [True, False])
 
     def test_completion_rejects_non_boolean(self):
         with patch("app.api.routers.records.crud") as crud:
