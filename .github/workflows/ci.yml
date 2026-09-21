@@ -37,6 +37,22 @@ jobs:
 
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: faq_test
+          POSTGRES_PASSWORD: faq_test
+          POSTGRES_DB: faq_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U faq_test -d faq_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      FAQ_TEST_DSN: postgresql://faq_test:faq_test@localhost:5432/faq_test
     defaults:
       run:
         working-directory: backend
@@ -48,5 +64,10 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
-      # DB에 붙는 테스트는 스스로 건너뛴다. CI에는 DB 접속 정보를 넣지 않는다.
-      - run: python -m unittest discover -s tests
+      - name: Require FAQ PostgreSQL test configuration
+        run: |
+          if [ -z "$FAQ_TEST_DSN" ]; then
+            echo "::error::FAQ_TEST_DSN must be set to run FAQ PostgreSQL integration tests"
+            exit 1
+          fi
+      - run: python -m unittest discover -s tests -v
