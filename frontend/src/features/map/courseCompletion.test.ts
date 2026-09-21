@@ -5,6 +5,52 @@ import { haversineMeters } from "./courseProgress";
 
 const line = [{ lat: 37, lng: 127 }, { lat: 37.01, lng: 127 }];
 
+it.each(["forward", "reverse"] as const)("%s 코스 이탈 후 앞선 지점이나 종점에 재진입해도 누락 구간은 인정하지 않는다", (direction) => {
+  const plan = completionPlan(line, direction);
+  for (const reentry of [plan.points[6], plan.points.at(-1)!]) {
+    let state = advanceCompletion(null, plan, { ...plan.points[0], timestamp: 0 });
+    state = advanceCompletion(state, plan, { lat: 37.005, lng: 127.01, timestamp: 120_000 });
+    expect(state.next).toBe(1);
+    expect(state.progress).toBeUndefined();
+    // 저장·복원 뒤에도 이탈 전 이동 구간을 이어 붙이지 않는다.
+    state = advanceCompletion(JSON.parse(JSON.stringify(state)), plan, { ...reentry, timestamp: 400_000 });
+    state = advanceCompletion(state, plan, { ...plan.points.at(-1)!, timestamp: 800_000 });
+    expect(state.next).toBe(1);
+    expect(hasCompleted(state, plan)).toBe(false);
+    state = advanceCompletion(state, plan, { ...plan.points[1], timestamp: 1_200_000 });
+    for (let i = 2; i < plan.points.length; i++) {
+      state = advanceCompletion(state, plan, { ...plan.points[i], timestamp: 1_200_000 + i * 60_000 });
+    }
+    expect(hasCompleted(state, plan)).toBe(true);
+  }
+});
+
+it.each(["forward", "reverse"] as const)("%s 교차점의 수m GPS 오차로 미래 구간을 선택하지 않는다", (direction) => {
+  const xy = (x: number, y: number): LatLng => ({
+    lat: 37 + y / 111_320,
+    lng: 127 + x / (111_320 * Math.cos(37 * Math.PI / 180)),
+  });
+  const path = [xy(-200, -200), xy(200, 200), xy(-200, 200), xy(200, -200)];
+  const plan = completionPlan(path, direction);
+  let state = advanceCompletion(null, plan, { ...plan.points[0], timestamp: 0 });
+  state = advanceCompletion(state, plan, { ...plan.points[1], timestamp: 40_000 });
+  expect(state.next).toBe(2);
+  const crossing = direction === "forward" ? xy(-2.2, 0.9) : xy(2.2, 0.9);
+  state = advanceCompletion(state, plan, { ...crossing, timestamp: 120_000 });
+  expect(state.progress!.distanceM).toBeGreaterThan(250);
+  expect(state.progress!.distanceM).toBeLessThan(310);
+  expect(state.next).toBeLessThanOrEqual(4);
+  // 교차점에서 약간 뒤로 흔들려도 전방의 먼 구간으로 점프하지 않는다.
+  state = advanceCompletion(state, plan, { ...xy(0, 0), timestamp: 130_000 });
+  state = advanceCompletion(state, plan, { ...crossing, timestamp: 240_000 });
+  expect(state.progress!.distanceM).toBeLessThan(310);
+  expect(state.next).toBeLessThanOrEqual(4);
+  for (let i = state.next; i < plan.points.length; i++) {
+    state = advanceCompletion(state, plan, { ...plan.points[i], timestamp: 240_000 + i * 60_000 });
+  }
+  expect(hasCompleted(state, plan)).toBe(true);
+});
+
 it.each([false, true])("순간이동 또는 재개 뒤 종점에서 기다려도 완주되지 않는다 (재개: %s)", (segmentStart) => {
   const plan = completionPlan(line, "forward");
   let state = advanceCompletion(null, plan, { ...line[0], timestamp: 0 });
@@ -45,7 +91,7 @@ it.each([false, true])("건너뛴 지점은 이후 정상 이동으로 소급 �
   expect(hasCompleted(state, plan)).toBe(true);
 });
 
-it("왕복 코스에서 반환점 표본이 빠져도 200m 간격 이동을 이어서 인정한다", () => {
+it("왕복 코스에서 반환점을 관측하지 못하면 200m 간격 이동만으로 완주를 인증하지 않는다", () => {
   const [start, turn] = line;
   const half = haversineMeters(start, turn);
   const total = half * 2;
@@ -61,6 +107,85 @@ it("왕복 코스에서 반환점 표본이 빠져도 200m 간격 이동을 이�
     expect(hasCompleted(state, plan)).toBe(false);
   }
   state = advanceCompletion(state, plan, { ...start, timestamp: total / 3 * 1000 });
+  expect(hasCompleted(state, plan)).toBe(false);
+});
+
+it.each(["forward", "reverse"] as const)("%s 왕복 코스 중간에서 돌아오면 오래 걸려도 완주하지 않는다", (direction) => {
+  const plan = completionPlan([...line, line[0]], direction);
+  let state = advanceCompletion(null, plan, { ...line[0], timestamp: 0 });
+  state = advanceCompletion(state, plan, { lat: 37.005, lng: 127, timestamp: 200_000 });
+  const next = state.next;
+  state = advanceCompletion(state, plan, { ...line[0], timestamp: 400_000 });
+  state = advanceCompletion(state, plan, { ...line[0], timestamp: 4_000_000 });
+  expect(state.next).toBe(next);
+  expect(hasCompleted(state, plan)).toBe(false);
+  // 미통과 지점으로 복귀한 뒤 반환점을 포함해 실제로 돌면 회복할 수 있다.
+  for (let i = 1; i < plan.points.length; i++) {
+    state = advanceCompletion(state, plan, { ...plan.points[i], timestamp: 4_000_000 + i * 60_000 });
+  }
+  expect(hasCompleted(state, plan)).toBe(true);
+});
+
+it.each([12, 20, 30])("교차점에서 약 %sm 흔들림과 긴 대기가 미래 구간 통과로 바뀌지 않는다", (jitter) => {
+  const xy = (x: number, y: number): LatLng => ({ lat: 37 + y / 111_320, lng: 127 + x / (111_320 * Math.cos(37 * Math.PI / 180)) });
+  const plan = completionPlan([xy(-200, -200), xy(200, 200), xy(-200, 200), xy(200, -200)], "forward");
+  let state = advanceCompletion(null, plan, { ...plan.points[0], timestamp: 0 });
+  state = advanceCompletion(state, plan, { ...xy(jitter / 1.5, jitter / 1.5), timestamp: 120_000 });
+  const next = state.next;
+  for (let i = 1; i <= 20; i++) {
+    state = advanceCompletion(state, plan, { ...xy(i % 2 ? -2.2 : jitter / 1.5, i % 2 ? 0.9 : jitter / 1.5), timestamp: 120_000 + i * 120_000 });
+    expect(state.next).toBe(next);
+    expect(state.progress!.distanceM).toBeLessThan(330);
+  }
+  // 교차점 이후의 마지막 대각선으로 빠져도 중간 고리를 소급 인정하지 않는다.
+  state = advanceCompletion(state, plan, { ...plan.points.at(-1)!, timestamp: 4_000_000 });
+  expect(hasCompleted(state, plan)).toBe(false);
+  for (let i = next; i < plan.points.length; i++) {
+    state = advanceCompletion(state, plan, { ...plan.points[i], timestamp: 4_000_000 + i * 60_000 });
+  }
+  expect(hasCompleted(state, plan)).toBe(true);
+});
+
+it("이전 판정 버전의 완주 상태는 새 방문 확인 규칙으로 복원하지 않는다", () => {
+  const plan = completionPlan(line, "forward");
+  expect(hasCompleted({ key: JSON.stringify(["forward", line]), next: plan.points.length }, plan)).toBe(false);
+});
+
+it.each(["forward", "reverse"] as const)("%s 완만하게 교차하는 코스도 고리 내부를 건너뛰면 완주하지 않는다", (direction) => {
+  const path = Array.from({ length: 65 }, (_, i) => {
+    const angle = i * Math.PI / 32;
+    return { lat: 37 + 0.003 * Math.sin(angle * 2), lng: 127 + 0.004 * Math.sin(angle) };
+  });
+  const plan = completionPlan(path, direction);
+  expect(plan.turnarounds.length).toBe(0);
+  expect(plan.requiredVisits.length).toBeGreaterThan(0);
+  let state = advanceCompletion(null, plan, { ...plan.points[0], timestamp: 0 });
+  state = advanceCompletion(state, plan, { ...plan.points[Math.floor(plan.points.length * 0.8)], timestamp: 1_000_000 });
+  state = advanceCompletion(state, plan, { ...plan.points.at(-1)!, timestamp: 2_000_000 });
+  expect(hasCompleted(state, plan)).toBe(false);
+  // 실제로 모든 구간을 진행하면 모호한 교차점에서 멈췄더라도 다시 이어갈 수 있다.
+  for (let i = 0; i < plan.points.length; i++) {
+    state = advanceCompletion(state, plan, { ...plan.points[i], timestamp: 2_000_000 + (i + 1) * 60_000 });
+  }
+  expect(hasCompleted(state, plan)).toBe(true);
+});
+
+it("반환점 관측은 10m GPS 오차를 허용하고 저장·복원 후에도 귀환 구간을 유지한다", () => {
+  const start = line[0];
+  const turn = { lat: 37 + 1000 / 111_320, lng: 127 };
+  const end = { lat: 37 + 150 / 111_320, lng: 127 };
+  const plan = completionPlan([start, turn, end], "forward");
+  const turnIndex = plan.turnarounds[0];
+  let state: CompletionState | null = null;
+  for (let i = 0; i <= turnIndex; i++) {
+    const point = plan.points[i];
+    state = advanceCompletion(state, plan, { ...point, lng: point.lng + (i === turnIndex ? 10 / 88_900 : 0), timestamp: i * 60_000 });
+  }
+  expect(state!.next).toBe(turnIndex + 1);
+  state = JSON.parse(JSON.stringify(state));
+  for (let i = turnIndex + 1; i < plan.points.length; i++) {
+    state = advanceCompletion(state, plan, { ...plan.points[i], timestamp: i * 60_000 });
+  }
   expect(hasCompleted(state, plan)).toBe(true);
 });
 
