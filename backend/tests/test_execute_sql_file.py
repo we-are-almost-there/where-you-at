@@ -55,6 +55,11 @@ class TestExecuteSqlFile(unittest.TestCase):
 
 
 class TestSeedHelpExitCode(unittest.TestCase):
+    def setUp(self):
+        argv = patch("sys.argv", ["seed_help"])
+        argv.start()
+        self.addCleanup(argv.stop)
+
     def test_exits_with_1_when_seed_fails(self):
         with patch.object(supabase, "execute_sql_file", return_value=False):
             with self.assertRaises(SystemExit) as ctx:
@@ -65,6 +70,50 @@ class TestSeedHelpExitCode(unittest.TestCase):
         with patch.object(supabase, "execute_sql_file", return_value=True) as mock_exec:
             runpy.run_module("scripts.seed_help", run_name="__main__")
         mock_exec.assert_called_once_with("sql/04_help_seed.sql")
+
+    def test_record_features_updates_only_release_faq(self):
+        with patch("sys.argv", ["seed_help", "--record-features"]), patch.object(
+            supabase, "execute_sql_file", return_value=True
+        ) as mock_exec:
+            runpy.run_module("scripts.seed_help", run_name="__main__")
+        mock_exec.assert_called_once_with("sql/help_record_features.sql")
+
+    def test_record_features_failure_exits_with_1(self):
+        with patch("sys.argv", ["seed_help", "--record-features"]), patch.object(
+            supabase, "execute_sql_file", return_value=False
+        ), self.assertRaises(SystemExit) as ctx:
+            runpy.run_module("scripts.seed_help", run_name="__main__")
+        self.assertEqual(ctx.exception.code, 1)
+
+    def test_unknown_option_does_not_write_to_db(self):
+        with patch("sys.argv", ["seed_help", "--record-feature"]), patch.object(
+            supabase, "execute_sql_file"
+        ) as mock_exec, self.assertRaises(SystemExit) as ctx:
+            runpy.run_module("scripts.seed_help", run_name="__main__")
+        self.assertEqual(ctx.exception.code, 2)
+        mock_exec.assert_not_called()
+
+    def test_disabled_features_updates_only_disabled_faq(self):
+        with patch("sys.argv", ["seed_help", "--no-record-features"]), patch.object(
+            supabase, "execute_sql_file", return_value=True
+        ) as mock_exec:
+            runpy.run_module("scripts.seed_help", run_name="__main__")
+        mock_exec.assert_called_once_with("sql/help_record_features_disabled.sql")
+
+    def test_disabled_features_failure_exits_with_1(self):
+        with patch("sys.argv", ["seed_help", "--no-record-features"]), patch.object(
+            supabase, "execute_sql_file", return_value=False
+        ), self.assertRaises(SystemExit) as ctx:
+            runpy.run_module("scripts.seed_help", run_name="__main__")
+        self.assertEqual(ctx.exception.code, 1)
+
+    def test_conflicting_options_do_not_write_to_db(self):
+        with patch("sys.argv", ["seed_help", "--record-features", "--no-record-features"]), patch.object(
+            supabase, "execute_sql_file"
+        ) as mock_exec, self.assertRaises(SystemExit) as ctx:
+            runpy.run_module("scripts.seed_help", run_name="__main__")
+        self.assertEqual(ctx.exception.code, 2)
+        mock_exec.assert_not_called()
 
 
 if __name__ == "__main__":

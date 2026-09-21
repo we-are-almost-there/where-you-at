@@ -113,8 +113,6 @@ it.each([
 it("같은 편집 버전의 저장 버튼을 연속으로 눌러도 saveRecordCard와 최종 POST는 한 번만 실행한다", async () => {
   let finishPost!: (response: Response) => void;
   const fetchMock = vi.fn()
-    .mockResolvedValueOnce(new Response(JSON.stringify({ upload_key: "uploads/7/card.png", upload_url: "https://r2.test/put" })))
-    .mockResolvedValueOnce(new Response(null))
     .mockImplementationOnce(() => new Promise<Response>((resolve) => { finishPost = resolve; }));
   vi.stubGlobal("fetch", fetchMock);
   vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementation((callback) => callback(new Blob(["png"], { type: "image/png" })));
@@ -125,7 +123,7 @@ it("같은 편집 버전의 저장 버튼을 연속으로 눌러도 saveRecordCa
   const button = await screen.findByRole("button", { name: "이미지 저장" }, { timeout: IMAGE_PREPARATION_TIMEOUT });
   // 같은 이벤트 배치에서 연속 클릭해 disabled 렌더링 전의 동기 잠금도 검증한다.
   await act(async () => { for (let i = 0; i < 10; i++) fireEvent.click(button); });
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   expect(saveToServer).toHaveBeenCalledTimes(1);
   expect((button as HTMLButtonElement).disabled).toBe(true);
   await act(async () => finishPost(new Response(JSON.stringify({ id: 9, image_url: "https://r2.test/view",
@@ -135,9 +133,9 @@ it("같은 편집 버전의 저장 버튼을 연속으로 눌러도 saveRecordCa
   // 서버 응답을 받은 뒤에도 같은 편집 버전이면 추가 카드를 만들지 않는다.
   await act(async () => { for (let i = 0; i < 10; i++) fireEvent.click(button); });
   expect(saveToServer).toHaveBeenCalledTimes(1);
-  expect(fetchMock).toHaveBeenCalledTimes(3);
-  expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/api/record-cards") && init.method === "POST")).toHaveLength(1);
-  expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ record_id: 42, upload_key: "uploads/7/card.png" });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/record-cards\?record_id=42$/);
+  expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "POST", body: saveToServer.mock.calls[0][0] });
 });
 
 it("이미지 저장은 공유를 즉시 시작하고 지연된 서버 저장 중 이탈을 보호한다", async () => {
