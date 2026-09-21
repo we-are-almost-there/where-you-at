@@ -1,8 +1,68 @@
 import { expect, it } from "vitest";
 import { advanceCompletion, completionPlan, hasCompleted, type CompletionState, type TimedLocation } from "./courseCompletion";
 import type { LatLng } from "./types";
+import { haversineMeters } from "./courseProgress";
 
 const line = [{ lat: 37, lng: 127 }, { lat: 37.01, lng: 127 }];
+
+it.each([false, true])("순간이동 또는 재개 뒤 종점에서 기다려도 완주되지 않는다 (재개: %s)", (segmentStart) => {
+  const plan = completionPlan(line, "forward");
+  let state = advanceCompletion(null, plan, { ...line[0], timestamp: 0 });
+  state = advanceCompletion(state, plan, { ...line[1], timestamp: 1 }, segmentStart);
+  state = advanceCompletion(state, plan, { ...line[1], timestamp: 120_001 });
+  expect(state.next).toBe(1);
+  expect(hasCompleted(state, plan)).toBe(false);
+});
+
+it.each(["forward", "reverse"] as const)("%s 왕복 코스를 약 200m 간격으로 이동하면 귀환까지 인정한다", (direction) => {
+  const start = line[0];
+  const turn = { lat: start.lat + 1000 / 111_320, lng: start.lng };
+  const plan = completionPlan([start, turn, start], direction);
+  let state: CompletionState | null = null;
+  for (let step = 0; step <= 10; step++) {
+    const fraction = step <= 5 ? step / 5 : (10 - step) / 5;
+    state = advanceCompletion(state, plan, {
+      lat: start.lat + (turn.lat - start.lat) * fraction,
+      lng: start.lng,
+      timestamp: step * 200 / 3 * 1000,
+    });
+    if (step < 10) expect(hasCompleted(state, plan)).toBe(false);
+  }
+  expect(hasCompleted(state, plan)).toBe(true);
+});
+
+it.each([false, true])("건너뛴 지점은 이후 정상 이동으로 소급 인정하지 않고 돌아와야 한다 (재개: %s)", (segmentStart) => {
+  const plan = completionPlan(line, "forward");
+  let state = advanceCompletion(null, plan, { ...plan.points[0], timestamp: 0 });
+  state = advanceCompletion(state, plan, { ...plan.points[5], timestamp: 1 }, segmentStart);
+  state = advanceCompletion(state, plan, { ...plan.points[6], timestamp: 120_001 });
+  expect(state.next).toBe(1);
+  state = advanceCompletion(state, plan, { ...plan.points[1], timestamp: 300_001 });
+  expect(state.next).toBe(2);
+  for (let i = 2; i < plan.points.length; i++) {
+    state = advanceCompletion(state, plan, { ...plan.points[i], timestamp: 300_001 + i * 60_000 });
+  }
+  expect(hasCompleted(state, plan)).toBe(true);
+});
+
+it("왕복 코스에서 반환점 표본이 빠져도 200m 간격 이동을 이어서 인정한다", () => {
+  const [start, turn] = line;
+  const half = haversineMeters(start, turn);
+  const total = half * 2;
+  const plan = completionPlan([start, turn, start], "forward");
+  let state: CompletionState | null = null;
+  for (let travelled = 0; travelled < total; travelled += 200) {
+    const fraction = travelled <= half ? travelled / half : (total - travelled) / half;
+    state = advanceCompletion(state, plan, {
+      lat: start.lat + (turn.lat - start.lat) * fraction,
+      lng: start.lng,
+      timestamp: travelled / 3 * 1000,
+    });
+    expect(hasCompleted(state, plan)).toBe(false);
+  }
+  state = advanceCompletion(state, plan, { ...start, timestamp: total / 3 * 1000 });
+  expect(hasCompleted(state, plan)).toBe(true);
+});
 
 // 걷기 페이스(약 3m/s, 10.8km/h) 기준으로 이동 거리에 맞는 시각을 만든다.
 // 표본 사이 실제로 걸릴 법한 시간을 줘야 advanceCompletion이 이동 구간을 그럴듯하다고 본다.

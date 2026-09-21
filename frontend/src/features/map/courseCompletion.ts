@@ -20,7 +20,7 @@ export interface TimedLocation extends LatLng {
 export interface CompletionState {
   key: string;
   next: number;
-  /** 마지막으로 인정된 위치의 코스 누적 진행 거리·시각. 이전 저장값엔 없을 수 있다. */
+  /** 마지막으로 관측한 코스 위 위치의 실제 투영 거리·시각. 통과 여부는 next로 관리한다. */
   progress?: { distanceM: number; timestamp: number };
 }
 
@@ -71,7 +71,7 @@ export function validCompletion(value: unknown, plan: CompletionPlan): value is 
  * 구한다. 각 구간(확인 지점 사이)에 내린 수선 중 가장 가까운 것을 쓰므로 코스가 굽어 있어도
  * 원시 좌표를 잇는 직선이 아니라 실제 코스 모양을 따라간다.
  */
-function projectOntoPlan(plan: CompletionPlan, location: LatLng): { distanceM: number; crossTrackM: number } {
+function projectOntoPlan(plan: CompletionPlan, location: LatLng, referenceM: number): { distanceM: number; crossTrackM: number } {
   const { points, pointDistances } = plan;
   if (points.length === 0) return { distanceM: 0, crossTrackM: Infinity };
   if (points.length === 1) return { distanceM: 0, crossTrackM: haversineMeters(points[0], location) };
@@ -80,9 +80,20 @@ function projectOntoPlan(plan: CompletionPlan, location: LatLng): { distanceM: n
   for (let i = 1; i < points.length; i++) {
     const foot = projectOntoSegment(location, points[i - 1], points[i]);
     const crossTrackM = haversineMeters(location, foot);
-    if (crossTrackM < bestCrossTrackM) {
+    const distanceM = pointDistances[i - 1] + haversineMeters(points[i - 1], foot);
+    // 왕복 구간은 같은 좌표가 여러 번 나온다. 부동소수점 오차 이내로 겹치면 이전 진행
+    // 위치 이후의 첫 구간을 고른다. 반환점 표본이 빠져도 귀환을 이어갈 수 있다.
+    // 앞으로 이어지는 후보가 없으면 가장 가까운 이전 구간으로 역주행을 판정한다.
+    const epsilonM = 1e-6;
+    const delta = Math.abs(distanceM - referenceM);
+    const bestDelta = Math.abs(bestDistanceM - referenceM);
+    const forward = distanceM >= referenceM - epsilonM;
+    const bestForward = bestDistanceM >= referenceM - epsilonM;
+    const continuous = forward !== bestForward ? forward : delta < bestDelta - epsilonM;
+    if (crossTrackM < bestCrossTrackM - epsilonM
+      || (Math.abs(crossTrackM - bestCrossTrackM) <= epsilonM && continuous)) {
       bestCrossTrackM = crossTrackM;
-      bestDistanceM = pointDistances[i - 1] + haversineMeters(points[i - 1], foot);
+      bestDistanceM = distanceM;
     }
   }
   return { distanceM: bestDistanceM, crossTrackM: bestCrossTrackM };
@@ -110,7 +121,8 @@ export function advanceCompletion(
   segmentStart = false,
 ): CompletionState {
   const current = validCompletion(state, plan) ? state : { key: plan.key, next: 0 };
-  const { distanceM, crossTrackM } = projectOntoPlan(plan, location);
+  const referenceM = current.progress?.distanceM ?? plan.pointDistances[Math.max(0, current.next - 1)] ?? 0;
+  const { distanceM, crossTrackM } = projectOntoPlan(plan, location, referenceM);
   // 코스에서 너무 멀면 진행 기준점을 옮기지 않는다 — 벗어난 위치의 투영값은 믿을 수 없다.
   if (crossTrackM > plan.radius) return { key: plan.key, next: current.next, progress: current.progress };
 
@@ -118,17 +130,16 @@ export function advanceCompletion(
   const covered = previous ? distanceM - previous.distanceM : 0;
   const elapsedSeconds = previous ? (location.timestamp - previous.timestamp) / 1000 : 0;
   const plausible = previous !== undefined && covered > 0 && elapsedSeconds > 0
+    // 시작점이 미통과 지점보다 앞이면, 새 이동으로 건너뛴 지점까지 소급 인정하지 않는다.
+    && previous.distanceM <= (plan.pointDistances[current.next] ?? Infinity) + 1e-6
     && covered / elapsedSeconds <= MAX_SPEED_MPS;
 
   if (!plausible) {
     const target = plan.points[current.next];
     const next = target && haversineMeters(target, location) <= plan.radius ? current.next + 1 : current.next;
-    // 이번 위치를 그대로 다음 기준점으로 믿으면 안 된다 — segmentStart나 순간 이동 의심으로
-    // next를 안 올렸다면, 진행 거리가 아직 필요한 지점보다 앞서 있어도 그 지점 위치로 눌러
-    // 담아 둔다. 안 그러면 다음 호출이 이 앞선 위치를 정상 구간의 시작점으로 여겨, 건너뛴
-    // 지점들을 그럴듯한 속도라는 이유만으로 한꺼번에 인정해 버린다.
-    const boundDistanceM = next < plan.pointDistances.length ? Math.min(distanceM, plan.pointDistances[next]) : distanceM;
-    return { key: plan.key, next, progress: { distanceM: boundDistanceM, timestamp: location.timestamp } };
+    // 거리와 시각은 같은 관측값으로 보존한다. 거리를 클램핑하면 같은 위치에서 기다린
+    // 시간만으로 가상의 이동이 생겨, 거부했던 구간이 나중에 정상 이동으로 인정된다.
+    return { key: plan.key, next, progress: { distanceM, timestamp: location.timestamp } };
   }
 
   // pointDistances는 지점을 만들 때 나눗셈으로 미리 정한 값이고, distanceM은 좌표를 다시
