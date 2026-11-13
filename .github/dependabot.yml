@@ -5,3 +5,13 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+
+  # backend/Dockerfile의 Python 기본 이미지 digest를 갱신한다.
+  # 3.14 안의 패치 갱신만 받고, 다음 Python 버전은 CI와 함께 직접 올린다.
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
