@@ -62,23 +62,43 @@ def client_key(request: Request) -> str | None:
     로그인은 제한하지 않는다(fail open). 헤더 검증이 깨졌을 때 전체 이용자가 한 키로 묶여
     로그인이 통째로 막히는 피해가, 로그인 API 오남용보다 크기 때문이다.
     """
-    # X-Forwarded-For는 사용자가 미리 넣은 값을 Cloudflare가 보존할 수 있으므로 절대 읽지 않는다.
     # Render 공개 트래픽은 Cloudflare를 거치며, Cloudflare는 원본 서버로 보내는
     # CF-Connecting-IP를 실제 접속 IP 한 개로 설정한다. 이 배포 경계를 확인한 Render에서만
-    # TRUST_CLOUDFLARE_IP_HEADER=true로 켠다(README "배포" 참고).
+    # TRUST_CLOUDFLARE_IP_HEADER=true로 켠다(README "배포" 참고). 이때 X-Forwarded-For는
+    # 사용자가 미리 넣은 값을 Cloudflare가 보존할 수 있으므로 읽지 않는다.
     if settings.trust_cloudflare_ip_header:
         values = request.headers.getlist("cf-connecting-ip")
         if len(values) != 1:
             return None
-        try:
-            # 단일 헤더의 IPv4/IPv6만 허용한다. 쉼표 목록이나 임의 문자열은 확인 실패로 본다.
-            ip = ip_address(values[0].strip())
-        except ValueError:
+        # 단일 헤더의 IPv4/IPv6만 허용한다. 쉼표 목록이나 임의 문자열은 확인 실패로 본다.
+        return _ip_key(values[0])
+
+    # AWS ALB처럼 X-Forwarded-For 끝에 접속 IP를 덧붙이는 프록시 뒤에서는, 우리가 둔 프록시 수만큼
+    # 오른쪽에서 센 값만 믿는다. 그보다 왼쪽은 이용자가 보낸 값이 그대로 남은 것이라 위조할 수 있다.
+    # 값이 모자라면 프록시를 거치지 않았거나 설정이 틀린 것이므로 확인 실패로 본다.
+    if settings.trusted_proxy_hops:
+        entries = [
+            entry.strip()
+            for value in request.headers.getlist("x-forwarded-for")
+            for entry in value.split(",")
+        ]
+        if len(entries) < settings.trusted_proxy_hops:
             return None
-        # IPv6 이용자는 보통 /64 대역을 통째로 받아 그 안에서 주소를 바꿔 보낼 수 있으므로 대역 단위로 센다.
-        if isinstance(ip, IPv6Address):
-            return str(ip_network(f"{ip}/64", strict=False))
-        return str(ip)
+        return _ip_key(entries[-settings.trusted_proxy_hops])
 
     # 로컬 개발에서는 신뢰 프록시 헤더를 켜지 않고 실제 소켓 상대 주소를 사용한다.
     return request.client.host if request.client else "unknown"
+
+
+def _ip_key(value: str) -> str | None:
+    try:
+        ip = ip_address(value.strip())
+    except ValueError:
+        return None
+    if isinstance(ip, IPv6Address):
+        # IPv6 형식에 담긴 IPv4(::ffff:a.b.c.d)는 /64로 묶으면 모든 IPv4가 ::/64 한 키가 되므로 IPv4로 풀어 센다.
+        if ip.ipv4_mapped:
+            return str(ip.ipv4_mapped)
+        # IPv6 이용자는 보통 /64 대역을 통째로 받아 그 안에서 주소를 바꿔 보낼 수 있으므로 대역 단위로 센다.
+        return str(ip_network(f"{ip}/64", strict=False))
+    return str(ip)
