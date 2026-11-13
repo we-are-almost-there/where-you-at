@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from app.api.routers import inquiries as inquiries_router
 from app.main import app
 from app.services import rate_limit
+from tests.client_ip import pin_client_ip
 
 
 VALID = {
@@ -39,6 +40,8 @@ class TestCreateInquiry(unittest.TestCase):
     def setUp(self):
         # 제한 기록은 모듈 전역이라 테스트끼리 섞이지 않게 매번 비운다.
         inquiries_router.inquiry_limiter.reset()
+        # 기본은 로컬과 같이 소켓 주소로 센다. 다른 방식은 테스트 안에서 다시 고정한다.
+        self.enterContext(pin_client_ip())
         connect_patcher = patch("app.deps.get_db_connection", return_value=MagicMock())
         self.connect = connect_patcher.start()
         self.addCleanup(connect_patcher.stop)
@@ -109,7 +112,7 @@ class TestCreateInquiry(unittest.TestCase):
         # 로그인은 반대로 통과시키므로(test_auth.py) 문의 쪽 정책을 여기서 지킨다.
         headers = [{}, {"CF-Connecting-IP": "not-an-ip"}, {"CF-Connecting-IP": "1.2.3.4, 5.6.7.8"}]
 
-        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True):
+        with pin_client_ip(cloudflare=True):
             for header in headers:
                 self.assertEqual(self.client.post("/api/inquiries", json=VALID, headers=header).status_code, 201)
 
@@ -119,7 +122,7 @@ class TestCreateInquiry(unittest.TestCase):
         self.assertEqual(mock_create.call_count, 3)
 
     def test_changing_xff_does_not_bypass_cloudflare_ip_limit(self, mock_create, mock_notify):
-        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True):
+        with pin_client_ip(cloudflare=True):
             for forged_ip in ("1.1.1.1", "2.2.2.2", "3.3.3.3"):
                 res = self.client.post(
                     "/api/inquiries",
@@ -146,7 +149,7 @@ class TestCreateInquiry(unittest.TestCase):
 
     def test_changing_left_xff_does_not_bypass_alb_ip_limit(self, mock_create, mock_notify):
         # ALB 뒤(TRUSTED_PROXY_HOPS=1): 이용자가 왼쪽에 넣은 값은 바꿔도 ALB가 덧붙인 맨 오른쪽 값으로 센다.
-        with patch.multiple(rate_limit.settings, trust_cloudflare_ip_header=False, trusted_proxy_hops=1):
+        with pin_client_ip(hops=1):
             statuses = [
                 self.client.post(
                     "/api/inquiries",
@@ -167,7 +170,7 @@ class TestCreateInquiry(unittest.TestCase):
         # ALB를 거치지 않았거나(헤더 없음) 값이 IP가 아니거나 포트가 붙어도 한 키로 묶여 함께 막힌다.
         headers = [{}, {"X-Forwarded-For": "not-an-ip"}, {"X-Forwarded-For": "203.0.113.50:443"}]
 
-        with patch.multiple(rate_limit.settings, trust_cloudflare_ip_header=False, trusted_proxy_hops=1):
+        with pin_client_ip(hops=1):
             for header in headers:
                 self.assertEqual(self.client.post("/api/inquiries", json=VALID, headers=header).status_code, 201)
 

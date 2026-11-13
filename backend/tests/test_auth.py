@@ -26,6 +26,7 @@ from app.api.routers import auth as auth_router
 from app.core.config import settings
 from app.main import app
 from app.services import auth_token, rate_limit
+from tests.client_ip import pin_client_ip
 
 SETTINGS = {
     "kakao_login_client_id": "client-id",
@@ -76,6 +77,8 @@ class TestKakaoLogin(unittest.TestCase):
         # 제한 기록은 모듈 전역이라 테스트끼리 섞이지 않게 매번 비운다.
         auth_router.login_limiter.reset()
         auth_router.unverified_log_limiter.reset()
+        # 기본은 로컬과 같이 소켓 주소로 센다. 다른 방식은 테스트 안에서 다시 고정한다.
+        self.enterContext(pin_client_ip())
         settings_patcher = patch.multiple(settings, **SETTINGS)
         settings_patcher.start()
         self.addCleanup(settings_patcher.stop)
@@ -252,7 +255,7 @@ class TestKakaoLogin(unittest.TestCase):
         mock_get.return_value = _response(200, KAKAO_USER)
         headers = {"CF-Connecting-IP": "203.0.113.10"}
 
-        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True):
+        with pin_client_ip(cloudflare=True):
             for _ in range(auth_router.login_limiter.max_requests):
                 self.client.post("/api/auth/kakao", json={"code": "auth-code"}, headers=headers)
 
@@ -274,7 +277,7 @@ class TestKakaoLogin(unittest.TestCase):
         mock_post.return_value = _token_ok()
         mock_get.return_value = _response(200, KAKAO_USER)
 
-        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True):
+        with pin_client_ip(cloudflare=True):
             statuses = {
                 self.client.post("/api/auth/kakao", json={"code": "auth-code"}).status_code
                 for _ in range(auth_router.login_limiter.max_requests + 1)
@@ -288,7 +291,7 @@ class TestKakaoLogin(unittest.TestCase):
         mock_get.return_value = _response(200, KAKAO_USER)
         output = io.StringIO()
 
-        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True), redirect_stdout(output):
+        with pin_client_ip(cloudflare=True), redirect_stdout(output):
             for _ in range(3):
                 self.client.post("/api/auth/kakao", json={"code": "auth-code"})
 
@@ -300,7 +303,7 @@ class TestKakaoLogin(unittest.TestCase):
         mock_get.return_value = _response(200, KAKAO_USER)
         limit = auth_router.login_limiter.max_requests
 
-        with patch.multiple(rate_limit.settings, trust_cloudflare_ip_header=False, trusted_proxy_hops=1):
+        with pin_client_ip(hops=1):
             statuses = [
                 self.client.post(
                     "/api/auth/kakao",
@@ -323,7 +326,7 @@ class TestKakaoLogin(unittest.TestCase):
         output = io.StringIO()
 
         with (
-            patch.multiple(rate_limit.settings, trust_cloudflare_ip_header=False, trusted_proxy_hops=1),
+            pin_client_ip(hops=1),
             redirect_stdout(output),
         ):
             statuses = {

@@ -7,13 +7,11 @@ client_key는 이용자 IP를 확인했는지까지만 본다. 확인하지 못�
     python -m unittest tests.test_rate_limit
 """
 import unittest
-from contextlib import contextmanager
-from unittest.mock import patch
 
 from starlette.requests import Request
 
-from app.services import rate_limit
 from app.services.rate_limit import SlidingWindowLimiter, client_key
+from tests.client_ip import pin_client_ip
 
 
 def _request(*, headers=None, client=("203.0.113.10", 12345)):
@@ -25,16 +23,6 @@ def _request(*, headers=None, client=("203.0.113.10", 12345)):
             "client": client,
         }
     )
-
-
-@contextmanager
-def _client_ip(*, cloudflare=False, hops=0):
-    # 두 설정을 함께 고정한다. 하나만 바꾸면 .env나 실행 환경의 다른 값이 먼저 적용될 수 있다.
-    with (
-        patch.object(rate_limit.settings, "trust_cloudflare_ip_header", cloudflare),
-        patch.object(rate_limit.settings, "trusted_proxy_hops", hops),
-    ):
-        yield
 
 
 class FakeClock:
@@ -92,7 +80,7 @@ class TestClientKey(unittest.TestCase):
             }
         )
 
-        with _client_ip():
+        with pin_client_ip():
             self.assertEqual(client_key(request), "203.0.113.10")
 
     def test_render_mode_uses_valid_cloudflare_ip_and_ignores_xff(self):
@@ -103,7 +91,7 @@ class TestClientKey(unittest.TestCase):
             }
         )
 
-        with _client_ip(cloudflare=True):
+        with pin_client_ip(cloudflare=True):
             self.assertEqual(client_key(request), "198.51.100.23")
 
     def test_render_mode_groups_ipv6_by_64_prefix(self):
@@ -114,7 +102,7 @@ class TestClientKey(unittest.TestCase):
         ]
         other_prefix = _request(headers={"CF-Connecting-IP": "2001:db8:0:1::1"})
 
-        with _client_ip(cloudflare=True):
+        with pin_client_ip(cloudflare=True):
             self.assertEqual(
                 [client_key(request) for request in same_prefix],
                 ["2001:db8::/64", "2001:db8::/64"],
@@ -134,7 +122,7 @@ class TestClientKey(unittest.TestCase):
             ),
         ]
 
-        with _client_ip(cloudflare=True):
+        with pin_client_ip(cloudflare=True):
             self.assertEqual([client_key(request) for request in requests], [None] * 4)
 
 
@@ -142,7 +130,7 @@ class TestClientKeyBehindProxy(unittest.TestCase):
     """TRUSTED_PROXY_HOPS: X-Forwarded-For 끝에 접속 IP를 덧붙이는 프록시(AWS ALB 등) 뒤."""
 
     def _key(self, request, hops):
-        with _client_ip(hops=hops):
+        with pin_client_ip(hops=hops):
             return client_key(request)
 
     def test_one_hop_uses_rightmost_and_ignores_spoofed_left_values(self):
@@ -171,6 +159,17 @@ class TestClientKeyBehindProxy(unittest.TestCase):
         request = _request(headers={"X-Forwarded-For": "2001:db8::ffff:1234"})
 
         self.assertEqual(self._key(request, 1), "2001:db8::/64")
+
+    def test_unwraps_ipv4_mapped_ipv6(self):
+        # /64로 묶으면 서로 다른 IPv4가 모두 ::/64 한 키가 된다. IPv4로 풀어 따로 센다.
+        mapped = [
+            _request(headers={"X-Forwarded-For": "::ffff:198.51.100.1"}),
+            _request(headers={"X-Forwarded-For": "::ffff:203.0.113.9"}),
+        ]
+
+        self.assertEqual([self._key(request, 1) for request in mapped], ["198.51.100.1", "203.0.113.9"])
+        with pin_client_ip(cloudflare=True):
+            self.assertEqual(client_key(_request(headers={"CF-Connecting-IP": "::ffff:198.51.100.1"})), "198.51.100.1")
 
     def test_ignores_cloudflare_header(self):
         request = _request(headers={"CF-Connecting-IP": "5.6.7.8", "X-Forwarded-For": "198.51.100.23"})

@@ -95,7 +95,10 @@ def _ip_key(value: str) -> str | None:
         ip = ip_address(value.strip())
     except ValueError:
         return None
-    # IPv6 이용자는 보통 /64 대역을 통째로 받아 그 안에서 주소를 바꿔 보낼 수 있으므로 대역 단위로 센다.
     if isinstance(ip, IPv6Address):
+        # IPv6 형식에 담긴 IPv4(::ffff:a.b.c.d)는 /64로 묶으면 모든 IPv4가 ::/64 한 키가 되므로 IPv4로 풀어 센다.
+        if ip.ipv4_mapped:
+            return str(ip.ipv4_mapped)
+        # IPv6 이용자는 보통 /64 대역을 통째로 받아 그 안에서 주소를 바꿔 보낼 수 있으므로 대역 단위로 센다.
         return str(ip_network(f"{ip}/64", strict=False))
     return str(ip)
