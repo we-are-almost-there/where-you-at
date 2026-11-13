@@ -294,6 +294,48 @@ class TestKakaoLogin(unittest.TestCase):
 
         self.assertEqual(output.getvalue().count("로그인 요청 제한을 건너뜁니다"), 1)
 
+    def test_alb_mode_limits_by_rightmost_xff(self, mock_post, mock_get, mock_upsert):
+        # ALB 뒤(TRUSTED_PROXY_HOPS=1): 왼쪽 값을 바꿔도 같은 접속 IP로 세고, 다른 접속 IP는 따로 센다.
+        mock_post.return_value = _token_ok()
+        mock_get.return_value = _response(200, KAKAO_USER)
+        limit = auth_router.login_limiter.max_requests
+
+        with patch.multiple(rate_limit.settings, trust_cloudflare_ip_header=False, trusted_proxy_hops=1):
+            statuses = [
+                self.client.post(
+                    "/api/auth/kakao",
+                    json={"code": "auth-code"},
+                    headers={"X-Forwarded-For": f"10.0.0.{i}, 203.0.113.10"},
+                ).status_code
+                for i in range(limit + 1)
+            ]
+            other = self.client.post(
+                "/api/auth/kakao", json={"code": "auth-code"}, headers={"X-Forwarded-For": "198.51.100.7"}
+            )
+
+        self.assertEqual(statuses, [200] * limit + [429])
+        self.assertEqual(other.status_code, 200)
+
+    def test_alb_mode_unverified_client_is_not_limited_and_logged_once(self, mock_post, mock_get, mock_upsert):
+        # 문의와 반대로 통과시키고, 헤더 설정을 확인하라는 로그는 한 번만 남긴다.
+        mock_post.return_value = _token_ok()
+        mock_get.return_value = _response(200, KAKAO_USER)
+        output = io.StringIO()
+
+        with (
+            patch.multiple(rate_limit.settings, trust_cloudflare_ip_header=False, trusted_proxy_hops=1),
+            redirect_stdout(output),
+        ):
+            statuses = {
+                self.client.post(
+                    "/api/auth/kakao", json={"code": "auth-code"}, headers={"X-Forwarded-For": "203.0.113.10:443"}
+                ).status_code
+                for _ in range(auth_router.login_limiter.max_requests + 1)
+            }
+
+        self.assertEqual(statuses, {200})
+        self.assertEqual(output.getvalue().count("로그인 요청 제한을 건너뜁니다"), 1)
+
     def test_concurrent_logins_are_limited_without_blocking_general_api(self, mock_post, mock_get, mock_upsert):
         limit = auth_router.kakao_oauth.LOGIN_CONCURRENCY_LIMIT
         overflow_count = auth_router.login_limiter.max_requests - limit

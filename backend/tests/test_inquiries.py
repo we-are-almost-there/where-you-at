@@ -144,6 +144,38 @@ class TestCreateInquiry(unittest.TestCase):
         self.assertEqual(mock_create.call_count, 3)
         self.assertEqual(mock_notify.call_count, 3)
 
+    def test_changing_left_xff_does_not_bypass_alb_ip_limit(self, mock_create, mock_notify):
+        # ALB 뒤(TRUSTED_PROXY_HOPS=1): 이용자가 왼쪽에 넣은 값은 바꿔도 ALB가 덧붙인 맨 오른쪽 값으로 센다.
+        with patch.multiple(rate_limit.settings, trust_cloudflare_ip_header=False, trusted_proxy_hops=1):
+            statuses = [
+                self.client.post(
+                    "/api/inquiries",
+                    json=VALID,
+                    headers={"X-Forwarded-For": f"{forged_ip}, 203.0.113.50"},
+                ).status_code
+                for forged_ip in ("1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4")
+            ]
+            other = self.client.post(
+                "/api/inquiries", json=VALID, headers={"X-Forwarded-For": "4.4.4.4, 198.51.100.7"}
+            )
+
+        self.assertEqual(statuses, [201, 201, 201, 429])
+        self.assertEqual(other.status_code, 201)
+        self.assertEqual(mock_create.call_count, 4)
+
+    def test_unverified_clients_share_one_limit_behind_alb(self, mock_create, mock_notify):
+        # ALB를 거치지 않았거나(헤더 없음) 값이 IP가 아니거나 포트가 붙어도 한 키로 묶여 함께 막힌다.
+        headers = [{}, {"X-Forwarded-For": "not-an-ip"}, {"X-Forwarded-For": "203.0.113.50:443"}]
+
+        with patch.multiple(rate_limit.settings, trust_cloudflare_ip_header=False, trusted_proxy_hops=1):
+            for header in headers:
+                self.assertEqual(self.client.post("/api/inquiries", json=VALID, headers=header).status_code, 201)
+
+            res = self.client.post("/api/inquiries", json=VALID)
+
+        self.assertEqual(res.status_code, 429)
+        self.assertEqual(mock_create.call_count, 3)
+
     def test_honeypot_requests_do_not_use_up_the_limit(self, mock_create, mock_notify):
         for _ in range(5):
             self.client.post("/api/inquiries", json={**VALID, "website": "x"})

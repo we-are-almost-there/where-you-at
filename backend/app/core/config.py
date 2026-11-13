@@ -1,3 +1,4 @@
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -20,6 +21,10 @@ class Settings(BaseSettings):
     # Render 공개 트래픽은 Cloudflare를 거친다. 그 배포에서만 true로 켜고,
     # 로컬이나 다른 호스팅에서는 클라이언트가 직접 보낼 수 있는 헤더를 믿지 않는다.
     trust_cloudflare_ip_header: bool = False
+    # Cloudflare 대신 X-Forwarded-For에 접속 IP를 덧붙이는 프록시(AWS ALB 등) 뒤에 둘 때, 그 프록시가 몇 단인지.
+    # 오른쪽에서 이 순번의 값만 믿는다. 0이면 쓰지 않는다. 지원 구성은 ALB 1단(1)뿐이고,
+    # 앞단을 더 두는 2단 이상은 원본 인증을 갖춘 뒤에만 쓴다(README "X-Forwarded-For 프록시 뒤").
+    trusted_proxy_hops: int = Field(default=0, ge=0)
     # Cloudflare R2(S3 호환) 비공개 버킷. 프로필 사진과 기록 카드 이미지를 폴더로 나눠 둔다.
     # 하나라도 비어 있으면 이미지 저장 기능만 쓸 수 없다(storage.is_configured()).
     r2_account_id: str = ""
@@ -30,6 +35,13 @@ class Settings(BaseSettings):
     # false면 /api/records, /api/record-cards가 모두 503을 돌려준다. 시행 뒤 배포 환경에서만 true로 켠다.
     record_features_enabled: bool = False
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+
+    @model_validator(mode="after")
+    def _single_client_ip_source(self):
+        # 둘 다 켜면 어느 헤더를 믿는지 모호해진다. 이전 중 설정이 남는 실수를 시작 단계에서 막는다.
+        if self.trust_cloudflare_ip_header and self.trusted_proxy_hops:
+            raise ValueError("TRUST_CLOUDFLARE_IP_HEADER와 TRUSTED_PROXY_HOPS는 함께 켤 수 없습니다.")
+        return self
 
 
 settings = Settings()

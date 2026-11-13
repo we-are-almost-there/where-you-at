@@ -7,6 +7,7 @@ client_key는 이용자 IP를 확인했는지까지만 본다. 확인하지 못�
     python -m unittest tests.test_rate_limit
 """
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
 
 from starlette.requests import Request
@@ -24,6 +25,16 @@ def _request(*, headers=None, client=("203.0.113.10", 12345)):
             "client": client,
         }
     )
+
+
+@contextmanager
+def _client_ip(*, cloudflare=False, hops=0):
+    # 두 설정을 함께 고정한다. 하나만 바꾸면 .env나 실행 환경의 다른 값이 먼저 적용될 수 있다.
+    with (
+        patch.object(rate_limit.settings, "trust_cloudflare_ip_header", cloudflare),
+        patch.object(rate_limit.settings, "trusted_proxy_hops", hops),
+    ):
+        yield
 
 
 class FakeClock:
@@ -81,7 +92,7 @@ class TestClientKey(unittest.TestCase):
             }
         )
 
-        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", False):
+        with _client_ip():
             self.assertEqual(client_key(request), "203.0.113.10")
 
     def test_render_mode_uses_valid_cloudflare_ip_and_ignores_xff(self):
@@ -92,7 +103,7 @@ class TestClientKey(unittest.TestCase):
             }
         )
 
-        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True):
+        with _client_ip(cloudflare=True):
             self.assertEqual(client_key(request), "198.51.100.23")
 
     def test_render_mode_groups_ipv6_by_64_prefix(self):
@@ -103,7 +114,7 @@ class TestClientKey(unittest.TestCase):
         ]
         other_prefix = _request(headers={"CF-Connecting-IP": "2001:db8:0:1::1"})
 
-        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True):
+        with _client_ip(cloudflare=True):
             self.assertEqual(
                 [client_key(request) for request in same_prefix],
                 ["2001:db8::/64", "2001:db8::/64"],
@@ -123,8 +134,79 @@ class TestClientKey(unittest.TestCase):
             ),
         ]
 
-        with patch.object(rate_limit.settings, "trust_cloudflare_ip_header", True):
+        with _client_ip(cloudflare=True):
             self.assertEqual([client_key(request) for request in requests], [None] * 4)
+
+
+class TestClientKeyBehindProxy(unittest.TestCase):
+    """TRUSTED_PROXY_HOPS: X-Forwarded-For 끝에 접속 IP를 덧붙이는 프록시(AWS ALB 등) 뒤."""
+
+    def _key(self, request, hops):
+        with _client_ip(hops=hops):
+            return client_key(request)
+
+    def test_one_hop_uses_rightmost_and_ignores_spoofed_left_values(self):
+        # 이용자가 1.2.3.4를 미리 넣어 보내도 ALB가 덧붙인 실제 접속 IP(맨 오른쪽)만 쓴다.
+        request = _request(headers={"X-Forwarded-For": "1.2.3.4, 198.51.100.23"})
+
+        self.assertEqual(self._key(request, 1), "198.51.100.23")
+
+    def test_two_hops_uses_second_from_right(self):
+        # 앞단 프록시가 이용자 IP를, ALB가 앞단 IP를 덧붙인 경우. 운영에서는 원본 인증을 갖춘 뒤에만 쓴다(README).
+        request = _request(headers={"X-Forwarded-For": "1.2.3.4, 198.51.100.23, 192.0.2.7"})
+
+        self.assertEqual(self._key(request, 2), "198.51.100.23")
+
+    def test_repeated_headers_are_read_in_order(self):
+        request = _request(
+            headers=[
+                ("X-Forwarded-For", "1.2.3.4"),
+                ("X-Forwarded-For", "198.51.100.23"),
+            ]
+        )
+
+        self.assertEqual(self._key(request, 1), "198.51.100.23")
+
+    def test_groups_ipv6_by_64_prefix(self):
+        request = _request(headers={"X-Forwarded-For": "2001:db8::ffff:1234"})
+
+        self.assertEqual(self._key(request, 1), "2001:db8::/64")
+
+    def test_ignores_cloudflare_header(self):
+        request = _request(headers={"CF-Connecting-IP": "5.6.7.8", "X-Forwarded-For": "198.51.100.23"})
+
+        self.assertEqual(self._key(request, 1), "198.51.100.23")
+
+    def test_returns_none_for_missing_short_or_invalid_header(self):
+        cases = [
+            (_request(), 1),  # 프록시를 거치지 않은 요청
+            (_request(headers={"X-Forwarded-For": "198.51.100.23"}), 2),  # 기대한 단수보다 적음
+            (_request(headers={"X-Forwarded-For": "1.2.3.4, not-an-ip"}), 1),
+            (_request(headers={"X-Forwarded-For": "1.2.3.4,"}), 1),  # 맨 오른쪽이 빈 값
+            # ALB 클라이언트 포트 보존 옵션을 켠 형식. 받지 않으므로 README대로 옵션을 꺼 둔다.
+            (_request(headers={"X-Forwarded-For": "198.51.100.23:443"}), 1),
+            (_request(headers={"X-Forwarded-For": "[2001:db8::1]:443"}), 1),
+        ]
+
+        self.assertEqual([self._key(request, hops) for request, hops in cases], [None] * 6)
+
+
+class TestClientIpSettings(unittest.TestCase):
+    def test_rejects_both_sources_enabled(self):
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        with self.assertRaises(ValidationError):
+            Settings(_env_file=None, trust_cloudflare_ip_header=True, trusted_proxy_hops=1)
+
+    def test_rejects_negative_hops(self):
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        with self.assertRaises(ValidationError):
+            Settings(_env_file=None, trusted_proxy_hops=-1)
 
 
 if __name__ == "__main__":
