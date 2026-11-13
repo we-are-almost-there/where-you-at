@@ -62,6 +62,31 @@ uvicorn app.main:app --reload
 
 `http://localhost:8000/docs` 에서 API 문서를 볼 수 있습니다.
 
+#### Docker로 실행 (선택)
+
+배포용 이미지와 같은 환경에서 확인할 때 씁니다. 저장소 루트에서 실행합니다.
+
+```bash
+docker build -t where-you-at-api backend
+```
+
+```bash
+docker run --rm -p 8000:8000 --env-file backend/.env where-you-at-api
+```
+
+- 이미지에는 `.env`가 들어가지 않습니다(`backend/.dockerignore`). 설정은 실행할 때 환경변수로 넘깁니다.
+  `--env-file`은 값의 따옴표를 벗기지 않으므로, `.env`의 값은 따옴표 없이 적습니다.
+- 시작 명령은 운영과 같이 `--workers 1 --no-proxy-headers`로 고정돼 있어 `--reload`는 쓰지 않습니다.
+- 같은 이미지로 일회성 작업도 실행할 수 있습니다. 예: `docker run --rm --env-file backend/.env where-you-at-api python -m scripts.seed_help`
+- 이미지는 자전거 수집 작업의 파일 로그를 끈 상태(`BICYCLE_FILE_LOG_ENABLED=false`)로 실행합니다. 컨테이너 실행 사용자는
+  `/app/logs`를 만들 수 없기 때문입니다. `.env.example`을 복사한 `.env`에는 이 값이 `true`라 `--env-file`이 덮어쓰므로,
+  수집 작업은 `-e`로 다시 끕니다. `-e`가 `--env-file`보다 우선합니다.
+
+  ```bash
+  docker run --rm --env-file backend/.env -e BICYCLE_FILE_LOG_ENABLED=false where-you-at-api python -m scripts.collect_bicycle_realtime
+  ```
+- CI의 `docker` 작업이 PR마다 이미지를 빌드하고, root가 아닌 사용자로 실행되는지와 `/health` 응답을 확인합니다.
+
 ### 3. 프론트엔드
 
 ```bash

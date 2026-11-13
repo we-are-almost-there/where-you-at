@@ -50,3 +50,23 @@ jobs:
       - run: pip install -r requirements.txt
       # DB에 붙는 테스트는 스스로 건너뛴다. CI에는 DB 접속 정보를 넣지 않는다.
       - run: python -m unittest discover -s tests
+
+  # 백엔드 이미지가 빌드되고, 비밀값 없이도 서버가 떠서 /health에 응답하는지 확인한다.
+  # DB 접속 정보가 없으므로 /health/ready는 보지 않는다.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: docker build -t where-you-at-api:ci backend
+      # 비밀값 파일이 이미지에 들어가지 않았고, root가 아닌 사용자로 실행되는지 본다.
+      - run: |
+          docker run --rm where-you-at-api:ci sh -c 'test ! -e /app/.env && test "$(id -u)" != 0'
+      - run: docker run -d --name api -p 8000:8000 where-you-at-api:ci
+      - run: |
+          for _ in $(seq 1 30); do
+            # 연결된 뒤 응답이 없을 때도 한 번에 오래 기다리지 않게 요청마다 시간을 제한한다.
+            if curl --connect-timeout 1 --max-time 2 -fsS http://localhost:8000/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs api
+          exit 1
