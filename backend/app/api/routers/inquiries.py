@@ -15,7 +15,7 @@ inquiry_limiter = SlidingWindowLimiter(max_requests=3, window_seconds=600)
 # 이용자 IP를 확인하지 못한 요청은 모두 이 한 키로 묶어 함께 막는다(fail closed).
 # 헤더 누락이나 변조가 요청 제한 우회로 이어지는 것보다, 일부 요청이 함께 제한되는 쪽이 안전하다.
 # 문의는 막혀도 대체 수단이 있다. 로그인은 반대로 정한다(services/rate_limit.py client_key 참고).
-_UNVERIFIED_CLOUDFLARE_CLIENT = "unverified-cloudflare-client"
+_UNVERIFIED_CLIENT = "unverified-client"
 
 
 @router.post("", status_code=201, response_model=InquiryCreated)
@@ -28,7 +28,7 @@ def create_inquiry(
     if body.website:
         return InquiryCreated()
 
-    if not inquiry_limiter.allow(client_key(request) or _UNVERIFIED_CLOUDFLARE_CLIENT):
+    if not inquiry_limiter.allow(client_key(request) or _UNVERIFIED_CLIENT):
         raise HTTPException(status_code=429, detail="문의를 너무 자주 보냈어요. 잠시 후 다시 시도해 주세요.")
 
     # 저장할 요청만 DB에 연결한다. 의존성(get_db)으로 받으면 위 두 검사보다 먼저 연결이 열려,

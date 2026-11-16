@@ -58,7 +58,7 @@ async def login_with_kakao(body: KakaoLoginRequest, request: Request):
             # 헤더 검증이 깨진 동안 전체 이용자가 로그인하지 못한다. 설정이 깨진 신호이므로 로그를 남긴다.
             # 요청마다 같은 줄이 쌓이지 않게 10분에 한 번만 남긴다.
             if unverified_log_limiter.allow("login-unverified-client"):
-                print("[ERROR] 로그인 요청 제한을 건너뜁니다: 이용자 IP를 확인하지 못했습니다(CF-Connecting-IP 확인 필요).")
+                print("[ERROR] 로그인 요청 제한을 건너뜁니다: 이용자 IP를 확인하지 못했습니다(CF-Connecting-IP 또는 X-Forwarded-For 프록시 설정 확인 필요).")
         elif not login_limiter.allow(key):
             raise HTTPException(status_code=429, detail="로그인을 너무 자주 시도했어요. 잠시 후 다시 시도해 주세요.")
 
