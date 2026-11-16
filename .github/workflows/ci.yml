@@ -58,9 +58,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: docker build -t where-you-at-api:ci backend
-      # 비밀값 파일이 이미지에 들어가지 않았고, root가 아닌 사용자로 실행되는지 본다.
+      # 비밀값 파일이 이미지 어디에도 들어가지 않았고, root가 아닌 사용자로 실행되는지 본다.
+      # 하위 폴더까지 찾아야 .dockerignore 패턴이 바뀌었을 때 들어온 .env를 잡을 수 있다.
       - run: |
-          docker run --rm where-you-at-api:ci sh -c 'test ! -e /app/.env && test "$(id -u)" != 0'
+          docker run --rm where-you-at-api:ci sh -c 'test -z "$(find /app -name ".env*")" && test "$(id -u)" != 0'
       - run: docker run -d --name api -p 8000:8000 where-you-at-api:ci
       - run: |
           for _ in $(seq 1 30); do

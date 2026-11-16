@@ -78,13 +78,11 @@ docker run --rm -p 8000:8000 --env-file backend/.env where-you-at-api
   `--env-file`은 값의 따옴표를 벗기지 않으므로, `.env`의 값은 따옴표 없이 적습니다.
 - 시작 명령은 운영과 같이 `--workers 1 --no-proxy-headers`로 고정돼 있어 `--reload`는 쓰지 않습니다.
 - 같은 이미지로 일회성 작업도 실행할 수 있습니다. 예: `docker run --rm --env-file backend/.env where-you-at-api python -m scripts.seed_help`
-- 이미지는 자전거 수집 작업의 파일 로그를 끈 상태(`BICYCLE_FILE_LOG_ENABLED=false`)로 실행합니다. 컨테이너 실행 사용자는
-  `/app/logs`를 만들 수 없기 때문입니다. `.env.example`을 복사한 `.env`에는 이 값이 `true`라 `--env-file`이 덮어쓰므로,
-  수집 작업은 `-e`로 다시 끕니다. `-e`가 `--env-file`보다 우선합니다.
-
-  ```bash
-  docker run --rm --env-file backend/.env -e BICYCLE_FILE_LOG_ENABLED=false where-you-at-api python -m scripts.collect_bicycle_realtime
-  ```
+  - 컨테이너로 실행하는 작업: `seed_help`, `seed_support`, `seed_region`, `refresh_nearby_cache`, `collect_bicycle_realtime`
+  - 컨테이너는 root가 아닌 사용자로 실행해 `/app` 아래에 파일을 쓸 수 없습니다. 결과 파일을 `backend/` 아래에 쓰는
+    `collect_courses`, `collect_bike_routes`, `backfill_region`, `backfill_bicycle_addr`는 로컬에서 실행합니다.
+  - `collect_bicycle_realtime`은 `.env`가 파일 로그(`BICYCLE_FILE_LOG_ENABLED=true`)를 켜도 로그 폴더를 만들 수 없으면
+    표준 출력 로그만 남기고 계속 수집합니다.
 - CI의 `docker` 작업이 PR마다 이미지를 빌드하고, root가 아닌 사용자로 실행되는지와 `/health` 응답을 확인합니다.
 
 ### 3. 프론트엔드
