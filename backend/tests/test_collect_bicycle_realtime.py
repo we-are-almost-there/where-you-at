@@ -62,6 +62,19 @@ class CollectBicycleRealtimeTest(unittest.TestCase):
                     any(isinstance(handler, logging.FileHandler) for handler in handlers)
                 )
 
+    def test_unwritable_log_dir_falls_back_to_stream_log(self):
+        # 컨테이너는 실행 사용자가 /app/logs를 만들 수 없다. .env가 파일 로그를 켜도 수집은 계속돼야 한다.
+        with (
+            patch.dict(os.environ, {"BICYCLE_FILE_LOG_ENABLED": "true"}),
+            patch.object(collector.Path, "mkdir", side_effect=PermissionError),
+            patch.object(collector.logging, "FileHandler") as file_handler,
+            patch("sys.stderr"),
+        ):
+            handlers = collector.build_log_handlers()
+
+        file_handler.assert_not_called()
+        self.assertEqual([type(handler) for handler in handlers], [logging.StreamHandler])
+
 
 if __name__ == "__main__":
     unittest.main()

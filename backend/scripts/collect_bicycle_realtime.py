@@ -25,6 +25,7 @@ backend 디렉터리에서 실행:
 import logging
 import os
 import re
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,11 +81,18 @@ def build_log_handlers() -> list[logging.Handler]:
     handlers: list[logging.Handler] = [logging.StreamHandler()]
     file_log_enabled = os.environ.get("BICYCLE_FILE_LOG_ENABLED", "true").strip().lower()
     if file_log_enabled not in {"0", "false", "no", "off"}:
-        LOG_DIR.mkdir(exist_ok=True)
-        handlers.insert(
-            0,
-            logging.FileHandler(LOG_DIR / "collect_bicycle_realtime.log", encoding="utf-8"),
-        )
+        # 컨테이너처럼 쓸 수 없는 위치에서 실행돼도 수집은 계속하고, 표준 출력 로그만 남긴다.
+        try:
+            LOG_DIR.mkdir(exist_ok=True)
+            handlers.insert(
+                0,
+                logging.FileHandler(LOG_DIR / "collect_bicycle_realtime.log", encoding="utf-8"),
+            )
+        except OSError as exc:
+            print(
+                f"[WARN] 파일 로그를 열 수 없어 표준 출력 로그만 남깁니다: {type(exc).__name__}",
+                file=sys.stderr,
+            )
     return handlers
 
 logging.basicConfig(
