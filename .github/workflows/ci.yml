@@ -37,6 +37,20 @@ jobs:
 
   backend:
     runs-on: ubuntu-latest
+    # 빈 DB만 있으면 되는 통합 테스트(FAQ 시드, 시군구 스탬프)를 실제 PostgreSQL에서 돌린다.
+    # 운영 DB(Supabase)와 같은 메이저 버전이다. 작업이 끝나면 함께 사라지는 CI 전용 DB라 비밀번호는 고정값이다.
+    services:
+      postgres:
+        image: postgres:17@sha256:0d938e975177bef9f1f61f3f9dbcf2e0aa0a139568f66d3415ed8892eb97f6ac
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
@@ -48,8 +62,13 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
-      # DB에 붙는 테스트는 스스로 건너뛴다. CI에는 DB 접속 정보를 넣지 않는다.
+      # 운영 DB 접속 정보(DB_*)는 넣지 않는다. 운영 데이터가 필요한 RUN_DB_TESTS 테스트는 계속 건너뛴다.
+      # REQUIRE_DB_TESTS=1이면 아래 접속 정보가 빠졌을 때 건너뛰지 않고 실패한다(tests/db_settings.py).
       - run: python -m unittest discover -s tests
+        env:
+          REQUIRE_DB_TESTS: "1"
+          FAQ_TEST_DSN: postgresql://postgres:postgres@localhost:5432/postgres
+          SIGUNGU_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
 
   # 백엔드 이미지가 빌드되고, 비밀값 없이도 서버가 떠서 /health에 응답하는지 확인한다.
   # DB 접속 정보가 없으므로 /health/ready는 보지 않는다.

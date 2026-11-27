@@ -232,6 +232,21 @@ python -m unittest discover -s tests -t .
 백엔드 테스트는 `unittest` 기반이라 별도 의존성 없이 돌아갑니다. `backend` 폴더에서
 실행해야 `app` 패키지를 찾습니다.
 
+실제 PostgreSQL이 필요한 통합 테스트는 접속 정보가 없으면 건너뜁니다. 모두 운영 DB가 아닌 테스트 전용 DB를 씁니다.
+
+| 환경변수 | 테스트 | 필요한 DB | CI |
+|---|---|---|---|
+| `FAQ_TEST_DSN` | `test_help_faq_postgres` (FAQ 시드 적용·복구·롤백) | 빈 DB. 임시(TEMP) 테이블만 만든다 | 실행 |
+| `SIGUNGU_TEST_DATABASE_URL` | `test_sigungu_stamp_db` (스탬프 상태·경합·탈퇴) | 빈 DB. 무작위 스키마를 만들고 지운다 | 실행 |
+| `RUN_DB_TESTS=1` | `test_support_regions`의 DB 테스트 | `.env`의 DB(스키마·시드 필요). 읽기와 커밋하지 않는 쓰기만 한다 | 건너뜀 |
+
+CI의 backend 작업은 PostgreSQL 17 서비스 컨테이너를 띄워 위 두 테스트를 실행합니다. `REQUIRE_DB_TESTS=1`을 함께 넣어,
+접속 정보가 빠지면 건너뛰지 않고 실패하게 합니다. 로컬에서 실행할 때는 테스트 전용 PostgreSQL의 주소를 넣습니다.
+
+```bash
+FAQ_TEST_DSN=postgresql://postgres:postgres@localhost:5432/postgres SIGUNGU_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres python -m unittest tests.test_help_faq_postgres tests.test_sigungu_stamp_db
+```
+
 ## 상태 확인
 
 | 경로 | 용도 |

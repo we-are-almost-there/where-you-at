@@ -4,7 +4,6 @@ SIGUNGU_TEST_DATABASE_URL에 테스트 전용 DB를 지정한다. 운영 연결 
 각 테스트는 무작위 스키마만 만들고 정리한다.
 """
 
-import os
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -16,8 +15,9 @@ from psycopg2 import sql
 
 from app.crud.sigungu_stamp import create_stamp, list_stamps
 from app.sigungu_codes import SIGUNGU_CODES
+from tests.db_settings import read_test_dsn
 
-TEST_DSN = os.environ.get("SIGUNGU_TEST_DATABASE_URL")
+TEST_DSN = read_test_dsn("SIGUNGU_TEST_DATABASE_URL")
 
 
 @unittest.skipUnless(TEST_DSN, "SIGUNGU_TEST_DATABASE_URL이 지정되지 않았습니다")

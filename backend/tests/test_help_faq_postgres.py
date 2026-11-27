@@ -3,7 +3,6 @@
 backend에서 python -m unittest tests.test_help_faq_postgres
 DSN 미설정 시 건너뛴다. 운영 연결 설정이나 .env는 사용하지 않는다.
 """
-import os
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -11,15 +10,17 @@ from unittest.mock import patch
 import psycopg2
 
 from app.db import supabase
+from tests.db_settings import read_test_dsn
 
 QUESTIONS = ("따라가기 기록은 저장되나요?", "기록 카드 이미지는 어떻게 저장하나요?")
 SQL = Path(__file__).resolve().parents[1] / "sql"
+TEST_DSN = read_test_dsn("FAQ_TEST_DSN")
 
 
-@unittest.skipUnless(os.environ.get("FAQ_TEST_DSN"), "FAQ_TEST_DSN 미설정")
+@unittest.skipUnless(TEST_DSN, "FAQ_TEST_DSN 미설정")
 class HelpFaqPostgresTest(unittest.TestCase):
     def setUp(self):
-        self.conn = psycopg2.connect(os.environ["FAQ_TEST_DSN"])
+        self.conn = psycopg2.connect(TEST_DSN)
         self.addCleanup(self.conn.close)
         with self.conn.cursor() as cur:
             # 실제 스키마의 고객지원 테이블과 트리거를 TEMP 스키마 안에 생성한다.
